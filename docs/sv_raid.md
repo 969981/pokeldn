@@ -421,10 +421,14 @@ encryption constant, IVs, ability number, gender, nature, height, weight and sca
 
 The app's raid seed field shows the boss and rewards the seed gives in the tool's context, and Find
 a raid searches seeds from a first one, typed or picked at random, in every context the filters
-leave (`pokeldn.sv.raid_search`) for a species, star level, Tera type, nature, gender, shininess and
-IV ranges, ranked by a score of the boss's stats: HP times the sum of its defenses, either defense
-alone, its better attacking stat, or its total. One result per species is kept unless a species is
-chosen.
+leave (`pokeldn.sv.raid_search`) for a species, star level, Tera type, nature, gender, shininess,
+size mark and IV ranges, ranked by a score of the boss's stats: HP times the sum of its defenses,
+either defense alone, its better attacking stat, or its total, or by the rewards wanted (below). One
+result per species is kept unless a species is chosen. Its size mark eligibility wants the boss's
+scale, drawn after its height and weight, at 0 for the Mini mark, 255 for the Jumbo mark, or either
+for Any mark: two draws make each 1 in 16 512, an event's band from 0 or from 240 makes one 1 in 16,
+and its own value always or never. The helper turns away a row whose rule cannot give the scale with
+its encounter.
 
 Its Rewards section, folded until opened, wants rewards: rows of an item and the least quantity a
 raid must give of it, the raid's quantities of an item summed and two rows of one item added up.
@@ -438,22 +442,52 @@ Every Paldea, Kitakami and Blueberry context at once lists 343 items in about a 
 is made off the page. The search skips an encounter that cannot give what is wanted, then draws a
 seed's rewards before its boss, which keeps its speed.
 
+Most desired rewards ranks the results by the rewards wanted, in their order: more of the first item
+wins, then more of the second, and so on, each row's least still a minimum. A raid's total of an
+item is a digit, its place among the totals from the least up that the raids searched can give
+(`raid_search.ranked_rewards`): a black crystal gives a material 8 to 30 by twos, 12 places rather
+than 23. The score of the leading items has to fit under 2^31, beside the seed in the helper's
+64-bit rank, and the rows after those only want their least; five items fit in every raid known, an
+item having up to 59 totals (an event's Exp. Candy L), and a black crystal ranks four herbas,
+patches or caps and four materials. The helper draws a seed's rewards first and turns it away when
+they cannot beat the ranks kept, an encounter row's best rank being the most it gives of each item.
+It stops drawing once the draws left cannot bring the first item to the place the kept ranks' first
+digit holds (or, ranked by stats, to its least), and a draw only looks at the lottery rows that give
+a wanted item.
+
 The PKHeX helper scans the seeds over every core (`services/pkhex/RaidScan.cs`, packed and sent by
 `pokeldn.sv.raid_scan`, in a helper process of its own): a seed's encounter, its boss up to the
 nature, the score, every filter and the rewards, the work of `select`, `boss_fields`, `rewards` and
 `tera_type` on the context's tables. It names a context's best seeds (or each species' best), and
 `search` makes their raids with the plain Python code, so the results, their order and the ties
-between seeds and contexts are the Python scan's (`tests/test_sv_raid.py` compares both). On an
-Apple M4, ten million seeds of one context take 0.36 s, 0.12 s for shiny ones, and ten million in
-each of the 42 contexts 9.1 s. A search covers up to 4 294 967 296 seed and context pairs, sent to
-the helper 16 777 216 seeds at a time, and the finder offers ten million seeds. Without the helper
-(a source checkout that has not built it), Python scans every seed, about 22 000 a second, up to a
-million pairs, and the finder offers 100 000.
+between seeds and contexts are the Python scan's (`tests/test_sv_raid.py` compares both).
 
-The finder's Every seed searches all 4 294 967 296 seeds of one context (a game, region, progress
-and crystal chosen), 41 s on that machine. Stop at the first match answers the first raid that
-matches, whatever its score, instead of the best ones (`stop_at_first`): the earliest seed of the
-first context that has one, the contexts searched one after the other.
+Most seeds stop after their encounter. Each encounter row's best rank (its flawless IVs at 31
+wherever they can fall, its other IVs the best the IV filter lets through, the best of its natures)
+is worked out once per request, and a seed whose row cannot beat the ranks kept so far is turned
+away before its boss is drawn; one that passes is turned away again once its flawless IVs, then all
+its IVs, are drawn, if their best rank (any nature: a nature changes a stat by a tenth at most, and
+every score grows with each stat) cannot beat them. Each request passes the ranks the earlier ones
+kept (each species' with one boss per species), so a long search keeps getting faster. The helper
+keeps a context's tables by their digest, so only a search's first request carries them. On a Ryzen
+9 5900X, ten million seeds of one context take 0.02 s, 0.04 s for shiny ones, and ten million in
+each of the 42 contexts 0.9 s; the finder offers a hundred million, 6.9 s in each of the 42. A
+search covers up to 4 294 967 296 seeds in each context, in as many contexts as chosen
+(`most_seeds`), sent to the helper 16 777 216 seeds at first, then as many as it scans in about a
+quarter of a second (up to 268 435 456). Without the helper (a source checkout that has not built
+it), Python scans every seed, about 22 000 a second, up to a million seed and context pairs, and the
+finder offers 100 000.
+
+The finder's Every seed searches all 4 294 967 296 seeds of each context chosen: one (a game,
+region, progress and crystal) takes 3 to 7 s on that machine as the filters go, all 42 contexts 2
+min 17 s, or 4 min 24 s wanting a shiny boss. Ranked by the rewards it takes longer, since nearly
+every seed's rewards are drawn: Scarlet's Paldea black crystal, wanting two Bitter Herba Mystica
+then two Ability Patches, one boss per species, takes 15 s (5 s ranked by total stats), from 7 s
+(four items) to 11 s (one) for others, and ten million seeds in each of the 42 contexts 1.5 s.
+Wanting the Jumbo mark takes 8 s: so few seeds match that the ranks kept turn few away. Stop at the
+first match answers the first raid that matches, whatever its score, instead of the best ones
+(`stop_at_first`): the earliest seed of the first context that has one, the contexts searched one
+after the other.
 
 ## Joining
 

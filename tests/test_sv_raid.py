@@ -240,14 +240,112 @@ def test_the_search_can_stop_at_its_first_match(monkeypatch, chunk, filters):
     assert not offset or not raid_search.search(0xFFFFF000, offset, [context], **filters)
 
 
+@pytest.mark.parametrize("filters", [
+    {}, {"objective": "hardest"}, {"one_per_species": True}, {"one_per_species": True, "objective": "hardest"},
+    {"ivs": ((0, 31), (0, 31), (0, 5), (0, 31), (0, 31), (0, 31)), "objective": "physical"}])
+def test_the_helper_s_requests_turn_away_seeds_that_cannot_beat_those_kept(monkeypatch, filters):
+    """A request after the first passes the ranks kept so far (each species' with one per species),
+    and the helper skips a seed that cannot beat them before its boss: the search is still Python's."""
+    monkeypatch.setattr(raid_scan, "CHUNK", 500)
+    monkeypatch.setattr(raid_scan, "MAX_CHUNK", 500)
+    filters = {"objective": "overall", **filters}
+    scope = raid_search.contexts("scarlet", "paldea", "6star", "any")
+    compiled, python = searched_both_ways(monkeypatch, 0xFFFFF800, 4000, scope, filters.pop("objective"), **filters)
+    assert compiled == python and compiled
+
+
+@pytest.mark.parametrize("size_mark, seeds", [
+    ("either", {0x10002082, 0x10006545, 0x1000749D, 0x1000908D}), ("mini", {0x10002082, 0x10006545}),
+    ("jumbo", {0x1000749D, 0x1000908D})])
+def test_the_helper_s_scan_draws_the_scale_as_python_does(monkeypatch, size_mark, seeds):
+    """A boss's scale is drawn after its height and weight, two draws each: these seeds hold two of
+    scale 0, for the Mini mark, and two of 255, for the Jumbo mark."""
+    scope = raid_search.contexts("scarlet", "paldea", "5star", "standard")
+    compiled, python = searched_both_ways(monkeypatch, 0x10002000, 0x7400, scope, size_mark=size_mark, limit=10)
+    assert compiled == python and {seed for seed, *_ in compiled} == seeds
+    with pytest.raises(ValueError, match="no size mark"):
+        raid_search.search(0, 10, scope, size_mark="huge")
+
+
+HERBA, SWEET, PATCH, CAP = 1907, 1904, 1606, 795      # Bitter and Sweet Herba Mystica, Ability Patch, Bottle Cap
+
+
+def test_most_desired_rewards_ranks_the_first_wanted_first():
+    """A herba over its least and no patch over beat no herba over and three patches: each total is a
+    digit, its place among the item's totals from the least, the first wanted the most significant."""
+    black = raid_search.contexts("scarlet", "paldea", "6star", "black")
+    ranked = raid_search.ranked_rewards(black, {HERBA: 2, PATCH: 2})
+    assert ranked == [(HERBA, tuple(range(2, 12))), (PATCH, tuple(range(2, 12)))]
+    score = lambda herba, patches: raid_search.reward_score([(HERBA, herba), (PATCH, patches), (CAP, 3)], ranked)
+    assert score(3, 2) > score(2, 5) > score(2, 2) == 0
+    assert raid_search.reward_score([(HERBA, 1), (HERBA, 2), (PATCH, 2)], ranked) == score(3, 2)
+
+
+def test_most_desired_rewards_ranks_by_as_many_as_one_score_holds():
+    """A black crystal's raids give 1 to 11 of a herba, a patch or caps, and of a material 8 to 30 by
+    twos: 11^4 * 12^4 fits under the score's limit and a fifth material does not, so Mankey Fur and
+    the items after it only want their least; without wanted rewards there is nothing to rank by."""
+    black = raid_search.contexts("scarlet", "paldea", "6star", "black")
+    wanted = dict.fromkeys([HERBA, SWEET, PATCH, CAP, 2159, 2158, 2157, 2156, 1960, 1129], 1)
+    ranked = raid_search.ranked_rewards(black, wanted)
+    materials = tuple(range(8, 31, 2))
+    assert ranked == [(HERBA, tuple(range(1, 12))), (SWEET, tuple(range(1, 12))), (PATCH, tuple(range(1, 12))),
+                      (CAP, tuple(range(1, 12))), (2159, materials), (2158, materials), (2157, materials),
+                      (2156, materials)]
+    assert 11 ** 4 * 12 ** 4 <= raid_search.SCORE_LIMIT < 11 ** 4 * 12 ** 5
+    totals = lambda fur: [(HERBA, 2), (SWEET, 1), (PATCH, 1), (CAP, 1), (2159, fur), (2158, 9)]
+    score = lambda fur: raid_search.reward_score(totals(fur), ranked)
+    assert score(10) > score(9) == score(8) > 0         # 9 is no total: 8's place, and 9 of 2158 too
+    with pytest.raises(ValueError, match="want one at least"):
+        raid_search.search(0, 10, black, "rewards")
+
+
+@pytest.mark.parametrize("scope, rewards, filters", [
+    (raid_search.contexts("scarlet", "paldea", "6star", "black"), {HERBA: 1, PATCH: 1}, {}),
+    (raid_search.contexts("scarlet", "paldea", "6star", "black"), {HERBA: 1, PATCH: 1}, {"one_per_species": True}),
+    (raid_search.contexts("any", "paldea", "6star", "black"), {CAP: 2, HERBA: 1}, {"shiny": False}),
+    (raid_search.contexts("violet", "kitakami", "6star", "any"), {1128: 1}, {"tera_type": 3}),
+    (raid_search.contexts("scarlet", "paldea", "5star", "standard"), {CAP: 1, 1862: 1}, {"one_per_species": True})])
+def test_the_helper_s_scan_ranks_by_rewards_as_python_does(monkeypatch, scope, rewards, filters):
+    """The rewards drawn once for every item, the scan turning away a seed that cannot beat the bar
+    before its boss, and a row that cannot give the least wanted: the search is still Python's."""
+    monkeypatch.setattr(raid_scan, "CHUNK", 2000)
+    monkeypatch.setattr(raid_scan, "MAX_CHUNK", 2000)
+    compiled, python = searched_both_ways(monkeypatch, 0xFFFFF000, 12000 // len(scope), scope, "rewards",
+                                          rewards=rewards, **filters)
+    assert compiled == python and compiled
+    scores = [score for _, _, _, score, _, _ in compiled]
+    assert scores == sorted(scores, reverse=True) or filters.get("one_per_species")
+
+
+def test_the_helper_s_scan_draws_any_tera_type_under_rule_0(monkeypatch):
+    """Breloom's five-star raid, Tera rule 0: any of 18, as raid_encounter.tera_type, so a Water
+    Breloom (neither Grass nor Fighting) and its Water shards are found by both scans."""
+    scope = raid_search.contexts("scarlet", "paldea", "6star", "standard")
+    breloom = next(r for r, _ in raid_search._rows(scope[0]) if r["species"] == 286)
+    assert breloom["tera"] == 0 and raid_search._gems(breloom) == set(range(18))
+    compiled, python = searched_both_ways(monkeypatch, 0, 40_000, scope, "hardest", species_id=286, tera_type=10,
+                                          rewards={raid_encounter.TERA_SHARDS[10]: 1})
+    assert compiled == python and compiled
+
+
 def test_a_stopped_helper_search_keeps_what_it_found(monkeypatch):
     if not raid_scan.available():
         pytest.skip("needs the PKHeX helper")
     monkeypatch.setattr(raid_scan, "CHUNK", 1000)
+    monkeypatch.setattr(raid_scan, "MAX_CHUNK", 1000)
     seen = []
     found = raid_search.search(0, 10_000, raid_search.contexts("violet", "paldea", "6star", "standard"),
                                progress=lambda done, total: seen.append(done), cancelled=lambda: len(seen) >= 3)
     assert seen[:3] == [1000, 2000, 3000] and len(found) == 12 and max(f.seed for f in found) < 3000
+
+
+def test_with_the_helper_a_search_covers_every_seed_of_every_context(monkeypatch):
+    """No cap over the contexts: the finder's hundred million seeds, or every seed, in each of the 42."""
+    monkeypatch.setattr(raid_search, "FAST", True)
+    assert raid_search.most_seeds(1) == raid_search.most_seeds(42) == 1 << 32
+    with pytest.raises(ValueError, match="1 to 4,294,967,296 seeds in each context"):
+        raid_search.search(0, (1 << 32) + 1, raid_search.contexts("violet", "paldea", "6star", "standard"))
 
 
 def test_without_the_helper_the_search_scans_in_python():
@@ -256,7 +354,10 @@ def test_without_the_helper_the_search_scans_in_python():
         "from pokeldn import pokemon", "pokemon._command = lambda: (_ for _ in ()).throw(pokemon.BuilderError())",
         "from pokeldn.sv import raid_search",
         "assert not raid_search.FAST",
-        "assert raid_search.MAX_WORK == 1_000_000 and raid_search.DEFAULT_COUNT == 100_000",
+        "assert raid_search.DEFAULT_COUNT == 100_000",
+        "assert raid_search.most_seeds(1) == 1_000_000 and raid_search.most_seeds(42) == 23_809",
+        "import pytest",
+        "pytest.raises(ValueError, raid_search.search, 0, 250_001, raid_search.contexts('violet', 'paldea'))",
         "found = raid_search.search(0, 2000, raid_search.contexts('violet', 'paldea', '6star', 'standard'))",
         "assert len(found) == 12"))
     subprocess.run([sys.executable, "-c", code], cwd=ROOT, check=True, timeout=120)
