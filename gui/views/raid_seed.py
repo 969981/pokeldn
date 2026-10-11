@@ -20,6 +20,7 @@ from pokeldn.sv import raid_encounter, raid_event, raid_search
 from pokeldn.sv.raid_encounter import NATURES, TERA_TYPES
 GENDERS = ("Male", "Female", "Genderless")
 STATS = ("HP", "Atk", "Def", "Spe", "SpA", "SpD")
+SIZE_MARKS = {0: "Mini", 0xFF: "Jumbo"}      # a boss's scale -> the size mark it is eligible for
 PROGRESS = (("beginning", "Beginning"), ("tera", "Tera Raids unlocked"), ("3star", "3-star raids"),
             ("4star", "4-star raids"), ("5star", "5-star raids"), ("6star", "6-star raids"))
 ALL_SEEDS = 1 << 32
@@ -44,7 +45,9 @@ def searching(done: int, total: int, elapsed: float) -> str:
     if not done or elapsed <= 0:
         return f"Searching {done:,} of {total:,} seeds..."
     rate = done / elapsed
-    speed = f"{rate / 1e6:.1f} million" if rate >= 1e6 else f"{rate:,.0f}"
+    # A billion once the millions would show 1000.0.
+    speed = (f"{rate / 1e9:.2f} billion" if round(rate / 1e6, 1) >= 1000
+             else f"{rate / 1e6:.1f} million" if rate >= 1e6 else f"{rate:,.0f}")
     return f"Searching {done:,} of {total:,} seeds, {speed} a second, {duration((total - done) / rate)} left..."
 
 
@@ -123,13 +126,19 @@ def boss_card(app, seed, stars, boss, context, *, compact=False, rewards=None, o
     title = [t.text(name, 14 if compact else 17, weight=ft.FontWeight.W_700)]
     if shiny:
         title.append(t.tinted(t.pixel_icon("sparkles", color="#FFFFFF", tooltip="Shiny"), crystal_colors(context)))
+    mark = SIZE_MARKS.get(boss["scale"])
+    if mark:
+        title.append(t.tinted(t.pixel_icon(f"{mark.lower()}-mark", color="#FFFFFF", tooltip=f"{mark} mark"),
+                              crystal_colors(context)))
     title.append(stars_row(stars, context))
     accent = t.RED if context["content"] in ("black", "might") else t.BLUE
     facts = ft.Row([
         t.chip(f"Level {boss['level']}", "sword", accent),
         t.chip(f"{TERA_TYPES[boss['tera_type_original']]} Tera", "diamond-gem", accent),
         t.chip(NATURES[boss["nature"]]), t.chip(GENDERS[boss["gender"]]),
+        # The compact card keeps to one row: its title's icons tell these.
         *([t.chip("Shiny", "sparkles", accent)] if shiny and not compact else []),
+        *([t.chip(f"{mark} mark", f"{mark.lower()}-mark", accent)] if mark and not compact else []),
     ], spacing=6, run_spacing=6, wrap=True)
     where = (f"{context['version'].title()} · {context['map_name'].title()} · "
              f"{dict(PROGRESS)[context['progress']]} · {CRYSTALS[context['content']]}"
@@ -232,7 +241,12 @@ class RaidSeedPicker:
                                species_id=pick(species) and int(species.value),
                                tera_type=pick(tera) and int(tera.value))
         wants = RewardFilter(self.app, reward_scope)
-        choose = lambda options, value: t.dropdown(options, value, on_select=lambda _e: wants.changed())
+
+        def changed() -> None:
+            wants.changed()
+            if event is not None:
+                size_marks()
+        choose = lambda options, value: t.dropdown(options, value, on_select=lambda _e: changed())
         if event is None:
             version = choose([("any", "Any game"), ("scarlet", "Scarlet"), ("violet", "Violet")],
                              current["version"])
@@ -256,13 +270,32 @@ class RaidSeedPicker:
             crystal = choose(([("any", "Any den")] if len(dens) > 1 else [])
                              + [(str(d.group), d.label) for d in dens], str(current["group"]))
             star_levels = sorted({s for d in dens for s in d.stars})
-        species = NamePicker(self.app, "sv", "species", "", lambda _v: wants.changed(),
+        species = NamePicker(self.app, "sv", "species", "", lambda _v: changed(),
                              names=[{"id": s, "name": n} for s, n in raid_search.species(event)]).control
         stars = choose([("any", "Any stars"), *((str(n), f"{n} stars") for n in star_levels)], "any")
         tera = choose([("any", "Any Tera type"), *((str(i), n) for i, n in enumerate(TERA_TYPES))], "any")
         nature = choose([("any", "Any nature"), *((str(i), n) for i, n in enumerate(NATURES))], "any")
         gender = choose([("any", "Any gender"), *((str(i), n) for i, n in enumerate(GENDERS))], "any")
         shiny = choose([("any", "Shiny or not"), ("yes", "Shiny only"), ("no", "Not shiny")], "any")
+        size_mark = choose([("any", "Eligible or not"), ("either", "Any mark"), ("mini", "Mini mark"),
+                            ("jumbo", "Jumbo mark")], "any")
+
+        def size_marks(update: bool = True) -> None:
+            """An event's band or own scale can rule a mark out: its option is greyed out, and picked, it
+            falls back to Eligible or not."""
+            try:
+                scope, narrow = reward_scope()
+                able = raid_search.size_marks(scope, stars=narrow["stars"], species_id=narrow["species_id"])
+            except ValueError:
+                able = set(raid_search.SIZE_MARKS)
+            for option in size_mark.options:
+                option.disabled = option.key != "any" and option.key not in able
+            if size_mark.value not in able:
+                size_mark.value = "any"
+            if update:
+                size_mark.update()
+        if event is not None:
+            size_marks(update=False)
         rank = choose([(key, label) for key, (label, _, _) in raid_search.OBJECTIVES.items()], "overall")
         ivs = [t.field(hint="any", mono=True, expand=True, text_align=ft.TextAlign.CENTER,
                        content_padding=ft.Padding(4, 8, 4, 8)) for _ in STATS]
@@ -282,8 +315,8 @@ class RaidSeedPicker:
             for control in (start, count, shuffle):
                 control.disabled = on
                 control.update()
-        every = Check(f"Every seed, all {ALL_SEEDS:,}", "Search every seed of one game, region, progress "
-                      "and crystal", everything)
+        every = Check(f"Every seed, all {ALL_SEEDS:,}", "Search every seed of each game, region, progress "
+                      "and crystal chosen", everything)
         first_only = Check("Stop at the first match", "Answer the first raid that matches, whatever its "
                            "score: the earliest seed of the first game, region, progress and crystal "
                            "that has one")
@@ -291,6 +324,8 @@ class RaidSeedPicker:
         results.controls = [empty_results()]
         status = t.text("Choose what the raid should be, then Search.", 12, t.MUTED)
         busy = ft.Container(PixelActivity("Searching"), visible=False)
+        # How far the search is: moving until the first seeds are counted, then the share searched.
+        bar = ft.ProgressBar(value=None, color=t.BLUE, bgcolor=t.FIELD, height=4, border_radius=2, visible=False)
         run = t.button("Search", None, "search")
         stop = t.secondary_button("Stop", None)
         stop.disabled = True
@@ -309,8 +344,8 @@ class RaidSeedPicker:
                                           on_use=self._use) for f in found] or [empty_results(True)]
             status.value = (f"{len(found)} {'raid' if len(found) == 1 else 'raids'}"
                             + (" before the search stopped." if stopped else ".") if found else "No raid matches.")
-            run.disabled, stop.disabled, busy.visible = False, True, False
-            for control in (results, status, run, stop, busy):
+            run.disabled, stop.disabled, busy.visible, bar.visible = False, True, False, False
+            for control in (results, status, run, stop, busy, bar):
                 control.update()
 
         def submit(_):
@@ -319,17 +354,15 @@ class RaidSeedPicker:
                                              event=event, group=crystal.value)
                 if not scope:
                     raise ValueError("No den of the event spawns in that game at that progress.")
-                if every.value:
-                    if len(scope) > 1:
-                        raise ValueError(f"Every seed is {ALL_SEEDS:,} seeds in one raid: choose a game, "
-                                         "region, progress and crystal.")
+                if every.value:              # offered with the helper alone, which takes every seed
                     first, amount = 0, ALL_SEEDS
                 else:
                     first = seed_of(start.value)
                     amount = int(count.value) if count.value.strip().isdigit() else 0
-                    if first is None or not 1 <= amount * len(scope) <= raid_search.MAX_WORK:
-                        raise ValueError(f"Start at an eight-digit seed and search up to "
-                                         f"{raid_search.MAX_WORK // len(scope):,} seeds in this scope.")
+                    most = raid_search.most_seeds(len(scope))
+                    if first is None or not 1 <= amount <= most:
+                        raise ValueError(f"Start at an eight-digit seed and search up to {most:,} seeds"
+                                         + (" in this scope." if most < ALL_SEEDS else "."))
                 ranges = tuple(iv_range(field.value) for field in ivs)
                 filters = dict(stars=pick(stars) and int(stars.value),
                                species_id=pick(species) and int(species.value),
@@ -337,8 +370,11 @@ class RaidSeedPicker:
                                nature=pick(nature) and int(nature.value),
                                gender=pick(gender) and int(gender.value),
                                shiny=None if pick(shiny) is None else shiny.value == "yes",
+                               size_mark=pick(size_mark),
                                ivs=None if ranges == ((0, 31),) * 6 else ranges,
                                rewards=wants.wanted())
+                if rank.value == "rewards" and not filters["rewards"]:
+                    raise ValueError("Most desired rewards ranks by the wanted rewards: open Rewards and add one.")
             except ValueError as exc:
                 status.value, status.color = str(exc), t.RED
                 status.update()
@@ -346,14 +382,16 @@ class RaidSeedPicker:
             cancel.clear()
             status.value, status.color = "Searching...", t.MUTED
             results.controls, run.disabled, stop.disabled, busy.visible = [], True, False, True
-            for control in (status, results, run, stop, busy):
+            bar.value, bar.visible = None, True
+            for control in (status, results, run, stop, busy, bar):
                 control.update()
 
             began = time.monotonic()
 
             def progress(done_count, total):
                 status.value = searching(done_count, total, time.monotonic() - began)
-                self.app.ui(lambda: self._update(status))
+                bar.value = done_count / total if total else None
+                self.app.ui(lambda: (self._update(status), self._update(bar)))
 
             def work():
                 try:
@@ -368,8 +406,8 @@ class RaidSeedPicker:
                     def failed():
                         if not closed.is_set():
                             status.value, status.color, run.disabled = message, t.RED, False
-                            stop.disabled, busy.visible = True, False
-                            for control in (status, run, stop, busy):
+                            stop.disabled, busy.visible, bar.visible = True, False, False
+                            for control in (status, run, stop, busy, bar):
                                 control.update()
                     self.app.ui(failed)
             threading.Thread(target=work, daemon=True).start()
@@ -386,13 +424,15 @@ class RaidSeedPicker:
             pair(t.labeled_control("Species", species, expand=True), t.labeled_control("Stars", stars, expand=True)),
             pair(t.labeled_control("Tera type", tera, expand=True), t.labeled_control("Nature", nature, expand=True)),
             pair(t.labeled_control("Gender", gender, expand=True), t.labeled_control("Shiny", shiny, expand=True)),
+            pair(t.labeled_control("Size mark eligibility", size_mark, expand=True), ft.Container(expand=True)),
             heading("sliders-horizontal", "IVs"),
             pair(*(t.labeled_control(label, field, expand=True) for label, field in zip(STATS, ivs))),
             t.text("Blank for any, a value, or a range such as 20-31.", 11, t.FAINT),
             wants.control,
             heading("search", "Search"),
             t.labeled_control("Rank by", rank),
-            t.text("Bulk and offense estimate how hard the boss is from its stats alone.", 11, t.FAINT),
+            t.text("Bulk and offense estimate how hard the boss is from its stats alone. Most desired "
+                   "rewards ranks by the wanted rewards, the first row first.", 11, t.FAINT),
             pair(t.labeled_control("First seed", ft.Row([start, shuffle], spacing=4,
                                                          vertical_alignment=ft.CrossAxisAlignment.CENTER),
                                    expand=True),
@@ -401,7 +441,8 @@ class RaidSeedPicker:
             first_only.control,
         ], spacing=10, scroll=ft.ScrollMode.AUTO, expand=True)
         found = ft.Column([
-            ft.Row([busy, status], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            ft.Column([ft.Row([busy, status], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER), bar],
+                      spacing=6, tight=True),
             t.fade(results)], spacing=10, expand=True)
         self.app.page.show_dialog(t.dialog(
             title=t.text("Find a Tera Raid", 17, weight=ft.FontWeight.W_600),
