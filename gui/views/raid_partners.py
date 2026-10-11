@@ -17,36 +17,12 @@ CARD_WIDTH = 150
 GAP = 8
 MOVES_HEIGHT = 31                           # two 11 px lines at the theme's 1.4 line height
 RANKS = {1: (t.AMBER, "Favoured by raiders"), 2: (t.SILVER, "Next tier for raiders")}
-REASON_SIZE = 11
-# A letter's width as a share of the font's size, above the reasons' average in Segoe UI (0.45) and
-# Arial (0.46): measured word by word in both, every reason judged to fit two lines 60 to 600 px wide
-# does.
-LETTER = 0.5
-
-
-def fits(text: str, width: float, lines: int = 2) -> bool:
-    """-> whether `text` wraps into `lines` lines `width` px wide at REASON_SIZE, word by word."""
-    room = width / (REASON_SIZE * LETTER)
-    used, line = 1, 0
-    for word in text.split():
-        line = line + 1 + len(word) if line else len(word)
-        if line > room:
-            used, line = used + 1, len(word)
-            if used > lines or line > room:
-                return False
-    return True
 
 
 def columns(width: float) -> int:
     """-> the cards to a row in `width` px: COLUMNS while each is CARD_WIDTH wide, else two; COLUMNS
     before the width is known."""
     return COLUMNS if not width or (width - GAP * (COLUMNS - 1)) / COLUMNS >= CARD_WIDTH else 2
-
-
-def reason(partner, width: float) -> str:
-    """-> why raiders want `partner` at the most length `width` px holds: its detail, its few words, or
-    briefly."""
-    return next((words for words in (partner.detail, partner.why) if fits(words, width)), partner.brief)
 
 
 class RaidPartnersPicker:
@@ -164,22 +140,19 @@ class RaidPartnersPicker:
         ], spacing=0)
         column = [title, details]
         if footer:
-            # Wanted by raiders: a star in the bottom right, gold for the favoured and silver for the
-            # next tier, after why: briefly until the card's width is known, then at the most length
-            # it holds.
-            wanted = None
+            # Wanted by raiders: why, then a star in the bottom right, gold for the favoured and silver
+            # for the next tier; the tooltip says why at more length.
+            wanted, tip = None, None
             if partner.why:
-                ink, tip = RANKS[partner.rank]
+                ink, tier = RANKS[partner.rank]
                 wanted = ft.Row([
-                    ft.Container(t.text(reason(partner, self.view.raid_reason_width), REASON_SIZE, ink,
-                                        max_lines=2, overflow=ft.TextOverflow.ELLIPSIS,
-                                        text_align=ft.TextAlign.RIGHT),
-                                 expand=True, data=partner, size_change_interval=100,
-                                 on_size_change=self._resized),
-                    t.pixel_icon("star", 12, color=ink, tooltip=tip),
+                    ft.Container(t.text(partner.why, 11, ink, max_lines=2, overflow=ft.TextOverflow.ELLIPSIS,
+                                        text_align=ft.TextAlign.RIGHT), expand=True),
+                    t.pixel_icon("star", 12, color=ink),
                 ], spacing=6, vertical_alignment=ft.CrossAxisAlignment.END)
-            column.append(ft.Container(wanted, height=MOVES_HEIGHT,
-                                       alignment=ft.Alignment.BOTTOM_RIGHT))
+                tip = f"{tier}: {partner.detail}."
+            column.append(ft.Container(wanted, height=MOVES_HEIGHT, alignment=ft.Alignment.BOTTOM_RIGHT,
+                                       tooltip=tip))
         return ft.Container(
             ft.Column(column, spacing=6), expand=True, padding=10, border_radius=12,
             bgcolor=t.SELECTED if picked else t.FIELD,
@@ -198,13 +171,6 @@ class RaidPartnersPicker:
         self.view.raid_partners_width = e.width
         if columns(e.width) != before:
             e.control.content.controls = self._rows()
-            e.control.content.update()
-
-    def _resized(self, e) -> None:
-        self.view.raid_reason_width = e.width
-        words = reason(e.control.data, e.width)
-        if e.control.content.value != words:
-            e.control.content.value = words
             e.control.content.update()
 
     def follow_host(self) -> None:

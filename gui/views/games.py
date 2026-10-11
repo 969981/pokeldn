@@ -71,10 +71,9 @@ class GamesView:
         # The Tera Raid host's Raid event card is unfolded while its event is in use (show_raid_event).
         self.raid_event_open = False
         # Its Raid NPC partners card only folds: the choice stays in force (show_raid_partners). The
-        # width its cards and its favoured partners' reasons last had lets a redraw start on the
-        # columns and the wording that fit.
+        # width its cards last had lets a redraw start on the columns that fit.
         self.raid_partners_open = False
-        self.raid_partners_width = self.raid_reason_width = 0
+        self.raid_partners_width = 0
         self.raid_partners = None              # the card shown, whose level follows Our Pokemon
         # The override of a boss a save catches once starts unchecked at every launch.
         for stored in app.settings.tool_values.values():

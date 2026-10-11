@@ -238,13 +238,14 @@ In the game's code a guest answers 0x0c with 0x0d at once, with no Ready check, 
 timer reaches 0 waits for the bootstrap (`Raid_Start_Ready`, `0.27137`): only the host starts a
 battle. A guest that holds the bootstrap without having readied ends its lobby before the timer
 (`0.27104`) and goes to the battle the same way. A retail host readies on its player's first choice
-and sends 0x0c on the second (`0.27095`), but from the first, `Raid_Start_Ready` disables its menu
-and hides the menu's first button, the one that starts, until every other member is ready: its
-player can start only once every guest is ready. At timer 0 it breaks the lobby up when no member
-is ready and starts otherwise. `Raid_Start_Go` (`0.27140`) resends 0x0c until every member has
-answered 0x0d, then sends the bootstrap, slot *k* the Pokemon of the member with code *k*; ours
-waits for every console's 0x0d too, and starts once every console is ready or at timer 0 whoever
-is ready.
+and sends 0x0c on the second (`0.27095`). `Raid_Start_Ready` turns the menu's first three items off
+(`f6277C172(false)`) on entry, on host and guest alike; on a host it turns the first, the one that
+starts, and the menu back on while every other member is ready, and off again when one is not: its
+player can start only once every guest is ready. Whether `f6277C172(false)` hides an item or greys
+it out is unresolved. At timer 0 it breaks the lobby up when no member is ready and starts
+otherwise. `Raid_Start_Go` (`0.27140`) resends 0x0c until every member has answered 0x0d, then sends
+the bootstrap, slot *k* the Pokemon of the member with code *k*; ours waits for every console's 0x0d
+too, and starts once every console is ready or at timer 0 whoever is ready.
 
 A gated message leaves 50 ms after its milestone; the Net 0x50 and the station list repeat every
 0.5 s until answered, and the raid messages every 0.5 s until acknowledged. A retail console once
@@ -297,8 +298,8 @@ The RaidPoint, offsets from its start:
 | 0x0e4 | 45 x 16 | reward rows: item, quantity, a rare-item flag, subject |
 | 0x3b4 | u8 | 0 in a retail standard point, 1 in a retail black one |
 | 0x3b8 | 7 x u32 | stars, species (DevID), form, gender, level, 0, Tera type |
-| 0x3d8 | u64 | the partner seed ([Partners](#partners)): nonzero in retail points; `raid_point` writes the one it is given, 0 by default |
-| 0x3e0 | u32 | the host's raid unlock stage, which picks the partner pool ([Partners](#partners)): 4 in every retail point seen; `raid_point` writes the stage of the raid's progress unless given one |
+| 0x3d8 | u64 | `randSeed`, the partner seed ([Partners](#partners)): nonzero in retail points; `raid_point` writes the one it is given, 0 by default |
+| 0x3e0 | u32 | `raidNpcGroupID`, which picks the partner pool ([Partners](#partners)): 4 in every retail point seen; `raid_point` writes the stage of the raid's progress unless given one |
 
 In the raid tables every six-star record's `raidTimeData` is active with `gameLimit` 450 and
 `commandLimit` 60, every one-star record's inactive with `gameLimit` 300, and the rest zero; a retail
@@ -359,31 +360,34 @@ rows cleared and one bonus row left, as written.
 ## Partners
 
 Every console fills the participant slots no lobby member holds with the same NPC trainers, drawn
-from two RaidPoint words. The u64 at 0x3d8 seeds xoroshiro128+ whole, with `0x82A2B175229D6A5B` as
-the second word. The console draws three trainers (`0.7804`), each `next_int(n)` over the n trainers
-still in the pool (masked to the bits of n − 1, redrawing values of n or more) and taken out of the
-pool, so in the full pool the bounds run 18, 17, 16. The empty slots take the draws in slot order
-(`0.4455`): one empty slot takes the first, wherever it sits.
+from two RaidPoint words the Lua calls `randSeed` (u64 at 0x3d8) and `raidNpcGroupID` (u32 at 0x3e0)
+(`0.4453`). The natives behind their getters read +0x3b8 (`0x1be5ac0`) and +0x3c0 (`0x1be5c20`) of
+the 0x3c8-byte struct that follows the RaidPoint's first 0x20 bytes. The guest's bootstrap handler
+reads both (`0.15829`); a retail host draws a new `randSeed` at each start and writes both
+(`Raid_Start_Go`, `0.27140`). The u64 seeds xoroshiro128+ whole (native `0x17ebec0`), with
+`0x82A2B175229D6A5B` as the second word. The console draws three trainers (`0.7804`), each
+`next_int(n)` over the n trainers still in the pool (masked to the bits of n − 1, redrawing values
+of n or more) and taken out of the pool, so in the full pool the bounds run 18, 17, 16. The empty
+slots take the draws in slot order (`0.4455`): one empty slot takes the first, wherever it sits.
 
-The u32 at 0x3e0 picks the pool, its trainers and their Pokemon (the table below): 0 and 1 the first
-16 trainers, 2 all 18, 3 and 4 all 18. A partner's Pokemon is built at level int(0.8 × the level of
-the Pokemon in battle slot 0, the host's), not its preset's (`0.4455`, `0.4901`), so Serebii's
-levels 16, 40 and 80 are those of Lv 20, 50 and 100 hosts. In a pokeldn raid slot 0 holds
-`--raid-pokemon`. Retail Scarlets showed Eli's Gardevoir at Lv 80 beside a Lv 100 one and at Lv 29
-beside a Lv 37 one, whatever their own Pokemon's levels (100 and 84), and the first stages' Eli's
-Kirlia and Charlotte's Staravia at Lv 80 beside a Lv 100 one, past their pool's 16 (2026-10-11). At
-5 a retail Scarlet's partners were Pikachu named after the boss and its battle crashed later, so
-`raid_point` refuses a stage past 4. The five values match the host's raid unlock stages, the game's
-progress less one (`raid_encounter.PROGRESS` from `tera`): 0 one and two stars, 1 three stars (three
-badges), 2 four stars (seven badges), 3 five stars (the credits), 4 six stars, which the seven-star
-events share. Every retail point seen came from a host with six stars unlocked. Read so, the pool of
-stage 2 (Serebii's level 40) comes with four stars, one stage after the "3 Star Raids Unlocked"
-heading Serebii gives it.
+The u32 at 0x3e0 picks the pool, the data table field `difficulty_0`*N+1* (`0.7797`), its trainers
+and their Pokemon (the table below): 0 and 1 the first 16 trainers, 2 all 18, 3 and 4 all 18. A
+partner's Pokemon is built at level int(0.8 × the level of the Pokemon in battle slot 0, the
+host's), not its preset's (`0.4455`, `0.4901`), so Serebii's levels 16, 40 and 80 are those of Lv
+20, 50 and 100 hosts. In a pokeldn raid slot 0 holds `--raid-pokemon`. Retail Scarlets showed Eli's
+Gardevoir at Lv 80 beside a Lv 100 one and at Lv 29 beside a Lv 37 one, whatever their own Pokemon's
+levels (100 and 84), and the first stages' Eli's Kirlia and Charlotte's Staravia at Lv 80 beside a
+Lv 100 one, past their pool's 16. At 5 a retail Scarlet's partners were Pikachu named after the boss
+and its battle crashed later, so `raid_point` refuses a stage past 4. The five values match the
+host's raid unlock stages, the game's progress less one (`raid_encounter.PROGRESS` from `tera`): 0
+one and two stars, 1 three stars (three badges), 2 four stars (seven badges), 3 five stars (the
+credits), 4 six stars, which the seven-star events share. Every retail point seen came from a host
+with six stars unlocked. On that reading the pool of stage 2 (Serebii's level 40) comes with four
+stars, one stage after the "3 Star Raids Unlocked" heading Serebii gives it.
 
-A retail host usually draws a new 0x3d8 for each attempt, so one den gives different partners on
-different attempts. Party records seated in the bootstrap with no lobby station (a probe since
-removed) were ignored: two partners were still drawn. The bootstrap goes out after the host's start,
-so a guest that leaves the lobby before it never holds the RaidPoint.
+One den gives different partners on different attempts. A retail console ignored party records in
+bootstrap slots no lobby station held: it still drew two partners. The bootstrap goes out after the
+host's start, so a guest that leaves the lobby before it never holds the RaidPoint.
 
 `pokeldn.sv.raid_partners` holds the table and the draw. `bin/sv_host.py` writes the stage of
 `--raid-progress`, six stars for a black crystal or a seven-star event raid, or the one
@@ -395,8 +399,7 @@ fifths of `--raid-pokemon`'s (`raid_partners.level_for`). Our player and each co
 and none with three (`raid_partners.slots`); more `--raid-partner` than that are refused before the
 radio. The host takes the seed's first draws to fill the empty slots left to right; a console that
 misses the start leaves one more empty slot, which a further draw fills. Two retail Scarlets joining
-`--raid-players 2 --raid-partner Eli` showed Eli's Gardevoir in the one empty slot, the fourth
-(2026-10-11).
+`--raid-players 2 --raid-partner Eli` showed Eli's Gardevoir in the one empty slot, the fourth.
 
 The pool, in draw-index order, from Serebii's Tera Raid Battle partners page:
 
@@ -421,8 +424,8 @@ The pool, in draw-index order, from Serebii's Tera Raid Battle partners page:
 | 16 | Dylan | | Dragonair | Haxorus |
 | 17 | Luke | | Toxicroak | Clodsire |
 
-A retail Scarlet joining `bin/sv_host.py` (two empty slots) showed, with the two words written
-over the RaidPoint (a probe since removed):
+A retail Scarlet joining `bin/sv_host.py` (two empty slots) showed, with these two words in the
+RaidPoint:
 
 | 0x3d8 | 0x3e0 | partners |
 |---|---|---|
@@ -435,32 +438,26 @@ over the RaidPoint (a probe since removed):
 
 ### Favoured partners
 
-Raiders want ten of the partners of stages 3 and 4 (Serebii's level-80 pool).
-`raid_partners.RECOMMENDED` holds them, with a rank, and the app stars their cards with why, at the
-most length the card has room for (ten to fifteen words, a few, or fewer): gold for the four raiders
-favour, silver for the next tier.
+Raiders rate ten partners of the stage 3 and 4 pool (Serebii's level 80) above the rest.
+`raid_partners.RECOMMENDED` holds them, and the app's card for each ends on why and a star: gold for
+the four raiders favour, silver for the next tier.
 
 | rank | trainer | Pokemon | why |
 |---|---|---|---|
-| gold | Eli | Gardevoir | Life Dew heals the whole team. Seven-star solo guides ask for it, often with Bellibolt. |
-| gold | Hailey | Bellibolt | Light Screen cuts the boss's special damage, and Discharge can paralyze. It doesn't set the screen every time. |
-| gold | Logan | Arboliva | Safeguard keeps status conditions, often sleep, off the team. Seed Sower's Grassy Terrain heals each turn, but it also powers a boss's Grass moves. |
-| gold | Charlotte | Staraptor | Intimidate, on every respawn, and Feather Dance cut the boss's physical Attack. |
+| gold | Eli | Gardevoir | Life Dew heals the whole team; seven-star solo guides ask for it, often with Bellibolt. |
+| gold | Hailey | Bellibolt | Light Screen, when she sets it, cuts the boss's special damage; Discharge can paralyze. |
+| gold | Logan | Arboliva | Safeguard keeps status conditions off the team; Grassy Terrain heals each turn and also powers a boss's Grass moves. |
+| gold | Charlotte | Staraptor | Intimidate on every respawn and Feather Dance cut the boss's physical Attack. |
 | silver | Austin | Arcanine | Intimidate on every respawn; Leer lowers the boss's Defense. |
 | silver | Kylie | Tauros | Intimidate on every respawn; Raging Bull breaks the boss's screens. |
 | silver | Hunter | Drifblim | Will-O-Wisp burns the boss, halving its physical damage. |
-| silver | Gianna | Umbreon | Thunder Wave paralysis can give a free turn to set up. It's down to chance. |
-| silver | Evan | Dudunsparce | Glare paralyzes at 100% accuracy, but not a boss with an Electric Tera type. |
-| silver | Samantha | Weavile | Leer lowers the boss's Defense before the shield, more reliably than Mudsdale's Rock Smash; Ice Punch can freeze. |
+| silver | Gianna | Umbreon | Thunder Wave paralysis can give a free turn, by chance. |
+| silver | Evan | Dudunsparce | Glare paralyzes at 100% accuracy, except a boss with an Electric Tera type. |
+| silver | Samantha | Weavile | Leer lowers the boss's Defense before its shield; Ice Punch can freeze. |
 
-The tier list ranks Arcanine and Tauros with Staraptor, which adds Feather Dance to the same
-Intimidate. Intimidate backfires on a Defiant or Competitive boss: an Annihilape gains Attack each
-time an Intimidate partner respawns. Toxapex, Sylveon, Heracross and Mudsdale rarely use the move
-that would help (Chilling Water, Charm, Brick Break, Rock Smash's drop). Clodsire's Toxic,
-Garganacl's Rock Tomb and the Scary Face of Corviknight and Haxorus rate least: poison and Speed
-drops do little against a boss. The sources rate only that pool, and the earlier stages' pools lack
-Life Dew, Light Screen and Safeguard. The partners' moves changed with The Teal Mask update;
-Serebii's sets above have the moves these sources describe.
+Intimidate raises the Attack of a Defiant or Competitive boss, such as Annihilape, on every respawn.
+The earlier stages' pools have no Life Dew, Light Screen or Safeguard. The partners' moves changed
+with The Teal Mask update; the sets above are Serebii's, which the sources describe.
 
 Sources, read 2026-10-11: Amiibo Doctor's Tera Raid NPC Partners Tier List (June 2025); Game8's
 seven-star event guides (Skeledirge, Goodra, Dragonite); Smogon's seven-star raid threads
@@ -758,8 +755,9 @@ the host start; its Pokemon stayed in the battle.
   `0x1527b, 7` at `+0x38` and 0x2713 at `+0x40` when the builders first read it at the join.
   Every raid hosted with it began its battle, on retail and emulated consoles.
 - End-to-end reward-screen checks for Raid Power Lv. 2 and 3 and six-star bonus rows.
-- What the RaidPoint's byte 0x3b4 holds, and whether 0x3e0 is the host's unlock stage: no retail
-  host below six stars has been captured.
+- What the RaidPoint's byte 0x3b4 holds, and whether 0x3e0 is the host's unlock stage: a retail
+  host takes it from native `0x193a560` (`0.2895`), unread, and no retail host below six stars has
+  been captured.
 - Whether a retail console's reward screen follows the Lua filter for subjects 2 to 4; subjects 1
   and 5 are measured on a retail guest, the rest on an emulated one.
 - Whether the five-star catch-once records go in the save's list as the seven-star ones do.

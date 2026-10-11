@@ -164,9 +164,9 @@ def problems(tool: Tool, values: dict) -> list[str]:
             picks = list(value.get("picks", ())) if isinstance(value, dict) else []
             consoles = raid_consoles(tool, values)
             free = raid_partners.slots(consoles)
-            if free < len(picks) <= raid_partners.HOSTED:
+            if len(picks) > free:
                 errors.append(f"With {consoles} consoles joining, the raid seats "
-                              + ("no partner." if not free else f"{free} partner."))
+                              + (f"{free} partner." if free else "no partner."))
     return errors
 
 
