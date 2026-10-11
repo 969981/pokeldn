@@ -330,8 +330,8 @@ without its number (a round, "Event · Round") over its bosses; typing filters o
 - Find a raid searches the event's crystals only, one progress per stage, with its bosses as
   species, and its Rewards section offers the items and quantities of the event's own reward tables
   ([Finding a seed](sv_raid.md#finding-a-seed); `gui/views/reward_filter.py`). Its Size mark
-  eligibility greys out a mark that no boss of the chosen crystal, stars and species can be eligible
-  for, its scale a band or its own value (`raid_search.size_marks`).
+  eligibility greys out a mark no boss of the chosen crystal, stars and species can take
+  ([Size marks](sv_raid.md#size-marks)).
 - An event with a boss a save catches once shows "Let it be caught again" (`--raid-catch-normal`),
   unchecked at each launch and for each event chosen ([Event raids](sv_raid.md#event-raids)).
 

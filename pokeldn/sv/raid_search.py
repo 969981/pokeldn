@@ -298,7 +298,7 @@ def search(start, count, scope, objective="overall", *, stars=None, shiny=None, 
     ranked = []
     if objective == "rewards":
         if not wanted:
-            raise ValueError("Most desired rewards ranks raids by the rewards wanted: want one at least.")
+            raise ValueError("Most desired rewards ranks by the wanted rewards: want at least one.")
         ranked = ranked_rewards(scope, wanted, stars=stars, species_id=species_id, tera_type=tera_type)
     if size_mark is not None and size_mark not in SIZE_MARKS:
         raise ValueError(f"no size mark {size_mark!r}")

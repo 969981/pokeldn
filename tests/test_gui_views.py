@@ -865,7 +865,8 @@ def test_the_finder_greys_out_the_size_marks_an_event_rules_out(monkeypatch):
 
 def test_the_finder_s_bar_shows_how_far_a_search_is(monkeypatch):
     """Under the status, a bar moves until the first seeds are counted, then fills with the share
-    searched, and goes once the search is done."""
+    searched, and goes once the search is done. Most desired rewards with no wanted reward is refused
+    before any search starts."""
     import flet as ft
     from gui.views import raid_seed
     from pokeldn.sv import raid_search
@@ -892,6 +893,14 @@ def test_the_finder_s_bar_shows_how_far_a_search_is(monkeypatch):
                  if isinstance(c, ft.TextField) and c.value == str(raid_search.DEFAULT_COUNT))
     count.value = "1000"
     assert not bar.visible
+    rank = next(c for c in raid_controls(shown[0].content)
+                if isinstance(c, ft.Dropdown) and c.options[0].text == "Lowest overall bulk")
+    rank.value = "rewards"
+    shown[0].actions[-1].on_click(None)
+    status = next(c for c in raid_controls(shown[0].content) if isinstance(c, ft.Text)
+                  and c.value.startswith("Most desired rewards"))
+    assert not seen and not bar.visible and status.color == raid_seed.t.RED
+    rank.value = "overall"
     shown[0].actions[-1].on_click(None)
     assert seen == [(True, None), (True, 0.25)] and not bar.visible
 

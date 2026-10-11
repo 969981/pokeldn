@@ -296,7 +296,7 @@ def test_most_desired_rewards_ranks_by_as_many_as_one_score_holds():
     totals = lambda fur: [(HERBA, 2), (SWEET, 1), (PATCH, 1), (CAP, 1), (2159, fur), (2158, 9)]
     score = lambda fur: raid_search.reward_score(totals(fur), ranked)
     assert score(10) > score(9) == score(8) > 0         # 9 is no total: 8's place, and 9 of 2158 too
-    with pytest.raises(ValueError, match="want one at least"):
+    with pytest.raises(ValueError, match="want at least one"):
         raid_search.search(0, 10, black, "rewards")
 
 

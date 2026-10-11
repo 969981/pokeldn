@@ -373,6 +373,8 @@ class RaidSeedPicker:
                                size_mark=pick(size_mark),
                                ivs=None if ranges == ((0, 31),) * 6 else ranges,
                                rewards=wants.wanted())
+                if rank.value == "rewards" and not filters["rewards"]:
+                    raise ValueError("Most desired rewards ranks by the wanted rewards: open Rewards and add one.")
             except ValueError as exc:
                 status.value, status.color = str(exc), t.RED
                 status.update()
@@ -429,7 +431,8 @@ class RaidSeedPicker:
             wants.control,
             heading("search", "Search"),
             t.labeled_control("Rank by", rank),
-            t.text("Bulk and offense estimate how hard the boss is from its stats alone.", 11, t.FAINT),
+            t.text("Bulk and offense estimate how hard the boss is from its stats alone. Most desired "
+                   "rewards ranks by the wanted rewards, the first row first.", 11, t.FAINT),
             pair(t.labeled_control("First seed", ft.Row([start, shuffle], spacing=4,
                                                          vertical_alignment=ft.CrossAxisAlignment.CENTER),
                                    expand=True),
