@@ -219,12 +219,8 @@ an illegal record is refused, and a second import banks nothing.
 
 ### Unresolved
 
-- Whether Pokemon HOME accepts a Pokemon that carries a tracker the bank made, or one moved by the
-  bank, when it is later deposited there. Nothing has been sent to HOME. Project Pokemon's
-  [Relevance of HOME tracker](https://web.archive.org/web/20260911222211/https://projectpokemon.org/home/docs/home_165/relevance-of-home-tracker-home-v200-v300-and-beyond-r154/)
-  reports that since HOME 3.1.0 a Pokemon whose tracker HOME did not issue is refused on deposit
-  with error 10015, and that a Pokemon without a valid tracker shows the wrong ball and met location
-  in a game it is moved to through HOME.
+- Whether Pokemon HOME accepts a Pokemon the bank moved. HOME 3.1.0 and later refuse a tracker HOME
+  did not issue (error 10015), and the bank's trackers are of that kind.
 - Whether HOME's own FireRed/LeafGreen import rules go beyond the eggs, held items and HM moves its
   screen names.
 - Which record field carries the origin icon HOME shows on a Pokemon imported from the Switch
