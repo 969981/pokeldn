@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pokeldn.sv import raid_encounter
 
 # The RaidPoint's u32 at 0x3e0 is the host's raid unlock stage, the game's progress less one: 0 Tera
-# Raids unlocked (one and two stars) to 4 six stars. 5 drew broken partners on a retail Scarlet and
+# Raids unlocked (one and two stars) to 4 six stars, the highest difficulty flag set [0xe2826c]. 5 drew broken partners on a retail Scarlet and
 # crashed its battle later.
 STAGES = raid_encounter.PROGRESS[1:]
 SIX_STARS = len(STAGES) - 1

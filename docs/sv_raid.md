@@ -299,7 +299,7 @@ The RaidPoint, offsets from its start:
 | 0x3b4 | u8 | 0 in a retail standard point, 1 in a retail black one |
 | 0x3b8 | 7 x u32 | stars, species (DevID), form, gender, level, 0, Tera type |
 | 0x3d8 | u64 | `randSeed`, the partner seed ([Partners](#partners)): nonzero in retail points; `raid_point` writes the one it is given, 0 by default |
-| 0x3e0 | u32 | `raidNpcGroupID`, which picks the partner pool ([Partners](#partners)): 4 in every retail point seen; `raid_point` writes the stage of the raid's progress unless given one |
+| 0x3e0 | u32 | `raidNpcGroupID`, the host's raid unlock stage, which picks the partner pool ([Partners](#partners)): 4 in every retail point seen; `raid_point` writes the stage of the raid's progress unless given one |
 
 In the raid tables every six-star record's `raidTimeData` is active with `gameLimit` 450 and
 `commandLimit` 60, every one-star record's inactive with `gameLimit` 300, and the rest zero; a retail
@@ -378,12 +378,25 @@ host's), not its preset's (`0.4455`, `0.4901`), so Serebii's levels 16, 40 and 8
 Gardevoir at Lv 80 beside a Lv 100 one and at Lv 29 beside a Lv 37 one, whatever their own Pokemon's
 levels (100 and 84), and the first stages' Eli's Kirlia and Charlotte's Staravia at Lv 80 beside a
 Lv 100 one, past their pool's 16. At 5 a retail Scarlet's partners were Pikachu named after the boss
-and its battle crashed later, so `raid_point` refuses a stage past 4. The five values match the
-host's raid unlock stages, the game's progress less one (`raid_encounter.PROGRESS` from `tera`): 0
-one and two stars, 1 three stars (three badges), 2 four stars (seven badges), 3 five stars (the
-credits), 4 six stars, which the seven-star events share. Every retail point seen came from a host
-with six stars unlocked. On that reading the pool of stage 2 (Serebii's level 40) comes with four
-stars, one stage after the "3 Star Raids Unlocked" heading Serebii gives it.
+and its battle crashed later, so `raid_point` refuses a stage past 4.
+
+A retail host writes its raid unlock stage at 0x3e0: `raidNpcGroupID` comes from native `0xe2826c`
+(Lua binding `0x193a560`, `0.2895`), which reads four save flags through the flag getter `0xeb1cf4`
+and returns the highest set, no other flag counting:
+
+| flag key | name (PKHeX) | stage |
+|---|---|---|
+| none set | | 0 |
+| `0xEC95D8EF` | `FSYS_RAID_DIFFICTLTY3_RELEASE` (`KUnlockedRaidDifficulty3`) | 1 |
+| `0xA9428DFE` | `FSYS_RAID_DIFFICTLTY4_RELEASE` (`KUnlockedRaidDifficulty4`) | 2 |
+| `0x9535F471` | `FSYS_RAID_DIFFICTLTY5_RELEASE` (`KUnlockedRaidDifficulty5`) | 3 |
+| `0x6E7F8220` | `FSYS_RAID_DIFFICTLTY6_RELEASE` (`KUnlockedRaidDifficulty6`) | 4 |
+
+Executed under unicorn with a mocked flag store, all 16 flag combinations return this mapping. The
+Tera Raid unlock flag (`0x27025EBF`) is not read, so 0 is a save with one- and two-star raids or
+none. The stage is the story progress less one (`raid_encounter.PROGRESS` from `tera`), and the
+seven-star events share stage 4. The pool of stage 2 (Serebii's level 40) comes with four stars, one
+stage after the "3 Star Raids Unlocked" heading Serebii gives it.
 
 One den gives different partners on different attempts. A retail console ignored party records in
 bootstrap slots no lobby station held: it still drew two partners. The bootstrap goes out after the
@@ -755,9 +768,7 @@ the host start; its Pokemon stayed in the battle.
   `0x1527b, 7` at `+0x38` and 0x2713 at `+0x40` when the builders first read it at the join.
   Every raid hosted with it began its battle, on retail and emulated consoles.
 - End-to-end reward-screen checks for Raid Power Lv. 2 and 3 and six-star bonus rows.
-- What the RaidPoint's byte 0x3b4 holds, and whether 0x3e0 is the host's unlock stage: a retail
-  host takes it from native `0x193a560` (`0.2895`), unread, and no retail host below six stars has
-  been captured.
+- What the RaidPoint's byte 0x3b4 holds.
 - Whether a retail console's reward screen follows the Lua filter for subjects 2 to 4; subjects 1
   and 5 are measured on a retail guest, the rest on an emulated one.
 - Whether the five-star catch-once records go in the save's list as the seven-star ones do.
