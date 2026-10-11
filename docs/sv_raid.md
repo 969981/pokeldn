@@ -108,10 +108,12 @@ constant ids`, names the stations it has not heard from (`0x6d4a60`) and repeats
 host's receiver `0x6d940c` hands a single named station to the kick job (`0x6dc878`) and resends the
 station list to every station.
 
-With two consoles over the ESP32 board, the second seated 62 s after the first, the first console
-sent no type 6 for the list naming the second over 90 s of resends, while the second acknowledged
-its list and sent the type 9 naming the first 13 s after its seat. Whether the first console's node
-list held the second is unmeasured.
+After a console's join a raid host sends packet id 0, or the seated console drops what follows a
+higher id
+([docs/pia.md](pia.md#version-11-what-a-receiver-drops-scarlet-400)): a station list resent under
+packet id 1 after a packet with id 87 left the first console of a two-console lobby on its old list
+(retail and emulated), and the second showed "Communicating..." until it reported the first silent.
+Sent the later lists under packet id 0, two emulated consoles listed each other and fought one raid.
 
 A random player id of the form `10 00` and fourteen random bytes drew no type 6 from a retail
 console; the anonymous id `00000000000000010000000000000000` (`pia_connect.DEFAULT_PLAYER_ID`) seated
@@ -315,7 +317,7 @@ subject 4 against a Steel Tera boss and listed it against a Ghost Tera boss; sen
 rows there, it listed the first only.
 
 Scarlet 4.0.0's Lua reward filter, `C07C34FC3B976E5A7.F316609DEA110601D`
-(source lines 78707 to 78765), keeps subject 0 for every player, 1 for the host, 2 for a guest
+(lines 78707 to 78765 as its bytecode records them), keeps subject 0 for every player, 1 for the host, 2 for a guest
 and 3 when its once-reward eligibility argument is true. It keeps the first N subject-4 rows,
 where N is the highest level of an active Raid Power matching the boss's Tera type. Meal kind 5
 is Raid Power; type 18 matches every Tera type. Subject 5 requires item 2481, the Glimmering Charm,
@@ -329,7 +331,7 @@ rare-item flag, writes ordinary lottery rows under subject 0, then appends three
 lottery draws under subject 4. It appends the difficulty's Tera Shard boost under subject 5
 when its quantity is positive. Each receiver applies its own meal and charm eligibility.
 
-The timer initializer `C2D7F486425487755.F0C64BA9B6853E61A` (source lines 79486 to 79513)
+The timer initializer `C2D7F486425487755.F0C64BA9B6853E61A` (lines 79486 to 79513 as its bytecode records them)
 uses supplied time fields when `raidTimeData.active` is true. With it false, a group battle uses
 game limit 300, command limit 60, client limit 0, revive time 30, AI interval 17 and AI interval
 randomness 6. Executing its unchanged Lua function with the six-star table data yielded

@@ -411,6 +411,7 @@ class RaidGuestConsole:
         self.var = CONSOLE_VAR + n - 1
         self.later, self.queue, self.seen, self.seqs = [], [], [], {}
         self.done = set()
+        self.packet_ids = {}                # destination 1 or not -> the last packet id taken
         self.left = False
         self.pokemon = party(species)
         self.later_join = clock.now + join_at - 0.2      # on the network before its join
@@ -440,6 +441,15 @@ class RaidGuestConsole:
                                                packet)
         if dst not in (self.ip, BROADCAST) or (ids and self.var not in ids):
             return                              # another console's
+        if header.packet_id and self.done & {"seated"}:
+            # Per sender, one id sequence for destination 1 and one for the rest; a non-zero id
+            # must be newer than the last, or the packet is dropped (`0x6e9854`, `0x6f3ff4`).
+            key = header.dst_var == 1
+            last = self.packet_ids.get(key)
+            if last is not None and ((header.packet_id - last) & 0xFFFF) - (
+                    0x10000 if (header.packet_id - last) & 0x8000 else 0) < 1:
+                return
+            self.packet_ids[key] = header.packet_id
         for msg in pia6.parse_messages(plain):
             p, row = bytes(msg.payload), dict(t=self.clock.now, dst=dst, protocol=msg.protocol,
                                               port=msg.port, flags=msg.message_flags)
@@ -463,6 +473,8 @@ class RaidGuestConsole:
             self.at(0.01, pia_connect.build_net_response(int.from_bytes(p[4:8], "big")), 0x2C, 0, 0x11)
         if protocol == 0x2C and p[1] == 0x50:
             self.at(0.02, bytes([1, 0x51, 0, 0]) + p[4:8], 0x2C, 0, 0x11)
+        if protocol == 0x98 and p[0] == 2:
+            self.done.add("seated")             # a station now stands at the host's address
         if protocol == 0x98 and p[0] == 5:
             update = pia_connect.parse_session_update_v11(p, route_bytes=0)
             self.at(0.03, pia_connect.build_session_update_ack_v11(self.cid, update["sequence_id"]), 0x98)
@@ -652,6 +664,9 @@ def test_three_consoles_fight_one_raid(monkeypatch, tmp_path):
         lists = [pia_connect.parse_session_update_v11(r["data"], route_bytes=0) for r in console.seen
                  if r["protocol"] == 0x98 and r["data"][0] == 5]
         assert [st["station_index"] for st in lists[-1]["stations"]] == [0, 1, 2, 3]
+        # A seated console takes every later list, not only the battle's.
+        taken = sorted({upd["sequence_id"] for upd in lists})
+        assert taken == list(range(taken[0], taken[-1] + 1))
         tables = [r["data"] for r in console.seen if r["protocol"] == 0x2C and r["data"][1] == 0x11
                   and r["data"][29] == 0]
         # Each new seat reaches the seated consoles' Net tables too, under a new sequence.

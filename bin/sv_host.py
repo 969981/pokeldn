@@ -604,6 +604,7 @@ def main(argv=None):
     raid_seating = set()        # src_ip whose station list is not yet acknowledged
     list_waiting = {}           # src_ip -> the station-list sequence it has yet to acknowledge
     list_seq = [args.update_seq]
+    listed = set()              # src_ip already sent a station list on this seat
     finished_ips = set()
     battle_seq = [None]         # the station list's sequence at the battle
     net_request_seq = {}        # src_ip -> the one Net 0x11 sequence a raid host repeats
@@ -648,8 +649,11 @@ def main(argv=None):
             st["stations"] = stations
             upd = pia_connect.build_session_update_v11(st["host_const"], st["host_var"], stations,
                                                        sequence_id=sequence)
+            # A seated station drops a repeated non-zero packet id (`0x6f3ff4`); 0 is never checked.
+            pid = 0 if ip in listed else args.session_packet_id
+            listed.add(ip)
             pkt = build_reply(keys, transport.our_ip, upd, st["console_var"], os.urandom(8),
-                              flags=session_flags, packet_id=args.session_packet_id, mesh=raiding)
+                              flags=session_flags, packet_id=pid, mesh=raiding)
             pending_update[ip] = (time.time() + delay, pkt)
             if raiding:
                 list_waiting[ip] = sequence
@@ -778,8 +782,10 @@ def main(argv=None):
                                       streams.open_payload(4 + n), index=n)
         msgs += pia6.build_message(opening, PROTO_STREAM_BROADCAST_RELIABLE, port=4 + n,
                                    message_flags=0)
+        # Packet id 0 is never checked; any other must exceed the last from us, or a station drops
+        # the packet, the station list's resends included (`0x6e9854`, docs/sv_raid.md).
         pkt = pia6.build_packet(keys.session_key, keys.network_id, transport.our_ip, msgs,
-                                dst_var=MESH_DESTINATION, src_var=PIA_HOST_VAR, packet_id=87,
+                                dst_var=MESH_DESTINATION, src_var=PIA_HOST_VAR, packet_id=0,
                                 nonce8=os.urandom(8), footer_ids=(station_ids[ip]["console_var"],))
         transport.send(pkt, dst(ip))
         host_seq[(ip, PROTO_STREAM_BROADCAST_RELIABLE, 4 + n)] = 2
@@ -1192,6 +1198,7 @@ def main(argv=None):
                                 raid_group.leave(raid_hosts[src_ip].index)
                             raid_hosts.pop(src_ip, None)
                             list_waiting.pop(src_ip, None)
+                            listed.discard(src_ip)
                             raid_seating.discard(src_ip)
                             net_request_seq.pop(src_ip, None)
                             # A console rejoining after a failed opening restarts from nothing.
