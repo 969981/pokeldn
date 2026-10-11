@@ -44,12 +44,15 @@ class BankView:
         self.heading = t.text("", 12, t.MUTED)
         self.detail = ft.Column(spacing=24, scroll=ft.ScrollMode.AUTO, expand=True)
         self.note = t.text("", 12, t.MUTED)
+        self.scan_button = t.secondary_button(
+            "Scan and import", lambda e: FolderImportDialog(self).open(), "search")
         self.control = ft.Row([
             t.panel(ft.Column([
                 t.panel_header("Bank",
                                t.icon_button("folder", lambda e: open_folder(str(self._folder())),
                                              "Open the bank folder"),
                                t.icon_button("refresh", lambda e: self.refresh(), "Refresh")),
+                ft.Container(self.scan_button, padding=ft.Padding(8, 4, 8, 8)),
                 t.fade(self.boxes),
             ], spacing=0, expand=True), width=t.SIDEBAR_WIDTH),
             t.fade(ft.ListView([ft.Container(self.heading, padding=ft.Padding(4, 14, 4, 0)), self.grid],
@@ -323,6 +326,84 @@ class BankView:
             self.note.update()
         except RuntimeError:
             pass
+
+
+class FolderImportDialog:
+    """Scan the Import folder off the UI thread and report every source that was not imported."""
+
+    def __init__(self, panel: BankView):
+        self.panel, self.app = panel, panel.app
+        self.body = ft.Column([
+            t.text("Pokémon files and complete game saves are read with PKHeX. Source files are not changed.",
+                   12, t.MUTED),
+            t.badge("Waiting to scan...", t.BLUE, "refresh"),
+        ], spacing=10, scroll=ft.ScrollMode.AUTO, width=620, height=360)
+        self.progress = ft.ProgressBar(value=0, color=t.BLUE, bgcolor=t.BORDER, height=4)
+        self.status = t.text("", 12, t.MUTED, expand=True)
+        self.close = t.button("Cancel", lambda e: self.app.page.pop_dialog(), filled=False, disabled=True)
+
+    def open(self) -> None:
+        folder = bank.inbox()
+        folder.mkdir(parents=True, exist_ok=True)
+        self.app.page.show_dialog(t.dialog(
+            title=t.text("Scan and import", 18),
+            content=ft.Column([self.progress, self.body], spacing=12, tight=True),
+            actions=[t.secondary_button("Open Import folder", lambda e: open_folder(str(folder)), "folder"),
+                     self.status, self.close]))
+        threading.Thread(target=self._scan, daemon=True).start()
+
+    def _scan(self) -> None:
+        trainers = {key: self.app.settings.trainer(key) for key in NAMES}
+
+        def report(done, total):
+            self.app.ui(lambda: self._show_progress(done, total))
+
+        try:
+            result, error = bank.scan_import_folder(trainers, progress=report), ""
+        except Exception as exc:
+            result, error = None, str(exc)
+        self.app.ui(lambda: self._finished(result, error))
+
+    def _show_progress(self, done: int, total: int) -> None:
+        self.progress.value = done / total if total else 1
+        self.status.value = f"Checking {done} of {total}..."
+        self.progress.update()
+        self.status.update()
+
+    def _finished(self, result: dict | None, error: str) -> None:
+        self.progress.value = 1
+        self.close.disabled = False
+        self.close.content = "Close"
+        if error or result is None:
+            self.body.controls = [t.text("The Import folder could not be scanned.", 15, t.RED),
+                                  t.text(error, 12, t.MUTED)]
+            self.status.value = "Import failed"
+        else:
+            self.body.controls = [
+                t.text(f"{result['found']} supported import sources found", 18,
+                       weight=ft.FontWeight.W_600),
+                t.badge(f"{result['imported']} successfully imported", t.GREEN, "check"),
+                t.badge(f"{result['duplicates']} already in the Bank", t.MUTED, "copy"),
+                t.badge(f"{result['skipped']} invalid or incompatible", t.AMBER, "warning-diamond"),
+            ]
+            if result["cleaned"]:
+                self.body.controls.append(t.badge(
+                    f"{result['cleaned']} made transfer-safe", t.BLUE, "check"))
+            if result["ignored"]:
+                self.body.controls.append(t.text(
+                    f"{result['ignored']} unrecognized files ignored.", 12, t.MUTED))
+            if result["failed"]:
+                self.body.controls.append(t.badge(f"{result['failed']} failed", t.RED, "close"))
+            for issue in result["issues"][:8]:
+                where = f" - {issue['location']}" if issue.get("location") else ""
+                self.body.controls.append(t.text(f"{issue['file']}{where}: {issue['reason']}", 11, t.MUTED,
+                                                 max_lines=2, overflow=ft.TextOverflow.ELLIPSIS))
+            self.status.value = "Import complete"
+            self.panel.refresh()
+        self.body.update()
+        self.progress.update()
+        self.status.update()
+        self.close.update()
 
 
 NONE = "-"

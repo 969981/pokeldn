@@ -1,5 +1,6 @@
 """The bank keeps what a trade brought in and sends it to another game the way HOME moves it."""
 import base64
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -18,6 +19,7 @@ TOOLS = {tool.key: tool for game in GAMES for tool in game.tools}
 @pytest.fixture
 def vault(tmp_path, monkeypatch):
     monkeypatch.setattr(bank, "BANK", tmp_path / "Bank")
+    monkeypatch.setattr(bank, "IMPORT", tmp_path / "Import")
     return tmp_path
 
 
@@ -136,3 +138,75 @@ def test_a_completed_trade_takes_the_pokemon_out_of_the_bank_and_its_queue(vault
     assert bank.find(entry.id) is None
     panel._exited(0)
     assert values["--offer-file"] == [{"file": "built.pk8", "species": 1}]
+
+
+def imported(data: bytes, **values) -> dict:
+    answer = {
+        "data": base64.b64encode(data).decode(), "game": "sv", "source_format": "PK6",
+        "species": "Absol", "species_id": 359, "form": "", "level": 35, "shiny": False,
+        "nickname": "Absol", "nature": "Jolly", "ability": "Pressure", "ball": "Poke Ball",
+        "held_item": "", "moves": ["Bite"], "legal": True, "report": "Legal!",
+    }
+    answer.update(values)
+    return answer
+
+
+def test_scan_imports_an_extensionless_save_and_tracks_each_occupied_slot(vault):
+    source = vault / "Import" / "main"
+    source.parent.mkdir()
+    source.write_bytes(b"s" * (40 * 1024))
+    first = imported(b"same record", location="Party slot 1", container="party", box=-1, slot=0,
+                     source_legal=True, converted=True, cleaned=True, cleanup=["Removed held item: Berry"])
+    second = imported(b"same record", location="Box 2, slot 7", container="box", box=1, slot=6,
+                      source_legal=True, converted=True, cleaned=False, cleanup=[])
+
+    class Service:
+        def import_save(self, data, file_name, trainers):
+            assert data == source.read_bytes() and file_name == "main" and trainers == {"sv": {"ot": "RED"}}
+            return {"name": "MAY", "version": "Alpha Sapphire", "format": "SAV6AO",
+                    "pokemon": [first, second]}
+
+    result = bank.scan_import_folder({"sv": {"ot": "RED"}}, service=Service())
+    assert result == {"found": 1, "imported": 2, "duplicates": 0, "skipped": 0, "failed": 0,
+                      "cleaned": 1, "ignored": 0, "issues": []}
+    assert len(bank.entries()) == 2       # equal bytes in two save slots are two possessions
+    metadata = [json.loads(Path(entry.path).with_suffix(".json").read_text(encoding="utf-8"))
+                for entry in bank.entries()]
+    assert {meta["source_slot"] for meta in metadata} == {"party:-1:0", "box:1:6"}
+    assert {meta["save_format"] for meta in metadata} == {"SAV6AO"}
+    assert source.read_bytes() == b"s" * (40 * 1024)
+
+    repeated = bank.scan_import_folder({"sv": {"ot": "RED"}}, service=Service())
+    assert repeated["imported"] == 0 and repeated["duplicates"] == 2 and len(bank.entries()) == 2
+
+
+def test_scan_imports_entity_files_and_reports_bad_sources_without_stopping(vault):
+    inbox = vault / "Import"
+    inbox.mkdir()
+    (inbox / "good.pk6").write_bytes(b"good")
+    (inbox / "bad.pk7").write_bytes(b"bad")
+    (inbox / "notes.txt").write_text("ignored", encoding="utf-8")
+
+    class Service:
+        def import_bytes(self, data, extension, trainers):
+            if data == b"bad":
+                raise pokemon.BuilderError("invalid checksum")
+            return imported(b"bank record", cleaned=False, cleanup=[])
+
+    result = bank.scan_import_folder({}, service=Service())
+    assert result["found"] == 2 and result["imported"] == 1 and result["skipped"] == 1
+    assert result["ignored"] == 1 and result["issues"] == [{"file": "bad.pk7", "reason": "invalid checksum"}]
+
+
+def test_an_unrecognized_save_candidate_is_ignored(vault):
+    source = vault / "Import" / "unrelated.bin"
+    source.parent.mkdir()
+    source.write_bytes(b"?" * (40 * 1024))
+
+    class Service:
+        def import_save(self, data, file_name, trainers):
+            raise pokemon.BuilderError("PKHeX does not recognize this as a supported game save: invalid size")
+
+    result = bank.scan_import_folder({}, service=Service())
+    assert result == {"found": 0, "imported": 0, "duplicates": 0, "skipped": 0, "failed": 0,
+                      "cleaned": 0, "ignored": 1, "issues": []}

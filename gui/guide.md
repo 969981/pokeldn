@@ -43,6 +43,15 @@ and onto Add a trade queues one trade per file. A gift file dropped on the Gift 
 
 The Pokemon the console sends you are saved in `Documents/pokeldn/Received`.
 
+## Import into the Bank
+
+Put individual Pokemon files or a complete main-series save in `Documents/pokeldn/Import`, then open
+Bank and press Scan and import. Nintendo 3DS saves named `main` work without an extension. PokéLDN reads
+every occupied party and PC slot that PKHeX recognizes, removes held items and Gen 3 HM moves from the
+Bank copy where needed for transfer, and leaves the source files unchanged. A repeat scan skips the same
+file or save slot. Records that remain invalid or incompatible are reported instead of being silently
+replaced.
+
 ## Free up storage
 
 Settings, Storage shows how much space can be freed. Press Clear local files, then Clear files to

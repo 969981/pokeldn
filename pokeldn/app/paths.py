@@ -35,6 +35,8 @@ POKEMON = DATA / "pokemon"
 LOGS = DATA / "logs"
 _DOCUMENTS = (Path.home() / "Documents" if (Path.home() / "Documents").is_dir() else Path.home()) / "pokeldn"
 RECEIVED = _DOCUMENTS / "Received"
+# Pokemon files and game saves scanned into the Bank; an isolated POKELDN_DATA keeps its own inbox.
+IMPORT = DATA / "Import" if os.environ.get("POKELDN_DATA") else _DOCUMENTS / "Import"
 # FireRed/LeafGreen saves (pokeldn.app.saves); an isolated POKELDN_DATA keeps its own.
 SAVES = DATA / "Saves" if os.environ.get("POKELDN_DATA") else _DOCUMENTS / "Saves"
 # Pokemon kept between games (pokeldn.app.bank); an isolated POKELDN_DATA keeps its own.

@@ -131,9 +131,23 @@ game's own format (`.pk3`, `.pb7`, `.pk8`, `.pb8`, `.pa8`, `.pk9`, `.pa9`) with 
 Clear local files never touches the folder; with `POKELDN_DATA` set, the bank is `Bank` inside that
 folder instead.
 
+**Scan and import** recursively reads `Documents/pokeldn/Import`. It accepts PKHeX's standard
+individual Pokemon formats (`.pk1` through `.pk9`, `.sk2`, `.ck3`, `.xk3`, `.bk4`, `.rk4`, `.pb7`,
+`.pb8`, `.pa8` and `.pa9`) and complete main-series saves that PKHeX recognizes. Save files may be
+extensionless, as Nintendo 3DS `main` files are. Every occupied party and PC slot is considered.
+
+Native Bank formats keep their generation. Other records are moved to the newest compatible game the
+Bank supports. The imported copy loses its held item; a Gen 3 copy also loses HM moves that would block
+HOME transfer, and PKHeX may adjust moves for the destination game. PKHeX must find the resulting record
+legal: records that remain invalid, corrupt, incompatible or unsupported are reported and never replaced
+with newly fabricated encounters. Source files are never changed. Source SHA-256 values and save slot locations make
+an unchanged source safe to scan again; equal records in two occupied save slots remain two possessions.
+The Bank `.json` records the source file, save and slot, original format, original legality and each cleanup.
+
 | step | what happens |
 |---|---|
 | a trade completes | the session panel reads each received file with PKHeX and banks a copy; the Received file stays; bytes already in the bank are not banked twice |
+| Scan and import completes | supported files and occupied save slots are checked and deposited; duplicates, cleanup and failures are reported |
 | a Pokemon is banked | its `.json` keeps the species, the summary, PKHeX's verdict, the source file, a SHA-256 of the bytes and a random 63-bit HOME tracker |
 | the page lists the destinations | the helper's `destinations` command tries a move to all seven games and reports each refusal |
 | a destination's trade tool is chosen | the helper's `move` command converts the record, the result joins that tool's offer queue with `"bank": id`, and the app opens the tool |
