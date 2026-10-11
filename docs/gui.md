@@ -20,6 +20,18 @@ a `.pokegift` or, by its extension, a `.wc3` (FireRed/LeafGreen) or `.wc8` (Swor
 [Mystery Gift files](gifts.md#desktop-app) describes the forms, cartridge variants and native-format
 conversion.
 
+## First launch
+
+- macOS: the app is unsigned. Open it once and close the warning, then open System Settings →
+  Privacy & Security → Security → Open Anyway next to pokeldn. Confirm with your password.
+  Later launches open normally.
+- Windows: extract the zip and run `pokeldn.exe` inside the `pokeldn` folder. Keep `_internal`
+  beside it. If SmartScreen blocks the app, choose More info → Run anyway.
+  See [Windows USB drivers](#windows-usb-drivers) if the board has no COM port.
+- Linux: install GTK 3 and libsecret if your distribution does not include them. Serial access
+  needs `sudo usermod -aG dialout $USER` (`uucp` on Arch); log out and back in after changing groups.
+  See [Linux serial ports](#linux-serial-ports) for missing ports and brltty conflicts.
+
 ## Your trainer
 
 Settings, Your trainer is the original trainer of every Pokemon the app builds: a name, a gender, a
