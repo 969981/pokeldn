@@ -28,10 +28,11 @@ An ESP32-S3, C3 or C6 board with two USB ports talks to the app only through the
 through the other one (COM or UART) works, but the board then never answers; the Board page says so.
 With several boards plugged in, Use this board picks the one sessions use.
 
-More options, under the species, sets the nature, ability, gender, held item, ball, IVs and EVs (AVs in
-Let's Go, effort levels in Legends Arceus). Empty fields stay random. The lists hold only what the
-species can legally have in that game, and Build refuses a combination PKHeX finds illegal, with the
-reason.
+More options, under the species, sets the nature, ability, gender, held item, ball, friendship, IVs and
+EVs (AVs in Let's Go, effort levels in Legends Arceus). Empty fields stay random. The lists hold only
+what the species can legally have in that game, and Build refuses a combination PKHeX finds illegal,
+with the reason. A traded Pokemon keeps its friendship only when Your trainer, in Settings, is the
+console's player; FireRed and LeafGreen set it to 70 on every trade.
 
 Add a trade, below the Pokemon, queues up to six for one session; each completed trade offers the
 next. It shows on every trade tool. Each trade's received Pokemon gets its own file.
