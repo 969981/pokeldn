@@ -96,7 +96,8 @@ def main(page: ft.Page) -> None:
     def item(entry) -> ft.Control:
         key, label, icon = entry
         active = key == current["key"]
-        color = t.GREEN if key == "update" else t.RED if active else t.MUTED
+        fresh = key == "update" or (key == "plugins" and bool(app.plugin_updates))
+        color = t.RED if active else t.GREEN if fresh else t.MUTED
         return ft.Semantics(selected=active, button=True, label=label, exclude_semantics=True,
                             on_tap=lambda e, k=key: navigate(k), content=ft.Container(ft.Column([
             t.pixel_icon(icon, size=24, color=color),
@@ -104,7 +105,8 @@ def main(page: ft.Page) -> None:
         ], spacing=2, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
             width=56, padding=ft.Padding(0, 8, 0, 7), border_radius=12,
             bgcolor=ft.Colors.with_opacity(0.12, t.RED) if active else None,
-            on_click=lambda e, k=key: navigate(k), tooltip=label))
+            on_click=lambda e, k=key: navigate(k),
+            tooltip="Plugin updates" if key == "plugins" and app.plugin_updates else label))
 
     def render_rail() -> None:
         rail.controls = [item(p) for p in PAGES]
@@ -153,10 +155,12 @@ def main(page: ft.Page) -> None:
         render_rail()
         page.update()
     app.update_listeners.append(updated)
+    app.plugin_update_listeners.append(updated)
     if getattr(sys, "frozen", False):
         threading.Thread(target=prune_viewers, daemon=True).start()
     if app.settings.check_updates:
         app.check_update()
+        app.check_plugin_updates()
     from gui.views.gts import resume
     resume(app)      # a listing or an offer left open is answered while the app runs
 

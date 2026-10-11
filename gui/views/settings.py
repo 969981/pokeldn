@@ -156,8 +156,8 @@ class SettingsView:
             *(advanced if self.show_advanced else []),
             t.card("Updates", ft.Row([t.button("Check now", self._check_update, "refresh", filled=False),
                                       self.update_state], spacing=10),
-                   "Asks GitHub for a newer pokeldn when the app starts. Nothing about you or your games is "
-                   "sent.",
+                   "Asks GitHub for a newer pokeldn when the app starts, and each installed plugin's own "
+                   "address for a newer version of it. Nothing about you or your games is sent.",
                    trailing=t.switch(s.check_updates, lambda e: self.save("check_updates", e.control.value))),
             t.card(f"About pokeldn {__version__}", ft.Row([link(label, url) for label, url in LINKS], spacing=4),
                    "pokeldn is AGPLv3. Pokemon are checked with PKHeX.Core (GPLv3)."),

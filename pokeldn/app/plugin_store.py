@@ -5,6 +5,8 @@ module and files (docs/plugins.md, Packages). Nothing in a package runs before i
 turned on.
 """
 import ast
+import base64
+import hashlib
 import json
 import os
 import re
@@ -23,7 +25,9 @@ MAX_FILES = 2000
 MAX_BYTES = 64 << 20
 ID = re.compile(r"[a-z0-9][a-z0-9._-]{0,63}")
 CONSENT = ".installed.json"     # written when the user accepted the risks for this plugin
-SKIP = ("__pycache__", ".DS_Store", CONSENT)
+SIGNATURE = "plugin.sig"         # the author's key and signature over every other file
+SKIP = ("__pycache__", ".DS_Store", CONSENT, SIGNATURE)
+SIGNED = b"pokeldn plugin signature 1\n"
 
 
 class PackageError(Exception):
@@ -46,6 +50,8 @@ class Package:
     prefix: str = ""                 # the top folder the files sit in, or ""
     members: list = field(default_factory=list)
     findings: list = field(default_factory=list)   # what its code does (scan)
+    key: str = ""                    # the author's public key (base64), when signed
+    updates: str = ""                # where its newer versions are published
 
 
 def _version(text: str) -> tuple:
@@ -98,13 +104,16 @@ def read(path: str) -> Package:
         module = str(meta.get("module", "plugin"))
         if f"{prefix}{module}.py" not in names:
             raise PackageError(f"The package has no {module}.py next to plugin.toml.")
-        findings = scan({n: archive.read(n) for n in names})
+        contents = {n: archive.read(n) for n in names}
+        findings = scan(contents)
+        key = verify(plugin_id, str(meta.get("version", "")),
+                     {n[len(prefix):]: data for n, data in contents.items()})
         icon_name = f"{prefix}{meta.get('icon', 'icon.png')}"
         icon = archive.read(icon_name) if icon_name in names else b""
         return Package(plugin_id, str(meta.get("name", plugin_id)), str(meta.get("version", "")), api,
                        str(meta.get("author", "")), str(meta.get("description", "")),
                        str(meta.get("homepage", "")), len(infos), sum(i.file_size for i in infos), icon,
-                       os.path.abspath(path), prefix, names, findings)
+                       os.path.abspath(path), prefix, names, findings, key, str(meta.get("updates", "")))
 
 
 NETWORK = {"socket", "ssl", "urllib", "http", "requests", "httpx", "aiohttp", "websockets", "websocket", "ftplib",
@@ -113,6 +122,91 @@ PROGRAMS = {"system", "popen", "startfile", "execv", "execve", "execl", "execlp"
             "posix_spawn", "posix_spawnp"}
 DELETES = {"remove", "unlink", "rmdir", "rmtree", "removedirs", "truncate"}
 COMPILED = (".so", ".dylib", ".dll", ".pyd", ".exe", ".bin", ".jar")
+
+
+def _manifest(plugin_id: str, version: str, files: dict) -> bytes:
+    """What a signature covers: the plugin's id, version and every installed file's SHA-256."""
+    lines = sorted(f"{hashlib.sha256(data).hexdigest()}  {name}" for name, data in files.items()
+                   if name and not any(part in SKIP for part in PurePosixPath(name).parts))
+    return SIGNED + f"{plugin_id}\n{version}\n".encode() + "\n".join(lines).encode()
+
+
+def verify(plugin_id: str, version: str, files: dict) -> str:
+    """The author's key (base64) when `files` (relative name -> bytes) carry a valid signature, ""
+    when unsigned; a PackageError when the signature does not match the files."""
+    if SIGNATURE not in files:
+        return ""
+    from Crypto.Signature import eddsa
+    try:
+        signed = json.loads(files[SIGNATURE])
+        raw = base64.b64decode(signed["key"], validate=True)
+        key = eddsa.import_public_key(raw)
+        eddsa.new(key, "rfc8032").verify(_manifest(plugin_id, version, files),
+                                         base64.b64decode(signed["signature"], validate=True))
+    except (ValueError, KeyError, TypeError):
+        raise PackageError("This plugin was changed after its author signed it, or its signature is damaged. "
+                           "Get it again from its author.") from None
+    return base64.b64encode(raw).decode()
+
+
+def fingerprint(key: str) -> str:
+    """A short name for an author's key, to compare with the one the author publishes."""
+    text = base64.b32encode(hashlib.sha256(base64.b64decode(key)).digest()).decode()[:16]
+    return "-".join(text[i:i + 4] for i in range(0, 16, 4))
+
+
+def signing_key(path: str, create: bool = False):
+    """The author's private key in `path` (PEM), made there first with `create`."""
+    from Crypto.PublicKey import ECC
+    if create and not os.path.exists(path):
+        key = ECC.generate(curve="ed25519")
+        os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+        with open(path, "x", encoding="utf-8") as out:
+            out.write(key.export_key(format="PEM"))
+        if os.name != "nt":
+            os.chmod(path, 0o600)
+        return key
+    with open(path, encoding="utf-8") as source:
+        return ECC.import_key(source.read())
+
+
+def _sign(key, plugin_id: str, version: str, files: dict) -> bytes:
+    from Crypto.Signature import eddsa
+    raw = key.public_key().export_key(format="raw")
+    signature = eddsa.new(key, "rfc8032").sign(_manifest(plugin_id, version, files))
+    return json.dumps({"key": base64.b64encode(raw).decode(),
+                       "signature": base64.b64encode(signature).decode()}).encode()
+
+
+def _keys_file() -> Path:
+    return plugins.folder() / ".keys.json"
+
+
+def known_key(plugin_id: str) -> str:
+    """The author's key the app remembers for this plugin since its first signed install."""
+    try:
+        keys = json.loads(_keys_file().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return ""
+    return str(keys.get(plugin_id, "")) if isinstance(keys, dict) else ""
+
+
+def _remember(plugin_id: str, key: str) -> None:
+    try:
+        keys = json.loads(_keys_file().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        keys = {}
+    keys[plugin_id] = key
+    _keys_file().write_text(json.dumps(keys, indent=1), encoding="utf-8")
+
+
+def trust(package: Package) -> str:
+    """new (signed, first seen), same (the author of the copy seen before), changed (another key),
+    dropped (unsigned where an earlier copy was signed) or unsigned."""
+    known = known_key(package.id)
+    if package.key:
+        return "new" if not known else "same" if known == package.key else "changed"
+    return "dropped" if known else "unsigned"
 
 
 def scan(files: dict) -> list[str]:
@@ -158,10 +252,14 @@ def scan(files: dict) -> list[str]:
     return list(found)
 
 
-def scan_folder(folder: Path) -> list[str]:
-    files = {str(p.relative_to(folder)): p.read_bytes() for p in folder.rglob("*")
-             if p.is_file() and not any(part in SKIP for part in p.relative_to(folder).parts)}
-    return scan(files)
+def describe(plugin: plugins.Plugin) -> Package:
+    """A plugin copied into the plugins folder by hand, read as a package would be."""
+    files = {p.relative_to(plugin.folder).as_posix(): p.read_bytes() for p in plugin.folder.rglob("*")
+             if p.is_file() and not any(part in ("__pycache__", ".DS_Store", CONSENT)
+                                         for part in p.relative_to(plugin.folder).parts)}
+    return Package(plugin.id, plugin.name, plugin.version, plugin.api, plugin.author, plugin.description,
+                   plugin.homepage, len(files), sum(map(len, files.values())), findings=scan(files),
+                   key=verify(plugin.id, plugin.version, files), updates=plugin.updates)
 
 
 def installed(plugin_id: str) -> plugins.Plugin | None:
@@ -174,8 +272,11 @@ def consented(plugin: plugins.Plugin) -> bool:
     return plugin.folder is not None and (plugin.folder / CONSENT).is_file()
 
 
-def accept(plugin: plugins.Plugin) -> None:
-    """Records the user's acceptance for a plugin that came in by hand, not through install."""
+def accept(plugin: plugins.Plugin, key: str = "") -> None:
+    """Records the user's acceptance for a plugin that came in by hand, not through install, and the
+    key that signed it."""
+    if key:
+        _remember(plugin.id, key)
     (plugin.folder / CONSENT).write_text(json.dumps({"accepted": time.strftime("%Y-%m-%d %H:%M"),
                                                      "source": "folder"}), encoding="utf-8")
 
@@ -208,6 +309,8 @@ def install(package: Package) -> Path:
             os.replace(target, old)
         os.replace(staging, target)
         shutil.rmtree(old, ignore_errors=True)
+        if package.key:
+            _remember(package.id, package.key)
     finally:
         shutil.rmtree(staging, ignore_errors=True)
     return target
@@ -231,14 +334,18 @@ def kept_data(plugin_id: str) -> int:
     return sum(p.stat().st_size for p in folder.rglob("*") if p.is_file()) if folder.is_dir() else 0
 
 
-def pack(folder: str, out: str) -> Package:
-    """Writes a folder holding plugin.toml as a package, then reads it back as the app would."""
+def pack(folder: str, out: str, key=None) -> Package:
+    """Writes a folder holding plugin.toml as a package, signed with the author's `key`, then reads it
+    back as the app would."""
     source = Path(folder)
+    files = {p.relative_to(source).as_posix(): p.read_bytes() for p in sorted(source.rglob("*"))
+             if p.is_file() and not any(part in SKIP for part in p.relative_to(source).parts)}
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as archive:
-        for path in sorted(source.rglob("*")):
-            relative = path.relative_to(source)
-            if path.is_file() and not any(part in SKIP for part in relative.parts):
-                archive.write(path, relative.as_posix())
+        for name, data in files.items():
+            archive.writestr(name, data)
+        if key is not None:
+            meta = tomllib.loads(files["plugin.toml"].decode("utf-8"))
+            archive.writestr(SIGNATURE, _sign(key, str(meta.get("id", "")), str(meta.get("version", "")), files))
     return read(out)
 
 

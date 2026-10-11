@@ -1,6 +1,8 @@
 """The Plugins page: add a .pokeplugin, turn plugins on and off, update and remove them, pick a radio.
 Every install shows the risks and waits for the user's acceptance (docs/plugins.md)."""
 import os
+import shutil
+import threading
 from pathlib import Path
 
 import flet as ft
@@ -10,6 +12,7 @@ from gui import theme as t
 from gui.views.widgets import open_folder
 from pokeldn import plugins
 from pokeldn.app import plugin_store as store
+from pokeldn.app.paths import SESSION
 
 ACTIONS = {"install": "Install", "update": "Update", "reinstall": "Reinstall", "downgrade": "Install older version"}
 RISKS = (
@@ -17,7 +20,7 @@ RISKS = (
     "It can use the network, your board and the sessions you start.",
     "pokeldn's guardrails stop a plugin deleting or overwriting your files and running erase commands, "
     "but a plugin written to get around them can.",
-    "pokeldn does not review, sign or support plugins, and cannot undo what one does.",
+    "pokeldn does not review or support plugins, and cannot undo what one does.",
 )
 
 
@@ -66,6 +69,8 @@ class PluginsView:
                                   padding=ft.Padding(4, 8, 4, 24), expand=True)
         self.control = drop.target(ft.Container(t.fade(self.scroll), expand=True), self._dropped,
                                    glow=lambda: self.zone)
+        self.downloading = ""      # the plugin whose update is downloading
+        app.plugin_update_listeners.append(lambda: self.render(update=self.column.page is not None))
         self.render()
 
     def enter(self, **_) -> None:
@@ -93,7 +98,7 @@ class PluginsView:
             ft.Column([*rows, t.text(f"This pokeldn runs plugin API {plugins.API_VERSION}.{plugins.API_LEVEL}.",
                                      12, t.FAINT)], spacing=8) if rows else None,
             trailing=ft.Row([
-                t.icon_button("refresh", lambda e: self._reload("Plugins reloaded."), "Look for changes"),
+                t.icon_button("refresh", self._refresh, "Look for changes and updates"),
                 t.icon_button("folder", self._open_folder, "Open the plugins folder"),
             ], spacing=0))
         self.column.controls = [header, self.notice, self.zone, *([installed] if rows else []),
@@ -149,6 +154,15 @@ class PluginsView:
         level, message = plugins.compatibility(plugin.api)
         if level == "deprecated":
             lines.append(t.badge(message, t.AMBER, "warning-diamond"))
+        available = self.app.plugin_updates.get(plugin.id)
+        if available is not None and local:
+            busy = self.downloading == plugin.id
+            lines.append(ft.Row([
+                t.chip(f"Version {available.version} is out", "upload", t.GREEN),
+                t.button("Downloading" if busy else f"Update to {available.version}",
+                         lambda e, a=available, p=plugin: self._download(a, p), "download", color=t.GREEN,
+                         disabled=bool(self.downloading)),
+            ], spacing=8, wrap=True))
         if forced:
             lines.append(t.badge("Loaded from POKELDN_PLUGINS: it is on while that variable names it.", t.FAINT))
         elif plugin.entry_point is not None:
@@ -248,6 +262,32 @@ class PluginsView:
             self.say(message, t.MUTED, "refresh")
         self.render(update=True)
 
+    def _refresh(self, e=None) -> None:
+        self._reload("Plugins reloaded. Looking for updates.")
+        self.app.check_plugin_updates()
+
+    def _download(self, available, plugin: plugins.Plugin) -> None:
+        from pokeldn.app import plugin_updates
+        self.downloading = plugin.id
+        self.render(update=True)
+
+        def work():
+            try:
+                path, error = plugin_updates.download(available, SESSION / "plugin-download"), ""
+            except OSError as failure:
+                path, error = None, str(failure)
+            self.app.ui(lambda: done(path, error))
+
+        def done(path, error):
+            self.downloading = ""
+            self.render(update=True)
+            if path is None:
+                self.error_dialog(f"{plugin.name} {available.version} did not download", error)
+            else:
+                self.open_file(str(path), expected=plugin)
+
+        threading.Thread(target=work, daemon=True).start()
+
     def _open_folder(self, e) -> None:
         plugins.folder().mkdir(parents=True, exist_ok=True)
         open_folder(str(plugins.folder()))
@@ -264,9 +304,13 @@ class PluginsView:
 
     def _toggle(self, plugin: plugins.Plugin, value: bool) -> None:
         if value and plugin.folder is not None and not store.consented(plugin):
-            self.consent(store.Package(plugin.id, plugin.name, plugin.version, plugin.api, plugin.author,
-                                       plugin.description, plugin.homepage,
-                                       findings=store.scan_folder(plugin.folder)), "enable", plugin)
+            try:
+                package = store.describe(plugin)
+            except (OSError, store.PackageError) as error:
+                self.error_dialog(f"{plugin.name} cannot be turned on", str(error))
+                self.render(update=True)
+                return
+            self.consent(package, "enable", plugin)
             self.render(update=True)     # the switch stays off until the user accepts
             return
         self._set_enabled(plugin.id, value)
@@ -337,14 +381,23 @@ class PluginsView:
 
     def consent(self, package: store.Package, action: str, current: plugins.Plugin | None) -> None:
         """The risk screen every install, update and first turn-on goes through."""
-        state = {"accepted": False, "enable": True}
+        trust = store.trust(package)
+        stranger = trust in ("changed", "dropped")     # not the author of the copy seen before
+        state = {"accepted": False, "enable": True, "stranger": not stranger}
         go = t.button("Turn on" if action == "enable" else ACTIONS[action], None,
-                      "check", disabled=True)
+                      "check", disabled=True, color=t.RED if stranger else t.BLUE)
+
+        def ready() -> None:
+            go.disabled = not (state["accepted"] and state["stranger"])
+            go.update()
 
         def accepted(value: bool) -> None:
             state["accepted"] = value
-            go.disabled = not value
-            go.update()
+            ready()
+
+        def stranger_ok(value: bool) -> None:
+            state["stranger"] = value
+            ready()
 
         def enable(e) -> None:
             state["enable"] = bool(e.control.value)
@@ -353,7 +406,7 @@ class PluginsView:
             self.app.page.pop_dialog()
 
         def confirm(e) -> None:
-            if not state["accepted"]:
+            if not (state["accepted"] and state["stranger"]):
                 return
             close()
             self._accepted(package, action, current, state["enable"])
@@ -389,6 +442,7 @@ class PluginsView:
         if package.source:
             lines.append(t.badge(f"{os.path.basename(package.source)} · {package.files} files · "
                                  f"{store.size_text(package.size)}", t.FAINT, "archive"))
+        lines.append(self._signature(package, trust))
         lines.append(self._findings(package.findings))
         lines.append(ft.Container(ft.Row([
             t.pixel_icon("warning-diamond", size=24, color=t.RED),
@@ -399,6 +453,9 @@ class PluginsView:
         ], spacing=12, vertical_alignment=ft.CrossAxisAlignment.START),
             padding=16, border_radius=14, bgcolor=ft.Colors.with_opacity(0.08, t.RED),
             border=ft.Border.all(1, ft.Colors.with_opacity(0.3, t.RED))))
+        if stranger:
+            lines.append(checkbox("I know this file does not come from the author of the version I had, and "
+                                  "I install it anyway.", False, stranger_ok))
         lines.append(checkbox("I understand these risks, and I trust the author of this plugin.", False, accepted))
         if action != "enable":
             lines.append(ft.Row([t.text("Turn it on after installing", 13, expand=True),
@@ -411,6 +468,28 @@ class PluginsView:
                 ft.Container(ft.Row([ft.Container(expand=True), t.secondary_button("Cancel", close), go],
                                     spacing=8), padding=ft.Padding(26, 12, 22, 22)),
             ], spacing=0, tight=True), width=540, border_radius=20)))
+
+    @staticmethod
+    def _signature(package: store.Package, trust: str) -> ft.Control:
+        """Who signed the file, against the author of the copy this app saw before."""
+        key = f"key {store.fingerprint(package.key)}" if package.key else ""
+        title, text, color, icon = {
+            "same": ("Signed by the same author", f"The same {key} signed the version installed before.",
+                     t.GREEN, "shield"),
+            "new": ("Signed by its author", f"Signed with {key}. If the author publishes their key, compare it. "
+                    "Every update must carry the same key.", t.BLUE, "key"),
+            "unsigned": ("Not signed", "Nothing proves who made this file or that it was not changed since.",
+                         t.AMBER, "warning-diamond"),
+            "changed": ("Signed by someone else", f"Signed with {key}, not the key of the author of the version "
+                        "installed before. Someone else may have made this file.", t.RED, "warning-diamond"),
+            "dropped": ("No longer signed", "The version installed before was signed by its author; this file is "
+                        "not. Someone else may have made it.", t.RED, "warning-diamond"),
+        }[trust]
+        return ft.Container(ft.Row([t.pixel_icon(icon, size=24, color=color), ft.Column([
+            t.text(title, 14, weight=ft.FontWeight.W_600), t.text(text, 12, t.SOFT, selectable=True)],
+            spacing=4, expand=True)], spacing=12, vertical_alignment=ft.CrossAxisAlignment.START),
+            padding=16, border_radius=14, bgcolor=ft.Colors.with_opacity(0.06, color),
+            border=ft.Border.all(1, ft.Colors.with_opacity(0.3, color)))
 
     @staticmethod
     def _findings(findings: list[str]) -> ft.Control:
@@ -432,7 +511,7 @@ class PluginsView:
 
     def _accepted(self, package: store.Package, action: str, current, enable: bool) -> None:
         if action == "enable":
-            store.accept(current)
+            store.accept(current, package.key)
             self._toggle(current, True)
             return
         try:
@@ -440,6 +519,10 @@ class PluginsView:
         except (OSError, store.PackageError) as error:
             self.error_dialog(f"{package.name} was not installed", str(error))
             return
+        if package.source.startswith(str(SESSION / "plugin-download")):
+            shutil.rmtree(SESSION / "plugin-download", ignore_errors=True)
+        if self.app.plugin_updates.pop(package.id, None) is not None:
+            self.app._plugin_updates_done(self.app.plugin_updates)
         if enable:
             self._set_enabled(package.id, True)
         else:

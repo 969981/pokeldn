@@ -271,7 +271,8 @@ def shutil_copy(src: Path, dst: Path) -> None:
     shutil.copytree(src, dst)
 
 
-def test_the_install_screen_installs_nothing_until_the_risks_are_accepted(isolated, tmp_path, monkeypatch):
+@pytest.mark.parametrize("before", [None, "other-author"], ids=["first-install", "other-author"])
+def test_the_install_screen_installs_nothing_until_the_risks_are_accepted(isolated, tmp_path, monkeypatch, before):
     pytest.importorskip("flet")
     import flet as ft
     from types import SimpleNamespace
@@ -279,12 +280,19 @@ def test_the_install_screen_installs_nothing_until_the_risks_are_accepted(isolat
     from pokeldn.app import plugin_store
     from pokeldn.app.settings import Settings
     monkeypatch.setattr(ft.BaseControl, "update", lambda self: None)
-    package = plugin_store.pack(str(KIT), str(tmp_path / "test-kit.pokeplugin"))
+    if before:      # a copy signed by one author is installed; the new file is signed by another
+        old = plugin_store.pack(str(KIT), str(tmp_path / "old.pokeplugin"),
+                                plugin_store.signing_key(str(tmp_path / "a.pem"), create=True))
+        plugin_store.install(old)
+    package = plugin_store.pack(str(KIT), str(tmp_path / "test-kit.pokeplugin"),
+                                plugin_store.signing_key(str(tmp_path / "b.pem"), create=True))
+    assert plugin_store.trust(package) == ("changed" if before else "new")
     shown, closed = [], []
     settings = Settings()
     from pokeldn.app import settings as settings_module
     monkeypatch.setattr(settings_module, "PATH", isolated / "settings.json")
-    app = SimpleNamespace(settings=settings, navigate=lambda *a, **k: None, ui=lambda f: f(),
+    app = SimpleNamespace(settings=settings, navigate=lambda *a, **k: None, ui=lambda f: f(), plugin_updates={},
+                          plugin_update_listeners=[],
                           page=SimpleNamespace(show_dialog=shown.append, pop_dialog=lambda: closed.append(1)))
     page = view.PluginsView(app)
     page.open_file(package.source)
@@ -296,16 +304,19 @@ def test_the_install_screen_installs_nothing_until_the_risks_are_accepted(isolat
             for c in (child if isinstance(child, list) else [child] if child is not None else []):
                 yield from walk(c)
     controls = list(walk(shown[0]))
-    install = next(c for c in controls if isinstance(c, ft.Button) and c.content == "Install")
-    tick = next(c for c in controls if isinstance(c, ft.Container) and c.on_click and any(
-        isinstance(x, ft.Text) and x.value.startswith("I understand") for x in walk(c)))
-    assert install.disabled
-    install.on_click(None)
-    assert plugin_store.installed("test-kit") is None
-    tick.on_click(None)
+    action = "Reinstall" if before else "Install"
+    install = next(c for c in controls if isinstance(c, ft.Button) and c.content == action)
+    ticks = [c for c in controls if isinstance(c, ft.Container) and c.on_click and any(
+        isinstance(x, ft.Text) and x.value.startswith(("I understand", "I know this file")) for x in walk(c))]
+    assert len(ticks) == (2 if before else 1)
+    for tick in ticks:
+        assert install.disabled
+        install.on_click(None)
+        assert plugin_store.known_key("test-kit") != package.key
+        tick.on_click(None)
     assert not install.disabled
     install.on_click(None)
-    assert plugin_store.installed("test-kit").version == "1.1.0"
+    assert plugin_store.known_key("test-kit") == package.key
     assert settings.plugins == ["test-kit"] and "test-kit" in {p.id for p in plugins.load() if p.loaded}
 
 
@@ -428,3 +439,82 @@ def test_the_install_screen_lists_what_a_plugins_code_does(tmp_path, files, find
     from pokeldn.app import plugin_store
     package = plugin_store.read(str(zipped(tmp_path / "x.pokeplugin", {"plugin.toml": GOOD_TOML, **files})))
     assert package.findings == findings
+
+
+
+def test_a_signed_package_names_its_author_and_any_change_to_a_file_refuses_it(isolated, tmp_path):
+    import zipfile
+    from pokeldn.app import plugin_store
+    key = plugin_store.signing_key(str(tmp_path / "author.pem"), create=True)
+    signed = plugin_store.pack(str(KIT), str(tmp_path / "signed.pokeplugin"), key)
+    assert signed.key and plugin_store.trust(signed) == "new"
+    assert plugin_store.signing_key(str(tmp_path / "author.pem")).public_key() == key.public_key()
+    plugin_store.install(signed)
+    assert plugin_store.trust(plugin_store.read(signed.source)) == "same"
+    assert plugin_store.trust(plugin_store.pack(str(KIT), str(tmp_path / "plain.pokeplugin"))) == "dropped"
+    for change in ("edit", "add", "remove", "version"):
+        out = tmp_path / f"{change}.pokeplugin"
+        with zipfile.ZipFile(signed.source) as source, zipfile.ZipFile(out, "w") as copy:
+            for name in source.namelist():
+                data = source.read(name)
+                if name == "hello.py" and change == "edit":
+                    data += b"\nimport shutil\n"
+                if name == "plugin.toml" and change == "version":
+                    data = data.replace(b'version = "1.1.0"', b'version = "9.0.0"')
+                if not (name == "fail.py" and change == "remove"):
+                    copy.writestr(name, data)
+            if change == "add":
+                copy.writestr("extra.py", "import os\n")
+        with pytest.raises(plugin_store.PackageError, match="changed after its author signed it"):
+            plugin_store.read(str(out))
+
+
+def test_an_update_address_offers_the_newer_version_and_the_download_installs_through_the_same_checks(
+        isolated, tmp_path):
+    import http.server
+    import threading
+    from pokeldn.app import plugin_store, plugin_updates
+    key = plugin_store.signing_key(str(tmp_path / "author.pem"), create=True)
+    source = tmp_path / "src"
+    shutil_copy(KIT, source)
+    toml = (source / "plugin.toml").read_text()
+    served = tmp_path / "served"
+    served.mkdir()
+
+    class Quiet(http.server.SimpleHTTPRequestHandler):
+        def __init__(self, *a, **k):
+            super().__init__(*a, directory=str(served), **k)
+
+        def log_message(self, *a):
+            pass
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Quiet)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{server.server_address[1]}"
+    try:
+        (source / "plugin.toml").write_text(toml + f'updates = "{base}/latest.json"\n')
+        plugin_store.install(plugin_store.pack(str(source), str(tmp_path / "old.pokeplugin"), key))
+        (source / "plugin.toml").write_text(toml.replace("1.1.0", "1.3.0") + f'updates = "{base}/latest.json"\n')
+        plugin_store.pack(str(source), str(served / "kit.pokeplugin"), key)
+        (served / "latest.json").write_text(json.dumps({"version": "1.3.0", "url": f"{base}/kit.pokeplugin"}))
+        found = plugin_updates.check(plugins.discover())
+        assert found["test-kit"].version == "1.3.0"
+        package = plugin_store.read(str(plugin_updates.download(found["test-kit"], tmp_path / "dl")))
+        assert (package.version, plugin_store.trust(package)) == ("1.3.0", "same")
+        (served / "latest.json").write_text(json.dumps({"version": "1.1.0", "url": f"{base}/kit.pokeplugin"}))
+        assert plugin_updates.check(plugins.discover()) == {}
+    finally:
+        server.shutdown()
+        server.server_close()
+    assert not plugin_updates.allowed("http://example.org/x.json") and plugin_updates.allowed("https://example.org/x")
+
+
+def test_a_github_repository_address_reads_its_latest_release(monkeypatch):
+    from pokeldn.app import plugin_updates, update
+    asked = []
+    reply = {"tag_name": "v1.3.0", "html_url": "https://github.com/someone/kit/releases/tag/v1.3.0",
+             "assets": [{"name": "SHA256SUMS", "browser_download_url": "https://github.com/x/SHA256SUMS"},
+                        {"name": "kit-1.3.0.pokeplugin", "browser_download_url": "https://github.com/x/kit.pokeplugin"}]}
+    monkeypatch.setattr(update, "github_json", lambda url, **k: asked.append(url) or reply)
+    assert plugin_updates.latest("https://github.com/someone/kit.git") == (
+        "1.3.0", "https://github.com/x/kit.pokeplugin", reply["html_url"])
+    assert asked == ["https://api.github.com/repos/someone/kit/releases/latest"]

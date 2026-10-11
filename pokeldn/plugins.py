@@ -35,6 +35,7 @@ class Plugin:
     version: str = ""
     author: str = ""
     homepage: str = ""
+    updates: str = ""                     # where newer versions are published (plugin_updates)
     icon: str = ""                        # an image file in the folder
     api: tuple | None = (API_VERSION, 0)   # (major, level) from plugin.toml; None when unreadable
     module: str = "plugin"
@@ -186,6 +187,7 @@ def _read_folder(path: Path) -> Plugin:
     plugin.version = str(meta.get("version", ""))
     plugin.author = str(meta.get("author", ""))
     plugin.homepage = str(meta.get("homepage", ""))
+    plugin.updates = str(meta.get("updates", ""))
     icon = str(meta.get("icon", "icon.png"))
     plugin.icon = str(path / icon) if icon and (path / icon).is_file() and "/" not in icon else ""
     plugin.module = str(meta.get("module", "plugin"))

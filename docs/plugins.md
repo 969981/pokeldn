@@ -72,6 +72,7 @@ version = "1.0.0"           # compared on update: 1.2.0 updates 1.0.0
 author = "Your name"
 description = "One or two sentences shown on the install screen and the plugin's card."
 homepage = "https://example.org/my-plugin"   # optional, opened from the plugin's menu
+updates = "https://github.com/you/my-plugin" # optional, where newer versions are published (Updates)
 api = "1.1"                 # required: the plugin API it needs (see Versions); 1 means 1.0
 icon = "icon.png"           # optional; a square PNG, 96 x 96 looks sharp
 module = "plugin"           # optional; the module holding register()
@@ -208,10 +209,10 @@ command line the argument is what follows the colon.
 ### Packing and testing
 
 ```bash
-python scripts/pack_plugin.py my-plugin
+python scripts/pack_plugin.py my-plugin --key ~/my-plugin-signing.pem
 ```
 
-writes `my-plugin-1.0.0.pokeplugin` and checks it the way the app does before installing. Any zip
+writes `my-plugin-1.0.0.pokeplugin`, signed, and checks it the way the app does before installing. Any zip
 works if `plugin.toml` sits at its top or inside one top folder, with no path leaving that folder
 and no symbolic link.
 
@@ -228,6 +229,40 @@ POKELDN_PLUGINS=~/my-plugin python gui/main.py
 `register`, targets another API version or takes a key in use adds nothing; its card shows the
 error and the other plugins still load. A plugin can also ship as a Python package with an entry
 point in the `pokeldn.plugins` group naming the module that holds `register`.
+
+### Signing
+
+`--key FILE` signs the package with the author's Ed25519 key, made in `FILE` the first time, and
+prints the key's fingerprint (`ABCD-EFGH-IJKL-MNOP`). The package carries `plugin.sig`: the public
+key and a signature over the plugin's id, its version and the SHA-256 of every other file.
+
+| the app sees | it shows |
+|---|---|
+| a signature that does not match the files | refuses the file: it was changed after its author signed it |
+| a signed plugin it has not seen before | the fingerprint, and remembers the key for that plugin id |
+| an update signed with the remembered key | "Signed by the same author" |
+| an update signed with another key, or unsigned where the earlier copy was signed | a red warning and a second acknowledgement before Install works |
+| an unsigned plugin never seen signed | "Not signed" |
+
+Keep the key file private and backed up: a lost key makes every later version look like someone
+else's, and anyone holding it can sign as the author. Publish the fingerprint on the plugin's page,
+so players can compare it with the one the install screen shows. The first install cannot prove who
+the author is; signing proves that later versions come from the same one.
+
+### Updates
+
+`updates` in `plugin.toml` names where newer versions are published:
+
+| `updates` | the app reads |
+|---|---|
+| `https://github.com/OWNER/REPO` | the latest release: its tag (`v1.3.0` or `1.3.0`) and its first `.pokeplugin` asset |
+| any other HTTPS address | a JSON file `{"version": "1.3.0", "url": "https://.../my-plugin-1.3.0.pokeplugin", "page": "..."}` |
+
+With Settings, Updates on, the app asks each installed plugin's address at start and when the
+Plugins page's refresh is pressed. A newer version turns the Plugins menu entry green and puts
+**Update to 1.3.0** on the plugin's card; pressing it downloads the file and opens the install
+screen with its signature check. Nothing installs without the player's acceptance. HTTP is accepted
+for `127.0.0.1` and `localhost` only, to test a release locally.
 
 ## The Plugin Test Kit
 
