@@ -389,13 +389,13 @@ class PluginsView:
             lines.append(ft.Row([t.text("Turn it on after installing", 13, expand=True),
                                  t.switch(True, enable)]))
         self.app.page.show_dialog(t.dialog(
-            modal=True, content_padding=0, actions_padding=0, inset_padding=32,
+            modal=True, content_padding=0, actions_padding=0, inset_padding=32, scrollable=True,
             clip_behavior=ft.ClipBehavior.ANTI_ALIAS, semantics_label=f"Install {package.name}",
             content=ft.Container(ft.Column([
                 ft.Container(ft.Column(lines, spacing=12, tight=True), padding=ft.Padding(26, 22, 18, 6)),
                 ft.Container(ft.Row([ft.Container(expand=True), t.secondary_button("Cancel", close), go],
                                     spacing=8), padding=ft.Padding(26, 12, 22, 22)),
-            ], spacing=0, tight=True, scroll=ft.ScrollMode.AUTO), width=540, border_radius=20)))
+            ], spacing=0, tight=True), width=540, border_radius=20)))
 
     def _accepted(self, package: store.Package, action: str, current, enable: bool) -> None:
         if action == "enable":
