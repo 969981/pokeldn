@@ -1,16 +1,15 @@
-# pokeldn 0.22.0
+# pokeldn 0.22.1
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- The Bank imports Pokemon files and game saves: press + on the Bank page or drop files on its grid.
-  Every legal Pokemon in a Pokemon file or a game save that PKHeX reads is banked once.
-  One from an older game leaves its held item behind and forgets its HMs, as HOME's way in asks;
-  PKHeX's reason is shown for each one left out. The files themselves are never changed. Thanks to
-  Matcore962.
-- Small Pokemon sprites (the Bank, the GTS, trade queues, saves and raids) are all drawn at one size.
+- The GTS checks incoming listings and trade replies more strictly, limits incoming work, and returns
+  the offered Pokemon to the Bank when a trade reply is rejected.
+- Pokemon checks recover when the builder stops responding.
+
+Existing GTS listings continue to work; no relisting is needed.
 
 The radio firmware is unchanged at 1.6.1 and the controller firmware at 1.3.0; no board needs an
 update.
