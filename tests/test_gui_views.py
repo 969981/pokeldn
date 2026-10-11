@@ -6,6 +6,9 @@ import pytest
 
 pytest.importorskip("flet")
 
+import flet as ft
+
+from gui import theme as t
 from gui.views import pokemon
 from gui.views.games import GamesView
 from gui.views.pokemon import OfferOptions, OfferQueue
@@ -48,6 +51,17 @@ def test_effort_over_the_games_total_is_refused_before_the_builder_is_asked(effo
     options = OfferOptions(SimpleNamespace(value={"options": {"effort": dict(values)}}))
     options._form({**FOUND, "effort": effort})
     assert bool(options.problem()) == refused
+
+
+@pytest.mark.parametrize("typed, sent", [("220", 220), ("256", None), ("", None)])
+def test_a_friendship_past_255_or_empty_is_not_sent(typed, sent):
+    options = OfferOptions(SimpleNamespace(value={"options": {"friendship": 70}}))
+    options.control.update = lambda: None
+    box = options._number("friendship", 255)
+    box.value = typed
+    box.on_change(SimpleNamespace(control=box))
+    assert options.chosen.get("friendship") == sent
+    assert (box.border[ft.ControlState.DEFAULT].side.color == t.RED) == (typed == "256")
 
 
 class StubPicker:
