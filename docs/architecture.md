@@ -128,7 +128,8 @@ the event's own on an event Pokemon, such as Brilliant Diamond's Manaphy.
 | Legends Z-A | kept when the player's gender, IDs and name are the original trainer's; otherwise the player becomes the handler, with the species' base friendship ([the received record](za.md#what-the-trade-writes-into-a-received-record)) |
 | Brilliant Diamond | kept when received back by its original trainer; received by another trainer, handler friendship 50 ([the received Pokemon](bdsp_trade.md#what-the-console-does-to-a-received-pokemon)) |
 | Legends Arceus, Scarlet | received by another trainer, handler friendship 50 ([Legends Arceus](pla.md#what-a-trade-rewrites), [Scarlet](sv.md#what-a-trade-rewrites)) |
-| Let's Go, Sword | unmeasured |
+| Sword | a Pichu sent at friendship 255 evolved on its next level-up when built under the receiving player's name, IDs and gender, and did not under another trainer |
+| Let's Go | unmeasured |
 
 The record must carry every request and pass the legality analysis. The first encounter that does is
 kept, and the first request no encounter can carry is named in the refusal.
