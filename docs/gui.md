@@ -354,10 +354,11 @@ nothing, and the host draws them from the story progress's pool as a console doe
 - Partners' progress: the five unlock stages, Beginning left out, starting on the story progress's
   (six stars for a black crystal or a seven-star event raid). Another stage passes
   `--raid-partner-progress`.
-- The stage's trainers, three cards to a row, two in a narrow window. A card shows the trainer, the
-  Pokemon, its level (four fifths of Our Pokemon's, `command.raid_pokemon_level`), ability, moves
-  and Tera type. A partner raiders favour ends on why and a star, gold or silver
-  ([Favoured partners](sv_raid.md#favoured-partners)); the star's tooltip says why at more length.
+- The stage's trainers, three cards to a row, two in a narrow window. A card shows the trainer and
+  the Pokemon, its level (four fifths of Our Pokemon's, `command.raid_pokemon_level`) and Tera type
+  as chips, then its ability and its three moves, one to a line. A partner raiders favour ends on a
+  strip tinted gold or silver with a star and why ([Favoured partners](sv_raid.md#favoured-partners));
+  its tooltip says why at more length.
 
 A click seats a trainer, numbered by the slot it takes; a second click leaves the slot to the draw.
 Each pick passes `--raid-partner`, in order. Raising Consoles joining drops the last pick, and a
