@@ -387,7 +387,8 @@ Raid Battle, Link Code 4970): the seed and four context flags choose the boss, `
 ITEM:QUANTITY` replaces its rewards, and `--raid-pokemon` is the Pokémon pokeldn's player brings.
 `--raid-event FOLDER` draws the boss and rewards from a Poké Portal News delivery instead, an event
 of Project Pokemon's [EventsGallery](https://github.com/projectpokemon/EventsGallery), which the app
-downloads and updates on request.
+downloads and updates on request. `--raid-players N` lets up to three consoles join one raid; it
+starts once N consoles are in the lobby and each has pressed Ready, or when the lobby timer runs out.
 `bin/sv_join.py --raid-pokemon FILE` joins a raid the console hosts. In both, pokeldn's player
 leaves as the battle starts and its Pokémon stays to fight beside the console's. The app's two
 Tera Raid tools carry the flags; see [Tera Raids](docs/sv_raid.md).

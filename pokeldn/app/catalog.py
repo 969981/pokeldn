@@ -355,7 +355,9 @@ SV = Game("sv", "Scarlet & Violet", "SV", "sv.md", (
          "Host a Tera Raid the console joins: you choose the raid, its rewards and the Pokemon we bring.",
          ("Choose the Pokemon our player brings, the raid and, if you like, its rewards.",
           "Start the host.",
-          "On the console: X, Poke Portal, Tera Raid Battle, search offline, Link Code 4970.",
+          "On each console: X, Poke Portal, Tera Raid Battle, search offline, Link Code 4970.",
+          "Press Ready on each console: the raid starts once every console is in and Ready, or "
+          "when the lobby timer runs out.",
           "Our player leaves when the battle starts; its Pokemon stays and fights at your side.",
           "A communication error may show as the battle starts: dismiss it and fight on.",
           "Win the raid to receive the rewards."),
@@ -382,6 +384,9 @@ SV = Game("sv", "Scarlet & Violet", "SV", "sv.md", (
                 group="The raid", help="Eight hexadecimal digits. Find a raid searches seeds for you."),
           Field("--raid-reward", "Rewards", "rewards",
                 help=f"Leave empty for the raid's own rewards, or list up to {REWARD_ROWS} items."),
+          Field("--raid-players", "Consoles joining", "choice", default="1",
+                choices=(("1", "1 console"), ("2", "2 consoles"), ("3", "3 consoles")),
+                help="The raid waits for this many consoles, each one Ready, before it starts."),
           Field("--raid-catch-normal", "Catch an event boss again", "switch", hidden=True,
                 requires="--raid-event",
                 help="Offer a boss the event lets a save catch once as a normal catch, under a record "

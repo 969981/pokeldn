@@ -396,20 +396,27 @@ def party(species):
 
 class RaidGuestConsole:
     """A retail guest as captured against a raid host: it acknowledges the station list, joins port 2
-    after the host's type 6, shows its Pokemon after the type 9s, answers the start with 0x0d, loads
+    after the host's type 6, shows its Pokemon after the type 9s and its Ready 1.9 to 3.6 s later
+    when its player presses it, answers the start with 0x0d, loads
     the bootstrap, and marks the battle; handed the network as a retail joiner was (docs/sv.md,
     Leaving), it answers the type 7 with a type 8 and the is-migrating status, then leaves at the
     first NetStartHostMigration."""
 
-    def __init__(self, clock):
+    def __init__(self, clock, ready_after=2.4, n=1, species=658, join_at=0.2):
         self.clock, self.keys = clock, sv.session_keys(SSID)
+        self.ready_after = ready_after          # its player's Ready after its Pokemon, or never
+        self.ip = JOIN_IP if n == 1 else f"169.254.10.{n + 1}"
+        self.mac = JOIN_MAC if n == 1 else JOIN_MAC[:5] + bytes([n + 1])
+        self.cid = CONSOLE_CID if n == 1 else CONSOLE_CID[:7] + bytes([n])
+        self.var = CONSOLE_VAR + n - 1
         self.later, self.queue, self.seen, self.seqs = [], [], [], {}
         self.done = set()
         self.left = False
-        self.pokemon = party(658)
-        self.at(0.2, pia6.build_session_join(CONSOLE_CID, CONSOLE_VAR, JOIN_IP,
-                                             pia_connect.ldn_constant_id(HOST_MAC), 1, "Player",
-                                             bytes(4)), 0x98)
+        self.pokemon = party(species)
+        self.later_join = clock.now + join_at - 0.2      # on the network before its join
+        self.at(join_at, pia6.build_session_join(self.cid, self.var, self.ip,
+                                                 pia_connect.ldn_constant_id(HOST_MAC), 1, "Player",
+                                                 bytes(4)), 0x98)
 
     def at(self, delay, body, protocol, port=0, flags=0):
         self.later.append((self.clock.now + delay, body, protocol, port, flags))
@@ -429,13 +436,17 @@ class RaidGuestConsole:
         return True
 
     def received(self, packet, dst):
-        _, plain, _ = pia6.parse_packet(self.keys.session_key, HOST_IP, self.keys.network_id, packet)
+        header, plain, ids = pia6.parse_packet(self.keys.session_key, HOST_IP, self.keys.network_id,
+                                               packet)
+        if dst not in (self.ip, BROADCAST) or (ids and self.var not in ids):
+            return                              # another console's
         for msg in pia6.parse_messages(plain):
             p, row = bytes(msg.payload), dict(t=self.clock.now, dst=dst, protocol=msg.protocol,
                                               port=msg.port, flags=msg.message_flags)
             if msg.protocol in (0x7C, 0x80, 0x81) and len(p) >= reliable5.HEADER_SIZE:
                 rm = reliable5.parse(p)
-                row.update(seq=rm["sequence_id"], rflags=rm["flags"], lowest=rm["lowest_pending"])
+                row.update(seq=rm["sequence_id"], rflags=rm["flags"], lowest=rm["lowest_pending"],
+                           bitmap=rm["bitmap"])
                 if rm["flags"] & reliable5.FLAG_APPLICATION_DATA:
                     body = rm["payload"]
                     if rm["flags"] & reliable5.FLAG_ZLIB:
@@ -454,13 +465,13 @@ class RaidGuestConsole:
             self.at(0.02, bytes([1, 0x51, 0, 0]) + p[4:8], 0x2C, 0, 0x11)
         if protocol == 0x98 and p[0] == 5:
             update = pia_connect.parse_session_update_v11(p, route_bytes=0)
-            self.at(0.03, pia_connect.build_session_update_ack_v11(CONSOLE_CID, update["sequence_id"]), 0x98)
+            self.at(0.03, pia_connect.build_session_update_ack_v11(self.cid, update["sequence_id"]), 0x98)
         if protocol == 0x58 and p[0] == 0:
             self.at(0.01, streams.build_rtt_response(p, 1), 0x58)
         migration = pia_connect.parse_session_migration_v11(p) if protocol == 0x98 else None
-        if migration and migration["target_var"] == CONSOLE_VAR:
+        if migration and migration["target_var"] == self.var:
             self.at(0.0, pia_connect.build_session_migration_ack_v11(
-                CONSOLE_CID, CONSOLE_VAR, migration["host_constant_id"], migration["host_var"]), 0x98)
+                self.cid, self.var, migration["host_constant_id"], migration["host_var"]), 0x98)
         if protocol == 0x2C and p[:2] == bytes([1, 0x40]):
             self.left = True
 
@@ -472,30 +483,43 @@ class RaidGuestConsole:
         if (protocol, port) == (0x7C, 2) and body[:1] == b"\x06" and self.once("join"):
             self.send_data(0.3, 0x7C, 2, port2.build_join(0))
         if (protocol, port) == (0x80, 2) and body[:1] == b"\x09" and self.once("lobby"):
+            self.lobby_at = self.clock.now
             self.send_data(0.5, 0x80, 0, raid.state(1, raid.STATE_IDLE), compressed=True)
             self.send_data(0.52, 0x80, 0, raid.pokemon(2, self.pokemon))
+            if self.ready_after is not None:
+                self.send_data(0.52 + self.ready_after, 0x80, 0, raid.state(3, raid.STATE_READY),
+                               compressed=True)
+        if ((protocol, port) == (0x80, 2) and body[:1] == b"\x09" and "lobby" in self.done
+                and body[-8:] != port2.station_id(self.cid).to_bytes(8, "little") and body[4:5] != b"\x00"):
+            # A member joined: the Lua lobby answers it with our Pokemon and our state (0.15829).
+            self.send_data(0.1, 0x80, 0, raid.pokemon(5, self.pokemon))
         if (protocol, port) != (0x80, 0):
             return
         if raid.state_of(body) == raid.STATE_START and self.once("start"):
-            self.send_data(0.4, 0x80, 0, raid.state(3, raid.STATE_STARTED), compressed=True)
-        if rm["sequence_id"] == 12 and self.once("load"):
+            self.send_data(0.4, 0x80, 0, raid.state(4, raid.STATE_STARTED), compressed=True)
+        if rm["flags"] == raid.FRAGMENT_END_ZLIB and self.once("load"):
             self.send_data(1.0, 0x80, 0, raid.message(raid.KEY_LOAD, 0x6E, 0, 5, bytes(4)))
             self.send_data(3.0, 0x80, 0, raid.message(raid.KEY_LOAD, 0x73, 0, 6, bytes(4)))
         if body[:4] == raid.BATTLE and self.once("battle"):
             self.send_data(2.0, 0x80, 0, raid.message(raid.KEY_BATTLE, 0x93, 1, 7, bytes(4)))
 
     def tick(self):
-        self.clock.now += 0.01
         for item in [x for x in self.later if x[0] <= self.clock.now]:
             self.later.remove(item)
             _, body, protocol, port, flags = item
-            self.queue.append(sv_join.build_out(self.keys, JOIN_IP, body, 1, protocol=protocol, port=port,
-                                                flags=flags, src_var=CONSOLE_VAR))
+            # A retail guest's footer names the host's variable id (0xc6).
+            self.queue.append(sv_join.build_out(self.keys, self.ip, body, sv_host.PIA_HOST_VAR,
+                                                protocol=protocol, port=port, flags=flags,
+                                                src_var=self.var))
 
 
-def run_raid_host(monkeypatch, tmp_path, rewards=(), extra=()):
+def run_raid_host(monkeypatch, tmp_path, rewards=(), extra=(), ready_after=2.4, seconds=60,
+                  consoles=None):
+    """-> the scripted console (or the list given in `consoles`, made with the clock) and the clock,
+    after the host has run against them."""
     clock = Clock()
-    console = RaidGuestConsole(clock)
+    made = [RaidGuestConsole(clock, ready_after)] if consoles is None else consoles(clock)
+    console = made[0]
 
     class Transport:
         ssid, our_ip, our_mac, broadcast = SSID, HOST_IP, HOST_MAC, BROADCAST
@@ -503,7 +527,7 @@ def run_raid_host(monkeypatch, tmp_path, rewards=(), extra=()):
 
         @property
         def participants(self):
-            return [] if console.left else [(JOIN_MAC, JOIN_IP)]
+            return [(c.mac, c.ip) for c in made if not c.left and clock.now >= c.later_join]
 
         def __init__(self, **kwargs):
             pass
@@ -518,14 +542,21 @@ def run_raid_host(monkeypatch, tmp_path, rewards=(), extra=()):
             pass
 
         def send(self, packet, dst):
-            console.received(packet, dst)
+            for c in made:
+                if not c.left:
+                    c.received(packet, dst)
 
         def wait_readable(self, _):
-            console.tick()
+            clock.now += 0.01
+            for c in made:
+                c.tick()
 
         def recv(self):
-            queued, console.queue = console.queue, []
-            return [(packet, JOIN_IP) for packet in queued]
+            out = []
+            for c in made:
+                queued, c.queue = c.queue, []
+                out += [(packet, c.ip) for packet in queued]
+            return out
 
     ours = tmp_path / "ours.pk9"
     ours.write_bytes(party(25))
@@ -540,8 +571,9 @@ def run_raid_host(monkeypatch, tmp_path, rewards=(), extra=()):
     args = build(tool, {"--raid-pokemon": {"file": str(ours)}, "--raid-seed": "000F34C3",
                         "--raid-reward": [{"item_id": str(i), "quantity": str(q)} for i, q in rewards]},
                  {}, Settings())
-    assert sv_host.main(args + ["--keys", str(tmp_path / "prod.keys"), "--seconds", "60", *extra]) == 0
-    return console, clock
+    assert sv_host.main(args + ["--keys", str(tmp_path / "prod.keys"), "--seconds", str(seconds),
+                                *extra]) == 0
+    return (console if consoles is None else made), clock
 
 
 # What the host's twenty raid messages start with, their reliable flags and lowest pending, as the
@@ -585,6 +617,86 @@ def test_a_console_fights_the_raid_we_host(monkeypatch, tmp_path):
     assert handed[0]["t"] - sent(20) == pytest.approx(raid.LINGER, abs=0.05)
     assert len(handed) == 1 and handed[0]["t"] < status[0]["t"] < start[0]["t"]
     assert start[0]["flags"] == 0x11 and clock.now - start[0]["t"] < 0.1
+
+
+def lobby_rows(console):
+    """-> the host's messages on 0x80 port 0 to `console`, first copy of each sequence, in order."""
+    first = {}
+    for row in console.seen:
+        if (row["protocol"], row["port"]) == (0x80, 0) and "data" in row:
+            first.setdefault(row["seq"], row)
+    return [first[seq] for seq in sorted(first)]
+
+
+def start_of(console):
+    return next(r for r in lobby_rows(console) if raid.state_of(r["data"]) == raid.STATE_START)
+
+
+def test_three_consoles_fight_one_raid(monkeypatch, tmp_path):
+    """`--raid-players 3`: each console takes the next seat, every station list names the four
+    stations, the start waits for the last console's Ready, the one bootstrap carries every
+    Pokemon in its seat, and the network goes to seat 1 while seats 2 and 3 draw the is-migrating
+    status and NetStartHostMigration. A fourth console's join goes unanswered."""
+    made, clock = run_raid_host(
+        monkeypatch, tmp_path, extra=["--raid-players", "3"], seconds=120,
+        consoles=lambda clock: [RaidGuestConsole(clock, 2.4, n, species, join_at)
+                                for n, species, join_at in ((1, 658, 0.2), (2, 6, 8.0), (3, 150, 15.0),
+                                                            (4, 1, 17.0))])
+    consoles, fourth = made[:3], made[3]
+    assert not [r for r in fourth.seen if r["protocol"] == 0x98]
+    readies = []
+    for n, console in enumerate(consoles, 1):
+        response = next(pia_connect.parse_session_join_response_v11(r["data"]) for r in console.seen
+                        if r["protocol"] == 0x98 and r["data"][0] == 2)
+        assert response["station_index"] == n
+        lists = [pia_connect.parse_session_update_v11(r["data"], route_bytes=0) for r in console.seen
+                 if r["protocol"] == 0x98 and r["data"][0] == 5]
+        assert [st["station_index"] for st in lists[-1]["stations"]] == [0, 1, 2, 3]
+        accepts = [r["data"] for r in console.seen if (r["protocol"], r["port"]) == (0x80, 2)
+                   and r.get("data", b"")[:1] == b"\x09"]
+        # Every member's code, ours 0, whatever the order the consoles joined in.
+        assert set(accepts) == {port2.build_accept(port2.station_id(cid), code=k) for k, cid in
+                                enumerate([pia_connect.ldn_constant_id(HOST_MAC)]
+                                          + [c.cid for c in consoles])}
+        sessions = [r["data"] for r in console.seen if (r["protocol"], r["port"]) == (0x7C, 2)
+                    and r.get("data", b"")[:1] == b"\x06"]
+        assert sessions[0] == port2.build_session(
+            port2.station_id(pia_connect.ldn_constant_id(HOST_MAC)),
+            members=[(port2.station_id(c.cid), k) for k, c in enumerate(consoles[:n - 1], 1)])
+        rows = lobby_rows(console)
+        assert all(r["bitmap"] == [1 << n] for r in rows)
+        timers = [struct.unpack_from("<I", r["data"], 34)[0] for r in rows
+                  if r["data"][:4] == raid.trade.build(raid.KEY_LOBBY, raid.KIND_COUNTDOWN, 1)]
+        assert timers == sorted(set(timers), reverse=True) and timers[0] <= raid.LOBBY_SECONDS
+        readies.append(console.lobby_at + 0.52 + 2.4)
+        plain = raid.payload_of(next(r["data"] for r in rows if r["data"][:4] == raid.trade.build(
+            raid.KEY_LOBBY, raid.KIND_BOOTSTRAP, 1)) + next(r["data"] for r in rows if "data" in r
+                                                             and r["rflags"] == raid.FRAGMENT_END_ZLIB))
+        assert [plain[k * gen9.SIZE_PARTY:(k + 1) * gen9.SIZE_PARTY] for k in range(4)] == [
+            party(25)] + [c.pokemon for c in consoles]
+        assert console.left
+    assert all(start_of(c)["t"] > max(readies) for c in consoles)
+    handed = [[r for r in c.seen if r["protocol"] == 0x98 and r["data"][0] == 7] for c in consoles]
+    assert handed[0] and not handed[1] and not handed[2]
+    for console in consoles[1:]:
+        status = [r for r in console.seen if r["protocol"] == 0x2C and r["data"][1] == 0x11
+                  and r["data"][29] == 1]
+        assert status and any(r["data"] == bytes.fromhex("01400000") for r in console.seen
+                              if r["protocol"] == 0x2C)
+
+
+@pytest.mark.parametrize("ready_after, players", [(None, 1), (2.4, 2)])
+def test_the_raid_starts_when_the_lobby_timer_runs_out(monkeypatch, tmp_path, ready_after, players):
+    """A console that never readies, or fewer consoles than `--raid-players`: the lobby timer counts
+    down a step a second and the raid starts when it reaches zero, then runs to its battle."""
+    console, clock = run_raid_host(monkeypatch, tmp_path, extra=["--raid-players", str(players)],
+                                   ready_after=ready_after, seconds=240)
+    rows = lobby_rows(console)
+    timers = [struct.unpack_from("<I", r["data"], 34)[0] for r in rows
+              if r["data"][:4] == raid.trade.build(raid.KEY_LOBBY, raid.KIND_COUNTDOWN, 1)]
+    assert timers == list(range(raid.LOBBY_SECONDS, -1, -1))
+    assert start_of(console)["t"] - rows[0]["t"] == pytest.approx(raid.LOBBY_SECONDS, abs=1.1)
+    assert rows[-1]["data"] == raid.HANDOFF[-1] and console.left
 
 
 @pytest.mark.parametrize("capture, extra, word, record, summary", [
