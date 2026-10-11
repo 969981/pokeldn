@@ -62,6 +62,7 @@ class Game:
     short: str
     doc: str
     tools: tuple[Tool, ...]
+    icon: str = ""                # an image file; empty: the app's games/<key>.png
 
 
 VERSIONS = (("firered", "FireRed"), ("leafgreen", "LeafGreen"))

@@ -11,7 +11,8 @@ from pokeldn import pokemon as builder
 from pokeldn.app import bank, command, events_gallery, gift_builder, online, received, runner
 from pokeldn.sv import raid_event as raid_events
 from gui import theme as t
-from pokeldn.app.catalog import GAMES, Field, Game, Tool
+from pokeldn import plugins
+from pokeldn.app.catalog import Field, Game, Tool
 from pokeldn.app.introspect import flags_of
 from pokeldn.app.paths import SESSION
 from gui.views.pokemon import NAME_LISTS, LinkCodePicker, NamePicker, OfferQueue, PokemonPicker
@@ -52,7 +53,8 @@ def tool_role(tool: Tool) -> str:
 class GamesView:
     def __init__(self, app):
         self.app = app
-        self.game: Game = GAMES[0]
+        self.catalog = plugins.games()   # the catalog with the enabled plugins' tools
+        self.game: Game = self.catalog[0]
         self.tool: Tool = self.game.tools[0]
         self.tab = "basic"
         self.search = ""
@@ -89,7 +91,7 @@ class GamesView:
     def enter(self, game: str = "", tool: str = "", **_) -> None:
         """`game` and `tool` are catalog keys: the bank opens the trade it queued a Pokemon for."""
         self.visible = True
-        chosen = next(((g, x) for g in GAMES for x in g.tools if g.key == game and x.key == tool), None)
+        chosen = next(((g, x) for g in self.catalog for x in g.tools if g.key == game and x.key == tool), None)
         if chosen:   # once the view is back on the page: a list rebuilt off it shows empty
             self.app.ui(lambda: self.select(*chosen))
         self.session.refresh(update=False)
@@ -215,10 +217,10 @@ class GamesView:
 
     def render_tree(self) -> None:
         rows = []
-        for game in GAMES:
+        for game in self.catalog:
             open_ = game is self.game
             rows.append(ft.Container(ft.Row([
-                ft.Container(ft.Image(src=f"games/{game.key}.png", width=36, height=36,
+                ft.Container(ft.Image(src=game.icon or f"games/{game.key}.png", width=36, height=36,
                                       fit=ft.BoxFit.CONTAIN, filter_quality=ft.FilterQuality.NONE,
                                       semantics_label=game.name),
                              width=40, height=36, alignment=ft.Alignment.CENTER),
@@ -591,14 +593,20 @@ class SessionPanel:
     def checklist(self) -> list[tuple[str, str, str, str]]:
         """(state, what, how to fix it, the page that fixes it) for each thing Start needs.
         state is ok, wait, warn (Start still allowed) or block."""
-        status = self.app.board_status()
-        board_state = ("ok" if status.ready else "wait" if status.state == "checking" else
-                       "block" if status.state in ("missing", "choose", "controller") else "warn")
         items = [
             ("ok", "Switch keys added", "", "") if keys_found(self.app.settings.keys) else
             ("block", "Add your Switch keys", "Choose prod.keys in Settings.", "settings"),
-            (board_state, status.title, "" if status.ready else status.detail, "board"),
         ]
+        if self.app.settings.radio:
+            radio = self.app.plugin_radio()
+            items.append(("ok", f"Radio: {radio.label}", "", "") if radio else
+                         ("block", "Radio plugin not loaded", "Turn it on in Settings, or pick the board.",
+                          "settings"))
+        else:
+            status = self.app.board_status()
+            board_state = ("ok" if status.ready else "wait" if status.state == "checking" else
+                           "block" if status.state in ("missing", "choose", "controller") else "warn")
+            items.append((board_state, status.title, "" if status.ready else status.detail, "board"))
         if missing := command.missing_offer(self.tool, self.games.values):
             hint = " Pick a species, then press Build." if missing.startswith("Build") else ""
             items.append(("block", "Pokemon to offer", missing + hint, ""))
@@ -797,9 +805,11 @@ class SessionPanel:
             return
         if self.app.busy:
             return
-        port = self.app.radio_port()
+        radio = self.app.plugin_radio() if s.radio else None
+        port = radio.scheme if radio else "" if s.radio else self.app.radio_port()
         problems = [p for p in (
-            "" if port else "No board found. Plug it in, or pick one on the Board page.",
+            "" if port else "The radio plugin is not loaded." if s.radio else
+            "No board found. Plug it in, or pick one on the Board page.",
             "" if os.path.isfile(os.path.expanduser(s.keys)) else "Choose your prod.keys in Settings.",
             command.missing_offer(tool, self.games.values), *command.problems(tool, self.games.values)) if p]
         self.log.clear()

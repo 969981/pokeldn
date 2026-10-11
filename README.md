@@ -59,6 +59,8 @@ Nostr relays against a wanted species and trades it with another player's app, n
 at the same time ([the GTS](docs/online.md#the-gts)). Its Control page turns an ESP32-S3 into a
 wired controller for the Switch, or a classic ESP32 into a wireless Pro Controller: press its buttons from the computer, record and edit macros, and
 share them as `.pokemacro` files ([the controller](docs/gui.md#the-controller)).
+Plugins written by other people add tools and radios to the app; they are off until turned on in
+Settings, and the project does not distribute or support them ([plugins](docs/plugins.md)).
 
 - macOS: the app is unsigned, so the first launch is blocked. Open it once and close the warning,
   then System Settings, Privacy & Security, scroll down to Security, Open Anyway next to pokeldn,

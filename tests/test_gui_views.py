@@ -164,7 +164,7 @@ OLD = board_module.Identity("02:00:00:00:00:01", "02:00:00:00:00:02", 3, "pokeld
 
 def _app(port, ident, chip=""):
     app = App.__new__(App)
-    app.settings = SimpleNamespace(radio_port="", keys="")
+    app.settings = SimpleNamespace(radio_port="", radio="", keys="")
     app.identities = {port.device: ident} if ident is not None else {}
     app.chips = {port.device: chip} if chip else {}
     app.hidden_bridges = []

@@ -100,7 +100,7 @@ class Process:
 def base_env(settings, port: str, trace: str | None = None) -> dict:
     env = dict(os.environ, PYTHONUNBUFFERED="1", POKELDN_ESP32_BAUD=str(settings.baud),
                POKELDN_MANAGED_RUN="1")
-    env["POKELDN_RADIO"] = f"esp32:{port or 'auto'}"
+    env["POKELDN_RADIO"] = f"{settings.radio}:" if settings.radio else f"esp32:{port or 'auto'}"
     if trace:
         env["POKELDN_ESP32_TRACE"] = trace
     return env
