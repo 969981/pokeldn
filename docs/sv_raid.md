@@ -113,7 +113,8 @@ higher id
 ([docs/pia.md](pia.md#version-11-what-a-receiver-drops-scarlet-400)): a station list resent under
 packet id 1 after a packet with id 87 left the first console of a two-console lobby on its old list
 (retail and emulated), and the second showed "Communicating..." until it reported the first silent.
-Sent the later lists under packet id 0, two emulated consoles listed each other and fought one raid.
+Sent the later lists under packet id 0, two emulated consoles and two retail Scarlets listed each
+other and fought one raid, in sync after the host left.
 
 A random player id of the form `10 00` and fourteen random bytes drew no type 6 from a retail
 console; the anonymous id `00000000000000010000000000000000` (`pia_connect.DEFAULT_PLAYER_ID`) seated
