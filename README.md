@@ -446,9 +446,10 @@ Contributors to this repository (GitHub does not list contributors on a fork):
   the Switch port
 - [GB-Link Team](https://github.com/GB-Link/GB-Link-Switch-LDN): the custom FireRed/LeafGreen Wonder
   Cards in `vendor/gblink-cards/` (GPL-3.0)
-- [xCyrusBR](https://github.com/xCyrusBR): [TeraLoop-Bridge](https://github.com/xCyrusBR/TeraLoop-Bridge)
-  and [SV-Past-Tera-Raid](https://github.com/xCyrusBR/SV-Past-Tera-Raid), Scarlet/Violet Tera Raid
-  work
+- [xCyrusBR](https://github.com/xCyrusBR): [TeraLoop-Bridge](https://github.com/xCyrusBR/TeraLoop-Bridge),
+  [SV-Past-Tera-Raid](https://github.com/xCyrusBR/SV-Past-Tera-Raid) and
+  [pokeldn-TeraLoop-](https://github.com/xCyrusBR/pokeldn-TeraLoop-), Scarlet/Violet Tera Raid
+  work, including the raid host waiting for the console's Ready
 - [Project Pokemon](https://github.com/projectpokemon): the [EventsGallery](https://github.com/projectpokemon/EventsGallery)
   of Scarlet/Violet raid event deliveries the app downloads, with pkNX's text of each
 
