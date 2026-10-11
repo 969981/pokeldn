@@ -3,6 +3,7 @@
 </p>
 
 <p align="center">
+  <a href="https://pokeldn.app"><img alt="Website" src="https://img.shields.io/badge/website-pokeldn.app-fd474d?style=flat-square&logoColor=white"></a>
   <a href="https://discord.gg/PyvaVYnpXC"><img alt="Discord" src="https://img.shields.io/badge/discord-join-5865F2?style=flat-square&logo=discord&logoColor=white"></a>
   <a href="https://decryptu.github.io/pokeldn/"><img alt="Documentation" src="https://img.shields.io/badge/docs-decryptu.github.io%2Fpokeldn-3fa9f5?style=flat-square&logo=readthedocs&logoColor=white"></a>
   <img alt="Python 3.13" src="https://img.shields.io/badge/python-3.13-3fa9f5?style=flat-square&logo=python&logoColor=white">
@@ -50,7 +51,7 @@ parts of the code.
 <img src=".github/assets/desktop-app.webp" alt="The pokeldn desktop app offering a shiny Chansey for a FireRed trade" width="100%">
 
 The [releases](https://github.com/Decryptu/pokeldn/releases) carry a desktop app for macOS (Apple
-silicon), Windows and Linux. It includes the radio firmware and flashes the board, builds legal
+silicon), Windows and Linux, also linked from [pokeldn.app](https://pokeldn.app). It includes the radio firmware and flashes the board, builds legal
 Pokemon to offer with [PKHeX.Core](https://github.com/kwsch/PKHeX), and runs every trade and Mystery
 Gift below with the tested settings. The only file it asks for is `prod.keys`. Its Bank keeps every
 Pokemon a trade brings in, imports Pokemon files and the game saves PKHeX reads, and trades
