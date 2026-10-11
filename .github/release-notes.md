@@ -1,22 +1,16 @@
-# pokeldn 0.21.0
+# pokeldn 0.22.0
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- Plugins: a Plugins page installs `.pokeplugin` packages that add tools, games or radios, behind a
-  screen listing what the plugin's code does. Packages carry their author's signature, the app checks
-  for plugin updates, and plugin code cannot delete the player's files or erase a board.
-- Tera Raid (Host): up to three consoles join one lobby, and the raid starts once every one is
-  Ready. The NPC partners filling the empty seats are now chosen per raid, as a retail host does,
-  instead of the same two trainers every time.
-- Find a raid ranks results by the rewards wanted, filters on the Mini and Jumbo size marks, and can
-  search every seed of every raid.
-- The Pokemon builder and Showdown sets take the original trainer's friendship.
-- Settings, Your trainer has a Gender choice, so a female player's Pokemon count as her own in
-  Legends Z-A.
-- Sword and Shield trades go on after either side withdraws its acceptance and offers again.
+- The Bank imports Pokemon files and game saves: press + on the Bank page or drop files on its grid.
+  Every legal Pokemon in a Pokemon file or a game save that PKHeX reads is banked once.
+  One from an older game leaves its held item behind and forgets its HMs, as HOME's way in asks;
+  PKHeX's reason is shown for each one left out. The files themselves are never changed. Thanks to
+  Matcore962.
+- Small Pokemon sprites (the Bank, the GTS, trade queues, saves and raids) are all drawn at one size.
 
 The radio firmware is unchanged at 1.6.1 and the controller firmware at 1.3.0; no board needs an
 update.
