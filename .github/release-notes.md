@@ -1,13 +1,16 @@
-# pokeldn 0.22.1
+# pokeldn 0.22.2
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- The GTS checks incoming listings and trade replies more strictly, limits incoming work, and returns
-  the offered Pokemon to the Bank when a trade reply is rejected.
-- Pokemon checks recover when the builder stops responding.
+- Online trades verify incoming messages, keep the partner's identity fixed, and limit incoming
+  work. A rejected replacement Pokemon clears the previous offer and confirmation.
+- Plugin packages reject unsafe file paths and changes made after the install preview.
+- Sprite downloads reject malformed images and limit image decoding.
+- App updates and raid-event downloads check archive paths, links, file counts and unpacked size.
+  Downloads enforce size and time limits; app and firmware updates check their release source.
 
 Existing GTS listings continue to work; no relisting is needed.
 
