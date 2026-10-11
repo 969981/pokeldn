@@ -15,7 +15,7 @@ COLUMNS = 3
 # shows two to a row.
 CARD_WIDTH = 150
 GAP = 8
-MOVES_HEIGHT = 31                           # two 11 px lines at the theme's 1.4 line height
+REASON_HEIGHT = 48                          # two 11 px lines at the theme's 1.4 line height, padded
 RANKS = {1: (t.AMBER, "Favoured by raiders"), 2: (t.SILVER, "Next tier for raiders")}
 
 
@@ -124,37 +124,37 @@ class RaidPartnersPicker:
                              alignment=ft.Alignment.CENTER) if picked else ft.Container()
         title = ft.Row([
             Sprite(self.app, partner.species, size=MINI).control,
-            # The level on a line of its own, so a narrow card cuts neither it nor the Pokemon.
-            ft.Column([t.text(partner.trainer, 13, weight=ft.FontWeight.W_600, max_lines=1),
-                       t.text(partner.name, 11, t.MUTED, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS),
-                       t.text(f"Lv. {self.level}" if self.level else "Lv. —", 11, t.MUTED, max_lines=1)],
+            ft.Column([t.text(partner.trainer, 13, weight=ft.FontWeight.W_600, max_lines=1,
+                              overflow=ft.TextOverflow.ELLIPSIS),
+                       t.text(partner.name, 12, t.MUTED, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS)],
                       spacing=0, expand=True),
             order,
-        ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.START)
-        details = ft.Column([
-            t.text(partner.ability, 11, t.SOFT, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS),
-            # Two lines whatever the moves' length, so the cards of a row stand level.
-            ft.Container(t.text(" · ".join(partner.moves), 11, t.MUTED, max_lines=2,
-                                overflow=ft.TextOverflow.ELLIPSIS), height=MOVES_HEIGHT),
-            t.text(f"Tera {partner.tera}", 11, t.MUTED, max_lines=1),
-        ], spacing=0)
-        column = [title, details]
+        ], spacing=10, vertical_alignment=ft.CrossAxisAlignment.CENTER)
+        facts = ft.Row([t.chip(f"Lv. {self.level}" if self.level else "Lv. —"),
+                        t.chip(partner.tera, "diamond-gem", t.FAINT)], spacing=6, tight=True)
+        # Every partner has three moves, one to a line, so every card of a pool stands as tall.
+        moves = ft.Column([t.text(partner.ability, 12, t.SOFT, weight=ft.FontWeight.W_500, max_lines=1,
+                                  overflow=ft.TextOverflow.ELLIPSIS)]
+                          + [t.text(move, 12, t.MUTED, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS)
+                             for move in partner.moves], spacing=1)
+        column = [title, facts, moves]
         if footer:
-            # Wanted by raiders: why, then a star in the bottom right, gold for the favoured and silver
-            # for the next tier; the tooltip says why at more length.
-            wanted, tip = None, None
+            # Wanted by raiders: a strip tinted gold for the favoured, silver for the next tier; its
+            # tooltip says why at more length. A card without one keeps the strip's room.
+            strip = ft.Container(height=REASON_HEIGHT)
             if partner.why:
                 ink, tier = RANKS[partner.rank]
-                wanted = ft.Row([
-                    ft.Container(t.text(partner.why, 11, ink, max_lines=2, overflow=ft.TextOverflow.ELLIPSIS,
-                                        text_align=ft.TextAlign.RIGHT), expand=True),
+                strip = ft.Container(ft.Row([
                     t.pixel_icon("star", 12, color=ink),
-                ], spacing=6, vertical_alignment=ft.CrossAxisAlignment.END)
-                tip = f"{tier}: {partner.detail}."
-            column.append(ft.Container(wanted, height=MOVES_HEIGHT, alignment=ft.Alignment.BOTTOM_RIGHT,
-                                       tooltip=tip))
+                    ft.Container(t.text(partner.why, 11, ink, max_lines=2, overflow=ft.TextOverflow.ELLIPSIS),
+                                 expand=True),
+                ], spacing=6, vertical_alignment=ft.CrossAxisAlignment.START),
+                    height=REASON_HEIGHT, padding=ft.Padding(8, 6, 8, 6), border_radius=8,
+                    bgcolor=ft.Colors.with_opacity(0.10, ink), tooltip=f"{tier}: {partner.detail}.")
+            column.append(strip)
         return ft.Container(
-            ft.Column(column, spacing=6), expand=True, padding=10, border_radius=12,
+            ft.Column(column, spacing=8, horizontal_alignment=ft.CrossAxisAlignment.STRETCH), expand=True,
+            padding=12, border_radius=12,
             bgcolor=t.SELECTED if picked else t.FIELD,
             border=ft.Border.all(1, t.BLUE if picked else t.OUTLINE),
             opacity=0.45 if full and not picked else 1.0,
