@@ -3,78 +3,81 @@ title: Plugins
 ---
 # Plugins
 
-A plugin adds tools to the app and radios to the wireless layer without changing pokeldn. Code:
-`pokeldn/plugins.py` (the loader and the API), `pokeldn/ldn/radios.py` (the radio lookup). The
-project does not distribute, review or support third-party plugins.
+A plugin adds tools, games and radios to pokeldn without changing it. It is a folder of Python files
+with a `plugin.toml`, shipped as one `.pokeplugin` file that players add on the app's Plugins page.
+The project does not distribute, review or support third-party plugins.
 
-A plugin runs as Python inside pokeldn, with the same access to files, keys and the network.
-Plugins are off until enabled.
+Code: `pokeldn/plugins.py` (the loader and the API), `pokeldn/app/plugin_store.py` (packages),
+`pokeldn/ldn/radios.py` (the radio lookup), `gui/views/plugins.py` (the page).
 
-## Where plugins are found
+Two examples are a base to start from: `examples/plugins/hello` is the smallest plugin, one tool in
+two files; `examples/plugins/test_kit` uses every part of the API.
 
-| source | loaded when |
-|---|---|
-| a folder in `plugins/` in the app's data folder (`~/Library/Application Support/pokeldn/plugins` on macOS) | Settings, Show advanced settings, Plugins, turns it on |
-| a folder named in `POKELDN_PLUGINS` (folders separated by `:`, `;` on Windows) | always, in that process and its runs |
-| an installed Python package with an entry point in the `pokeldn.plugins` group | Settings turns it on |
+## Installing a plugin
 
-Settings applies a change at the next app start. `python -m pokeldn --plugins` lists every plugin
-found and whether it loaded or why it failed.
+1. Open **Plugins** at the bottom of the side menu.
+2. Drop the `.pokeplugin` file on the page, or press **Add a plugin** and choose it.
+3. Read what the plugin is and the risks, tick the acknowledgement, and press **Install**.
 
-## A folder plugin
+The plugin's tools appear on the Games page at once, marked with a plug and "From the plugin ...".
+Each plugin's card has a switch to turn it off and on, and a menu to open its tools, update it from a
+newer file, show its folder, visit its page and remove it. Every install and update shows the risk
+screen again. A plugin copied into the plugins folder by hand shows "Added by hand" and asks for the
+same acceptance the first time it is turned on.
+
+A plugin runs as Python inside pokeldn, with the same access to files, keys, the network and the
+board. Nothing in a package runs before it is installed and turned on.
+
+## Making a plugin
+
+### The folder
 
     my-plugin/
-        plugin.toml
-        plugin.py
-        echo.py
+        plugin.toml        what the plugin is
+        plugin.py          register(api): what it adds
+        hello.py           a tool's script
+        icon.png           optional, shown on the Plugins page and the Games page
+        mylib_common.py    optional, any module the scripts share
 
-`plugin.toml`:
+### plugin.toml
 
 ```toml
-id = "my-plugin"            # unique; Settings stores it
-name = "My plugin"
-description = "One line shown in Settings."
-version = "0.1"
-api = 1                     # the plugin API this was written for
-module = "plugin"           # plugin.py; optional
+id = "my-plugin"            # required: lowercase letters, digits, dots, dashes, underscores
+name = "My plugin"          # shown in the app
+version = "1.0.0"           # compared on update: 1.2.0 updates 1.0.0
+author = "Your name"
+description = "One or two sentences shown on the install screen and the plugin's card."
+homepage = "https://example.org/my-plugin"   # optional, opened from the plugin's menu
+api = 1                     # required: the plugin API version this was written for
+icon = "icon.png"           # optional; a square PNG, 96 x 96 looks sharp
+module = "plugin"           # optional; the module holding register()
 ```
 
-`plugin.py` defines `register(api)`. A packaged plugin's entry point names a module with the same
-function. The plugin's folder is on `sys.path`, so modules it ships next to `plugin.py` import. The
-packaged app has no `pip`, so a folder plugin ships any dependency that is not already in pokeldn.
+### plugin.py
+
+`register(api)` runs when the plugin is turned on, in the app and in every run the app starts.
 
 ```python
 from pokeldn.plugins import Field, Game, Tool
 
 
 def register(api):
-    api.add_tool("frlg", Tool("my-echo", "Echo", "echo.py", "Prints a word.", ("Nothing to press.",),
-                              fields=(Field("--word", "Word", default="hello"),)))
+    api.add_tool("frlg", Tool(
+        "my-hello",                                   # a key no other tool uses
+        "Hello",                                      # the name on the Games page
+        "hello.py",                                   # the script, relative to the plugin folder
+        "Says hello.",                                # the line under the tool's name
+        ("Nothing to do on the console.", "Press Start."),   # the console steps the app lists
+        fields=(Field("--name", "Your name", default="Red"),),
+        fixed=("--trainer", "{ot}"),                  # always passed; {ot} is the trainer name in Settings
+    ))
 ```
 
-A plugin that raises in `register`, targets another API version or takes a name already in use
-adds nothing; Settings shows the error and the other plugins still load.
+### A tool's script
 
-## The API, version 1
-
-| call | effect |
-|---|---|
-| `api.add_tool(game, tool)` | adds a `Tool` under the game whose key is `game`: `frlg`, `lgpe`, `swsh`, `bdsp`, `pla`, `sv`, `za`, or one the plugin added |
-| `api.add_game(game, icon="")` | adds a new game section with its tools; `icon` is an image file in the plugin |
-| `api.add_radio(scheme, install, label="")` | makes `POKELDN_RADIO=scheme:ARG` call `install(ARG, log)` before the first LDN call, and adds the radio to Settings |
-| `api.folder` | the plugin's folder, or None for a package |
-| `api.version` | the API version, `1` |
-
-`Tool`, `Field` and `Game` are the app's own catalog types (`pokeldn/app/catalog.py`); a field's
-`flag` is the argument the app passes to the tool's script. A tool key or game key may not repeat
-one that exists.
-
-## A tool's script
-
-A tool runs as the app's own child process, in the session folder, with the radio settings in its
-environment. A relative `script` path is relative to the plugin's folder. The app imports the script
-to read its arguments for the Advanced tab, so the script follows the same rule as `bin/`: a
-`build_parser()` that returns its `argparse` parser, and the work under `if __name__ == "__main__"`.
+The app imports the script to read its options for the Advanced tab, then runs it as its own child
+process in the session folder. The script defines `build_parser()` and does its work under
+`if __name__ == "__main__"`; work at the top level runs on import and breaks the Games page.
 
 ```python
 import argparse
@@ -82,35 +85,128 @@ import argparse
 
 def build_parser():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--word")
+    parser.add_argument("--name")
+    parser.add_argument("--trainer")
     return parser
 
 
 if __name__ == "__main__":
-    print("echo:", build_parser().parse_args().word)
+    args = build_parser().parse_args()
+    print(f"Hello {args.name}, from {args.trainer}'s pokeldn.")
 ```
 
-A line the script prints shows in the session's output. `[done] trade N complete` ticks a queued
-trade off, as `pokeldn.ldn.show_done` prints it.
+| the script | the app |
+|---|---|
+| prints a line | shows it in the session's output |
+| prints `[done] trade N complete` (`pokeldn.ldn.show_done()`) | ticks one queued trade off |
+| exits with code 0 | ends the session as done |
+| exits with another code or raises | shows the session as failed, with the traceback in the output |
+| receives `KeyboardInterrupt` | the player pressed Stop; leave cleanly within 15 s or the process is ended |
 
-## A radio
+Give shared modules a name no other package uses (`mylib_common`, not `utils`): the plugin's folder
+is added to Python's search path.
 
-The LDN layer reaches the air through `ldn.wlan.create_factory`. A radio's `install` calls
-`ldn.wlan.set_factory(factory)`, where `factory()` is an async context manager yielding an object
-with the interface of `ldn.wlan.Factory`; `pokeldn/ldn/esp32_wlan.py` is the board's implementation
-and the reference for one that has no kernel interface. With any `POKELDN_RADIO` set, launchers skip
-the Linux `iw` and interface steps.
+### Fields
 
-In the app, Settings, Plugins, Radio picks the board or a plugin's radio. A plugin radio runs with
-`POKELDN_RADIO=scheme:` and an empty argument; the plugin keeps its own configuration. From the
-command line:
+A `Field` is one input on the tool's Basic tab; the app passes its value after its flag.
+
+| `kind` | the input | passed as |
+|---|---|---|
+| `text` (default) | a text box | `--flag VALUE` |
+| `number` | a number box | `--flag VALUE` |
+| `choice` | a dropdown of `choices=((value, label), ...)` | `--flag VALUE` |
+| `switch` | an on/off switch | `--flag` when on |
+| `file` | a file chooser, `exts=("bin",)` | `--flag PATH` |
+
+`help=` puts a line under the input, `default=` fills it, and `hidden=True` moves it to the
+Advanced tab. The fields the built-in tools use, and the
+rest of `Field`, are in `pokeldn/app/catalog.py`. A tool's `fixed` arguments may carry `{ot}`,
+`{tid}`, `{sid}` and `{language}` (the trainer in Settings), `{received}` (the Received folder) and
+`{stamp}` (the run's start time).
+
+### A game of its own
+
+```python
+api.add_game(Game("my-game", "My game", "Mine", "", (tool_one, tool_two)), icon="icon.png")
+```
+
+`Game(key, name, short, doc, tools)`; the game's section lists its tools in order, under the built-in
+games. `api.add_tool("my-game", tool)` adds more to it.
+
+### A radio
+
+A radio carries the wireless messages in place of the ESP32 board. `api.add_radio(scheme, install,
+label)` lists it on the Plugins page under **Radio**; a run started with that radio calls
+`install(argument, log)` before its first wireless call.
+
+```python
+import contextlib
+from ldn import wlan
+
+
+def install(argument, log):
+    @contextlib.asynccontextmanager
+    async def factory():
+        yield MyFactory()           # the interface of ldn.wlan.Factory
+    wlan.set_factory(factory)
+
+
+def register(api):
+    api.add_radio("myradio", install, "My radio")
+```
+
+`pokeldn/ldn/esp32_wlan.py` is the board's factory and the reference for one with no kernel
+interface. The app runs a plugin radio as `POKELDN_RADIO=myradio:` with an empty argument; from the
+command line the argument is what follows the colon.
+
+### Packing and testing
 
 ```bash
-POKELDN_PLUGINS=~/my-plugin POKELDN_RADIO=myradio:ARG ./.venv/bin/python -m pokeldn sv-host
+python scripts/pack_plugin.py my-plugin
 ```
 
-## Compatibility
+writes `my-plugin-1.0.0.pokeplugin` and checks it the way the app does before installing. Any zip
+works if `plugin.toml` sits at its top or inside one top folder, with no path leaving that folder
+and no symbolic link.
 
-`pokeldn.plugins` with the names in the API table is the supported surface; anything else a plugin
-imports from pokeldn can change in any release. A change to the API table raises `API_VERSION`, and
-a plugin written for another version is refused with a message.
+While writing, skip the package: name the folder in `POKELDN_PLUGINS` and the plugin is on in that
+process and the runs it starts, whatever the Plugins page says.
+
+```bash
+POKELDN_PLUGINS=~/my-plugin python -m pokeldn --plugins
+POKELDN_PLUGINS=~/my-plugin python -m pokeldn my-hello -- --name Blue
+POKELDN_PLUGINS=~/my-plugin python gui/main.py
+```
+
+`--plugins` lists every plugin found and why one failed to load. A plugin that raises in
+`register`, targets another API version or takes a key in use adds nothing; its card shows the
+error and the other plugins still load. A plugin can also ship as a Python package with an entry
+point in the `pokeldn.plugins` group naming the module that holds `register`.
+
+## The Plugin Test Kit
+
+`examples/plugins/test_kit`, packed with `scripts/pack_plugin.py`, adds:
+
+| where | tool | what it does |
+|---|---|---|
+| Plugin Test Kit | Self-test | checks the API, its own loading, its imports, every field kind, the trainer token, the session folder and its radio; prints PASS or FAIL for each |
+| Plugin Test Kit | Simulated session | prints a trade's steps and a `[done]` line per trade; Stop ends it cleanly |
+| Plugin Test Kit | Fail on purpose | raises, or exits with code 3 |
+| FireRed & LeafGreen | Hello from a plugin | a plugin tool among the built-in ones |
+| Radio | Test Kit radio | installs and carries nothing; a session started with it says so |
+
+## The API, version 1
+
+| name | what it is |
+|---|---|
+| `api.add_tool(game, tool)` | adds a `Tool` under the game whose key is `game`: `frlg`, `lgpe`, `swsh`, `bdsp`, `pla`, `sv`, `za`, or one the plugin added |
+| `api.add_game(game, icon="")` | adds a game section with its tools |
+| `api.add_radio(scheme, install, label="")` | adds a radio |
+| `api.folder` | the plugin's folder (a `Path`), or None for a Python package |
+| `api.version` | `1` |
+| `Tool`, `Field`, `Game` | the app's catalog types, imported from `pokeldn.plugins` |
+| `pokeldn.ldn.show_done()` | prints the line that ticks a trade off |
+
+This table is the supported surface. Anything else a plugin imports from pokeldn can change in any
+release. A change to the table raises `API_VERSION`; the app refuses a plugin written for another
+version and says which.

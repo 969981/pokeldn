@@ -28,6 +28,9 @@ class Plugin:
     folder: Path | None = None
     description: str = ""
     version: str = ""
+    author: str = ""
+    homepage: str = ""
+    icon: str = ""                        # an image file in the folder
     api: int = API_VERSION
     module: str = "plugin"
     entry_point: object = None
@@ -94,6 +97,7 @@ class API:
 _loaded: dict[str, Plugin] = {}
 _radios: dict[str, Radio] = {}
 _done = False
+generation = 0          # counts reloads, so a view knows its catalog is stale
 
 
 def _builtin_games() -> tuple[Game, ...]:
@@ -132,6 +136,10 @@ def _read_folder(path: Path) -> Plugin:
     plugin.name = str(meta.get("name", plugin.id))
     plugin.description = str(meta.get("description", ""))
     plugin.version = str(meta.get("version", ""))
+    plugin.author = str(meta.get("author", ""))
+    plugin.homepage = str(meta.get("homepage", ""))
+    icon = str(meta.get("icon", "icon.png"))
+    plugin.icon = str(path / icon) if icon and (path / icon).is_file() and "/" not in icon else ""
     plugin.module = str(meta.get("module", "plugin"))
     try:
         plugin.api = int(meta.get("api", 0))
@@ -152,7 +160,8 @@ def named(plugin: Plugin) -> bool:
 def discover() -> list[Plugin]:
     """Every plugin present, loaded or not: the data folder's, POKELDN_PLUGINS' and installed ones."""
     found, seen = [], set()
-    local = sorted(p for p in folder().iterdir() if (p / "plugin.toml").is_file()) if folder().is_dir() else []
+    local = sorted(p for p in folder().iterdir() if not p.name.startswith(".") and (p / "plugin.toml").is_file()) \
+        if folder().is_dir() else []
     for path in [*sorted(_named()), *local]:
         plugin = _read_folder(path)
         if plugin.id not in seen:
@@ -247,3 +256,21 @@ def _reset() -> None:
     _done = False
     _loaded.clear()
     _radios.clear()
+
+
+def reload() -> list[Plugin]:
+    """Loads the plugins again after Settings or the plugins folder changed. A module a plugin
+    dropped stays imported; its tools and radios are gone."""
+    global generation
+    _reset()
+    generation += 1
+    return load()
+
+
+def owner(tool_key: str) -> Plugin | None:
+    """The loaded plugin that added the tool `tool_key`, or None for a built-in tool."""
+    for plugin in _loaded.values():
+        if any(t.key == tool_key for _, t in plugin.tools) or \
+                any(t.key == tool_key for g in plugin.games for t in g.tools):
+            return plugin
+    return None

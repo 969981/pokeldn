@@ -159,3 +159,144 @@ def test_a_broken_plugin_keeps_its_error_and_adds_nothing(isolated, tmp_path, mo
     keys = {t.key for g in plugins.games() for t in g.tools}
     assert "good-echo" in keys and "example-echo" not in keys
     assert plugins.radios() == []
+
+
+KIT = ROOT / "examples" / "plugins" / "test_kit"
+HELLO = ROOT / "examples" / "plugins" / "hello"
+
+
+def zipped(path: Path, files: dict, links: tuple = ()) -> Path:
+    import stat
+    import zipfile
+    with zipfile.ZipFile(path, "w") as archive:
+        for name, text in files.items():
+            archive.writestr(name, text)
+        for name in links:
+            info = zipfile.ZipInfo(name)
+            info.external_attr = (stat.S_IFLNK | 0o777) << 16
+            archive.writestr(info, "/etc/passwd")
+    return path
+
+
+GOOD_TOML = 'id = "ok"\nname = "Ok"\napi = 1\n'
+
+
+@pytest.mark.parametrize("files, links, error", [
+    ({"plugin.py": ""}, (), "no plugin.toml"),
+    ({"plugin.toml": GOOD_TOML, "plugin.py": "", "../evil.py": ""}, (), "unsafe path"),
+    ({"plugin.toml": GOOD_TOML, "plugin.py": ""}, ("link.py",), "unsafe path"),
+    ({"plugin.toml": GOOD_TOML.replace("api = 1", "api = 2"), "plugin.py": ""}, (), "plugin API 2"),
+    ({"plugin.toml": GOOD_TOML.replace('"ok"', '"../Up"'), "plugin.py": ""}, (), "needs an id"),
+    ({"plugin.toml": GOOD_TOML}, (), "no plugin.py"),
+    ({"a/plugin.toml": GOOD_TOML, "a/plugin.py": "", "b/plugin.toml": GOOD_TOML}, (), "several plugins"),
+    ({"a/plugin.toml": GOOD_TOML, "a/plugin.py": "", "stray.txt": ""}, (), "at the top"),
+], ids=["no-toml", "traversal", "symlink", "api", "bad-id", "no-module", "two-plugins", "stray-file"])
+def test_a_package_that_is_not_a_safe_plugin_is_refused_before_anything_runs(tmp_path, files, links, error):
+    from pokeldn.app import plugin_store
+    with pytest.raises(plugin_store.PackageError, match=error):
+        plugin_store.read(str(zipped(tmp_path / "x.pokeplugin", files, links)))
+
+
+@pytest.mark.parametrize("example", [KIT, HELLO], ids=["test_kit", "hello"])
+def test_every_example_packs_into_an_installable_package(tmp_path, example):
+    from pokeldn.app import plugin_store
+    package = plugin_store.pack(str(example), str(tmp_path / "x.pokeplugin"))
+    assert package.api == plugins.API_VERSION and package.version and package.author
+
+
+def test_the_hello_example_greets_through_the_cli(tmp_path):
+    env = dict(os.environ, POKELDN_PLUGINS=str(HELLO), POKELDN_DATA=str(tmp_path / "data"), PYTHONPATH=str(ROOT))
+    run = subprocess.run([sys.executable, "-m", "pokeldn", "hello-greet", "--", "--greeting", "Bonjour"],
+                         cwd=tmp_path, env=env, capture_output=True, text=True, timeout=60)
+    assert "Bonjour, POKELDN! This line comes from a plugin." in run.stdout, run.stdout + run.stderr
+
+
+def test_a_file_that_is_not_a_zip_is_refused(tmp_path):
+    from pokeldn.app import plugin_store
+    (tmp_path / "x.pokeplugin").write_text("hello")
+    with pytest.raises(plugin_store.PackageError, match="not a plugin package"):
+        plugin_store.read(str(tmp_path / "x.pokeplugin"))
+
+
+def test_the_test_kit_installs_from_its_package_and_passes_its_self_test(isolated, tmp_path):
+    """The kit packed as a user receives it, installed and turned on the way the Plugins page does, then its
+    self-test run through the CLI child path with nothing but the data folder pointing at it."""
+    from pokeldn.app import plugin_store
+    package = plugin_store.pack(str(KIT), str(tmp_path / "test-kit.pokeplugin"))
+    assert (package.id, plugin_store.compare(package, plugin_store.installed("test-kit"))) == ("test-kit", "install")
+    target = plugin_store.install(package)
+    assert plugin_store.consented(plugins._read_folder(target))
+    (isolated / "settings.json").write_text(json.dumps({"plugins": ["test-kit"]}))
+    games = {g.key: g for g in plugins.reload() and plugins.games()}
+    assert [t.key for t in games["test-kit"].tools] == ["test-kit-selftest", "test-kit-session", "test-kit-fail"]
+    assert "test-kit-hello" in {t.key for t in games["frlg"].tools}
+    assert plugins.owner("test-kit-hello").name == "Plugin Test Kit" and plugins.owner("frlg-gift") is None
+    env = dict(os.environ, POKELDN_DATA=str(isolated), PYTHONPATH=str(ROOT))
+    env.pop("POKELDN_PLUGINS", None)
+    run = subprocess.run([sys.executable, "-m", "pokeldn", "test-kit-selftest"], cwd=tmp_path, env=env,
+                         capture_output=True, text=True, timeout=120)
+    assert "8 of 8 checks passed." in run.stdout, run.stdout + run.stderr
+
+
+def test_an_update_replaces_the_files_and_remove_deletes_only_the_apps_own(isolated, tmp_path):
+    from pokeldn.app import plugin_store
+    source = tmp_path / "src"
+    shutil_copy(KIT, source)
+    (source / "old.txt").write_text("from 1.0.0")
+    plugin_store.install(plugin_store.pack(str(source), str(tmp_path / "a.pokeplugin")))
+    (source / "old.txt").unlink()
+    (source / "plugin.toml").write_text((source / "plugin.toml").read_text().replace("1.0.0", "1.2.0"))
+    newer = plugin_store.pack(str(source), str(tmp_path / "b.pokeplugin"))
+    assert plugin_store.compare(newer, plugin_store.installed("test-kit")) == "update"
+    target = plugin_store.install(newer)
+    assert not (target / "old.txt").exists() and plugin_store.installed("test-kit").version == "1.2.0"
+    assert plugin_store.compare(plugin_store.read(str(tmp_path / "a.pokeplugin")),
+                                plugin_store.installed("test-kit")) == "downgrade"
+    assert sorted(p.name for p in plugins.folder().iterdir()) == ["test-kit"]     # no staging left behind
+    with pytest.raises(plugin_store.PackageError):
+        plugin_store.remove("..")
+    plugin_store.remove("test-kit")
+    assert not target.exists()
+
+
+def shutil_copy(src: Path, dst: Path) -> None:
+    import shutil
+    shutil.copytree(src, dst)
+
+
+def test_the_install_screen_installs_nothing_until_the_risks_are_accepted(isolated, tmp_path, monkeypatch):
+    pytest.importorskip("flet")
+    import flet as ft
+    from types import SimpleNamespace
+    from gui.views import plugins as view
+    from pokeldn.app import plugin_store
+    from pokeldn.app.settings import Settings
+    monkeypatch.setattr(ft.BaseControl, "update", lambda self: None)
+    package = plugin_store.pack(str(KIT), str(tmp_path / "test-kit.pokeplugin"))
+    shown, closed = [], []
+    settings = Settings()
+    from pokeldn.app import settings as settings_module
+    monkeypatch.setattr(settings_module, "PATH", isolated / "settings.json")
+    app = SimpleNamespace(settings=settings, navigate=lambda *a, **k: None, ui=lambda f: f(),
+                          page=SimpleNamespace(show_dialog=shown.append, pop_dialog=lambda: closed.append(1)))
+    page = view.PluginsView(app)
+    page.open_file(package.source)
+
+    def walk(control):
+        yield control
+        for name in ("content", "controls", "actions"):
+            child = getattr(control, name, None)
+            for c in (child if isinstance(child, list) else [child] if child is not None else []):
+                yield from walk(c)
+    controls = list(walk(shown[0]))
+    install = next(c for c in controls if isinstance(c, ft.Button) and c.content == "Install")
+    tick = next(c for c in controls if isinstance(c, ft.Container) and c.on_click and any(
+        isinstance(x, ft.Text) and x.value.startswith("I understand") for x in walk(c)))
+    assert install.disabled
+    install.on_click(None)
+    assert plugin_store.installed("test-kit") is None
+    tick.on_click(None)
+    assert not install.disabled
+    install.on_click(None)
+    assert plugin_store.installed("test-kit").version == "1.0.0"
+    assert settings.plugins == ["test-kit"] and "test-kit" in {p.id for p in plugins.load() if p.loaded}

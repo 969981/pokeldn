@@ -6,7 +6,7 @@ import flet as ft
 
 from gui import theme as t
 from gui.app import keys_found
-from pokeldn import __version__, plugins
+from pokeldn import __version__
 from pokeldn.app.paths import SESSION
 from pokeldn.app.sprites import CACHE
 from pokeldn.app.settings import LANGUAGES, switch_ids_valid
@@ -108,7 +108,6 @@ class SettingsView:
                                 padding=ft.Padding(4, 8, 0, 0))
 
         advanced = [
-            self.plugins_card(),
             t.card("Serial speed", speed, "How fast the computer talks to the board. Keep the default unless a "
                                           "guide says otherwise."),
             switch("board_trace", "Record the board's serial traffic",
@@ -163,51 +162,6 @@ class SettingsView:
             t.card(f"About pokeldn {__version__}", ft.Row([link(label, url) for label, url in LINKS], spacing=4),
                    "pokeldn is AGPLv3. Pokemon are checked with PKHeX.Core (GPLv3)."),
         ]
-
-    def plugins_card(self) -> ft.Control:
-        s = self.app.settings
-        loaded = {p.id: p for p in plugins.load()}
-        rows = []
-        for plugin in plugins.discover():
-            state = loaded.get(plugin.id)
-            wanted = plugin.id in s.plugins or plugins.named(plugin)
-            if state is not None and state.error:
-                status = t.badge("Failed: " + state.error, t.RED, "warning-diamond")
-            elif (state is not None) != wanted:
-                status = t.badge("Restart the app to apply", t.AMBER)
-            else:
-                status = t.badge("Loaded" if state else "Off", t.GREEN if state else t.FAINT)
-            rows.append(ft.Row([
-                ft.Column([t.text(plugin.name + (f" {plugin.version}" if plugin.version else ""), 13,
-                                  weight=ft.FontWeight.W_600),
-                           *([t.text(plugin.description, 12, t.MUTED)] if plugin.description else []),
-                           status], spacing=2, expand=True),
-                t.switch(plugin.id in s.plugins, lambda e, i=plugin.id: self._toggle_plugin(i, e.control.value)),
-            ], vertical_alignment=ft.CrossAxisAlignment.START))
-        choices = [("", "The board")] + [(r.scheme, r.label) for r in plugins.radios()]
-        if s.radio and s.radio not in {c[0] for c in choices}:
-            choices.append((s.radio, f"{s.radio} (plugin not loaded)"))
-        body = ft.Column([
-            *(rows or [t.text("No plugins installed.", 12, t.MUTED)]),
-            *([ft.Column([t.text("Radio", 11, t.MUTED),
-                          t.dropdown(choices, s.radio, on_select=lambda e: self.save("radio", e.control.value or ""))],
-                         spacing=4)] if len(choices) > 1 else []),
-            ft.Row([t.button("Open the plugins folder", self._open_plugins, "folder", filled=False)]),
-        ], spacing=10)
-        return t.card("Plugins", body,
-                      "Plugins add tools and radios made by other people. A plugin is a program with the same "
-                      "access as pokeldn, your keys and files included: turn on only what you trust. pokeldn does "
-                      "not check or support plugins. Changes apply when the app restarts.")
-
-    def _toggle_plugin(self, plugin_id: str, value: bool) -> None:
-        ids = [i for i in self.app.settings.plugins if i != plugin_id] + ([plugin_id] if value else [])
-        self.save("plugins", ids)
-        self.render()
-        self.column.update()
-
-    def _open_plugins(self, e) -> None:
-        plugins.folder().mkdir(parents=True, exist_ok=True)
-        open_folder(str(plugins.folder()))
 
     def _toggle_advanced(self, e) -> None:
         self.show_advanced = not self.show_advanced

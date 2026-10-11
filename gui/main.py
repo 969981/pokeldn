@@ -44,6 +44,7 @@ PAGES = (
     ("controller", "Control", "joystick"),
     ("docs", "Docs", "book-open"),
 )
+PLUGINS = ("plugins", "Plugins", "plug")
 SETTINGS = ("settings", "Settings", "gear")
 UPDATE = ("update", "Update", "download")
 
@@ -86,6 +87,9 @@ def main(page: ft.Page) -> None:
         if key == "docs":
             from gui.views.docs import DocsView
             return DocsView(app)
+        if key == "plugins":
+            from gui.views.plugins import PluginsView
+            return PluginsView(app)
         from gui.views.settings import SettingsView
         return SettingsView(app)
 
@@ -104,7 +108,7 @@ def main(page: ft.Page) -> None:
 
     def render_rail() -> None:
         rail.controls = [item(p) for p in PAGES]
-        bottom.controls = [item(UPDATE)] * bool(app.update) + [item(SETTINGS)]
+        bottom.controls = [item(UPDATE)] * bool(app.update) + [item(PLUGINS), item(SETTINGS)]
 
     def navigate(key: str, **kwargs) -> None:
         if key == "update":

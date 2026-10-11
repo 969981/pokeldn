@@ -3,6 +3,8 @@ import shlex
 import threading
 import time
 
+from pathlib import Path
+
 import flet as ft
 
 from gui import board
@@ -34,13 +36,17 @@ ADVANCED_NOTE = ("The tested defaults work for most players. Change these only w
 
 
 def tool_icon(tool: Tool):
+    if plugins.owner(tool.key):
+        return "plug"
     if tool.key.endswith("-online"):
         return "globe"
     return TOOL_ICONS.get(tool.name.split(" (")[0], "arrows-horizontal")
 
 
 def tool_role(tool: Tool) -> str:
-    """Who looks for whom, said from the console's side."""
+    """Who looks for whom, said from the console's side; a plugin's tool names its plugin."""
+    if owner := plugins.owner(tool.key):
+        return f"From the plugin {owner.name}"
     if tool.key.endswith("-host"):
         return "Your console joins pokeldn"
     if tool.key.endswith("-join"):
@@ -54,6 +60,7 @@ class GamesView:
     def __init__(self, app):
         self.app = app
         self.catalog = plugins.games()   # the catalog with the enabled plugins' tools
+        self.generation = plugins.generation
         self.game: Game = self.catalog[0]
         self.tool: Tool = self.game.tools[0]
         self.tab = "basic"
@@ -91,6 +98,11 @@ class GamesView:
     def enter(self, game: str = "", tool: str = "", **_) -> None:
         """`game` and `tool` are catalog keys: the bank opens the trade it queued a Pokemon for."""
         self.visible = True
+        if self.generation != plugins.generation:     # a plugin was turned on, off, added or removed
+            self.generation, self.catalog = plugins.generation, plugins.games()
+            game_now = next((g for g in self.catalog if g.key == self.game.key), self.catalog[0])
+            tool_now = next((x for x in game_now.tools if x.key == self.tool.key), game_now.tools[0])
+            self.app.ui(lambda: self.select(game_now, tool_now))
         chosen = next(((g, x) for g in self.catalog for x in g.tools if g.key == game and x.key == tool), None)
         if chosen:   # once the view is back on the page: a list rebuilt off it shows empty
             self.app.ui(lambda: self.select(*chosen))
@@ -220,7 +232,7 @@ class GamesView:
         for game in self.catalog:
             open_ = game is self.game
             rows.append(ft.Container(ft.Row([
-                ft.Container(ft.Image(src=game.icon or f"games/{game.key}.png", width=36, height=36,
+                ft.Container(ft.Image(src=Path(game.icon).read_bytes() if game.icon else f"games/{game.key}.png", width=36, height=36,
                                       fit=ft.BoxFit.CONTAIN, filter_quality=ft.FilterQuality.NONE,
                                       semantics_label=game.name),
                              width=40, height=36, alignment=ft.Alignment.CENTER),
@@ -257,7 +269,7 @@ class GamesView:
         self.cards.update()
 
     def _open_doc(self, e) -> None:
-        self.app.navigate("docs", doc=self.tool.doc or self.game.doc)
+        self.app.navigate("docs", doc=self.tool.doc or self.game.doc or "plugins.md")
 
     # Basic tab
 
@@ -600,8 +612,8 @@ class SessionPanel:
         if self.app.settings.radio:
             radio = self.app.plugin_radio()
             items.append(("ok", f"Radio: {radio.label}", "", "") if radio else
-                         ("block", "Radio plugin not loaded", "Turn it on in Settings, or pick the board.",
-                          "settings"))
+                         ("block", "Radio plugin not loaded", "Turn its plugin on, or pick the board.",
+                          "plugins"))
         else:
             status = self.app.board_status()
             board_state = ("ok" if status.ready else "wait" if status.state == "checking" else
@@ -621,7 +633,7 @@ class SessionPanel:
                            t.secondary_button("Board", lambda e: self.app.navigate("board"), "cpu")], spacing=8)
         looks = {"ok": ("checkbox-on", t.GREEN), "wait": ("refresh", t.BLUE),
                  "warn": ("warning-diamond", t.AMBER), "block": ("warning-diamond", t.RED)}
-        labels = {"settings": "Settings", "board": "Board"}
+        labels = {"settings": "Settings", "board": "Board", "plugins": "Plugins"}
         rows = []
         for state, what, how, page in items:
             icon, color = looks[state]
