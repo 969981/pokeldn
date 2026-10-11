@@ -25,6 +25,9 @@ newer file, show its folder, visit its page and remove it. Every install and upd
 screen again. A plugin copied into the plugins folder by hand shows "Added by hand" and asks for the
 same acceptance the first time it is turned on.
 
+A plugin that closes or freezes the app while it starts is turned off at the next start, and the app
+names it. Removing a plugin asks whether to delete what it saved as well.
+
 A plugin runs as Python inside pokeldn, with the same access to files, keys, the network and the
 board. Nothing in a package runs before it is installed and turned on.
 
@@ -48,7 +51,7 @@ version = "1.0.0"           # compared on update: 1.2.0 updates 1.0.0
 author = "Your name"
 description = "One or two sentences shown on the install screen and the plugin's card."
 homepage = "https://example.org/my-plugin"   # optional, opened from the plugin's menu
-api = 1                     # required: the plugin API version this was written for
+api = "1.1"                 # required: the plugin API it needs (see Versions); 1 means 1.0
 icon = "icon.png"           # optional; a square PNG, 96 x 96 looks sharp
 module = "plugin"           # optional; the module holding register()
 ```
@@ -133,6 +136,13 @@ A `Field` is one input on the tool's Basic tab; the app passes its value after i
 | `switch` | an on/off switch | `--flag` when on |
 | `file` | a file chooser, `exts=("bin",)` | `--flag PATH` |
 
+### What a plugin keeps
+
+An update replaces the plugin's folder. Settings, caches and anything else meant to last go in
+`api.data` from `register`, or `pokeldn.plugins.data_folder("my-plugin")` from a tool's script: the
+data folder's `plugin-data/<id>`, kept across updates and deleted on removal only if the player
+asks.
+
 `help=` puts a line under the input, `default=` fills it, and `hidden=True` moves it to the
 Advanced tab. The fields the built-in tools use, and the
 rest of `Field`, are in `pokeldn/app/catalog.py`. A tool's `fixed` arguments may carry `{ot}`,
@@ -204,11 +214,31 @@ point in the `pokeldn.plugins` group naming the module that holds `register`.
 
 | where | tool | what it does |
 |---|---|---|
-| Plugin Test Kit | Self-test | checks the API, its own loading, its imports, every field kind, the trainer token, the session folder and its radio; prints PASS or FAIL for each |
+| Plugin Test Kit | Self-test | checks the API version, its own loading, its imports, every field kind, the trainer token, the session folder, its data folder (a run counter that survives updates) and its radio; prints PASS or FAIL for each |
 | Plugin Test Kit | Simulated session | prints a trade's steps and a `[done]` line per trade; Stop ends it cleanly |
 | Plugin Test Kit | Fail on purpose | raises, or exits with code 3 |
 | FireRed & LeafGreen | Hello from a plugin | a plugin tool among the built-in ones |
 | Radio | Test Kit radio | installs and carries nothing; a session started with it says so |
+
+## Versions
+
+The plugin API has a major and a level, written `1.1`. A plugin's `api` names the lowest version it
+needs; the app shows its own on the Plugins page and in `python -m pokeldn --plugins`.
+
+| change to the API | the app |
+|---|---|
+| an addition | raises the level; a plugin needing a higher level is refused with "Update pokeldn" |
+| a removal or a change of meaning | raises the major |
+| an old major still served | `DEPRECATED` in `pokeldn/plugins.py` names the release that drops it; the plugin loads, and its card and install screen say so |
+| an old major dropped | `API_OLDEST` passes it; the plugin is refused with "Ask its author for a newer version" |
+
+A plugin's own `version` is only compared with its installed copy, to show an update, a reinstall
+or a downgrade.
+
+| API | added |
+|---|---|
+| 1.0 | `add_tool`, `add_game`, `add_radio`, `folder`, `version` |
+| 1.1 | `api.data`, `api.level`, `pokeldn.plugins.data_folder(id)` |
 
 ## The API, version 1
 
@@ -218,10 +248,11 @@ point in the `pokeldn.plugins` group naming the module that holds `register`.
 | `api.add_game(game, icon="")` | adds a game section with its tools |
 | `api.add_radio(scheme, install, label="")` | adds a radio |
 | `api.folder` | the plugin's folder (a `Path`), or None for a Python package |
-| `api.version` | `1` |
+| `api.version`, `api.level` | the major and level the app runs, `1` and `1` |
+| `api.data` | a folder kept across updates, created on first use (1.1) |
+| `pokeldn.plugins.data_folder(id)` | the same folder from a tool's script (1.1) |
 | `Tool`, `Field`, `Game` | the app's catalog types, imported from `pokeldn.plugins` |
 | `pokeldn.ldn.show_done()` | prints the line that ticks a trade off |
 
 This table is the supported surface. Anything else a plugin imports from pokeldn can change in any
-release. A change to the table raises `API_VERSION`; the app refuses a plugin written for another
-version and says which.
+release.

@@ -8,6 +8,7 @@ Plugins run with the program's full access; none is loaded unless enabled. docs/
 import importlib.util
 import json
 import os
+import re
 import sys
 import tomllib
 from dataclasses import dataclass, field, replace
@@ -17,7 +18,11 @@ from typing import Callable
 
 from pokeldn.app.catalog import Field, Game, Tool   # noqa: F401  (re-exported for plugins)
 
-API_VERSION = 1
+# docs/plugins.md, Versions: a removal or a change of meaning raises the major, an addition the level.
+API_VERSION = 1                    # the major this pokeldn serves
+API_LEVEL = 1                      # 1.1 added api.data and api.level
+API_OLDEST = 1                     # an older major is refused
+DEPRECATED: dict[int, str] = {}    # a served major due for removal -> the release that drops it
 ENTRY_POINT_GROUP = "pokeldn.plugins"
 
 
@@ -31,7 +36,7 @@ class Plugin:
     author: str = ""
     homepage: str = ""
     icon: str = ""                        # an image file in the folder
-    api: int = API_VERSION
+    api: tuple | None = (API_VERSION, 0)   # (major, level) from plugin.toml; None when unreadable
     module: str = "plugin"
     entry_point: object = None
     error: str = ""                       # why it did not load; empty once registered
@@ -53,10 +58,18 @@ class API:
     """What `register(api)` receives. Only this surface is kept stable across API versions."""
 
     version = API_VERSION
+    level = API_LEVEL
 
     def __init__(self, plugin: Plugin):
         self.plugin = plugin
         self.folder = plugin.folder
+
+    @property
+    def data(self) -> Path:
+        """A folder for what the plugin keeps; an update replaces the plugin's folder, never this one."""
+        path = data_folder(self.plugin.id)
+        path.mkdir(parents=True, exist_ok=True)
+        return path
 
     def _script(self, script: str) -> str:
         if self.folder is None or os.path.isabs(script):
@@ -94,6 +107,36 @@ class API:
         self.plugin.radios.append(scheme)
 
 
+def parse_api(value) -> tuple | None:
+    """plugin.toml's api: 1 is (1, 0), "1.1" is (1, 1)."""
+    if isinstance(value, int) and not isinstance(value, bool):
+        return (value, 0)
+    if isinstance(value, str) and re.fullmatch(r"\d+(\.\d+)?", value.strip()):
+        major, _, level = value.strip().partition(".")
+        return (int(major), int(level or 0))
+    return None
+
+
+def api_text(api: tuple | None) -> str:
+    return f"{api[0]}.{api[1]}" if api else "none"
+
+
+def compatibility(api: tuple | None) -> tuple[str, str]:
+    """ok, deprecated (loads, with the message), newer or older (refused, with the message)."""
+    here = f"this pokeldn runs plugin API {API_VERSION}.{API_LEVEL}"
+    if api is None or api[0] < 1:
+        return "older", "plugin.toml names no plugin API version (api = 1)."
+    if api > (API_VERSION, API_LEVEL):
+        return "newer", f"It needs plugin API {api_text(api)} and {here}. Update pokeldn to use it."
+    if api[0] < API_OLDEST:
+        return "older", (f"It was written for plugin API {api[0]}, which {here} no longer supports. "
+                         "Ask its author for a newer version.")
+    if api[0] in DEPRECATED:
+        return "deprecated", (f"It uses plugin API {api[0]}, which {DEPRECATED[api[0]]} stops supporting. "
+                              "Ask its author for a newer version.")
+    return "ok", ""
+
+
 _loaded: dict[str, Plugin] = {}
 _radios: dict[str, Radio] = {}
 _done = False
@@ -112,6 +155,11 @@ def _builtin_tool_keys() -> set[str]:
 def folder() -> Path:
     from pokeldn.app.paths import DATA
     return DATA / "plugins"
+
+
+def data_folder(plugin_id: str) -> Path:
+    from pokeldn.app.paths import DATA
+    return DATA / "plugin-data" / plugin_id
 
 
 def enabled() -> list[str]:
@@ -141,10 +189,7 @@ def _read_folder(path: Path) -> Plugin:
     icon = str(meta.get("icon", "icon.png"))
     plugin.icon = str(path / icon) if icon and (path / icon).is_file() and "/" not in icon else ""
     plugin.module = str(meta.get("module", "plugin"))
-    try:
-        plugin.api = int(meta.get("api", 0))
-    except (TypeError, ValueError):
-        plugin.api = 0
+    plugin.api = parse_api(meta.get("api"))
     return plugin
 
 
@@ -175,8 +220,9 @@ def discover() -> list[Plugin]:
 
 
 def _register(plugin: Plugin) -> None:
-    if plugin.api != API_VERSION:
-        raise RuntimeError(f"written for plugin API {plugin.api}, this pokeldn has {API_VERSION}")
+    state, message = compatibility(plugin.api)
+    if state in ("newer", "older"):
+        raise RuntimeError(message)
     if plugin.entry_point is not None:
         module = plugin.entry_point.load()
     else:
@@ -207,17 +253,40 @@ def load() -> list[Plugin]:
         if plugin.error:          # plugin.toml did not parse
             continue
         radios_before = dict(_radios)
+        if watch:
+            _marker().write_text(plugin.id, encoding="utf-8")
         try:
             _register(plugin)
             plugin.loaded = True
-        except Exception as error:   # a broken plugin never takes the program down
+        except (Exception, SystemExit) as error:   # a broken plugin never takes the program down
             plugin.error = f"{type(error).__name__}: {error}"
             plugin.tools.clear()
             plugin.games.clear()
             plugin.radios.clear()
             _radios.clear()
             _radios.update(radios_before)
+        finally:
+            if watch:
+                _marker().unlink(missing_ok=True)
     return list(_loaded.values())
+
+
+watch = False     # the app sets it: a plugin that ends the app while registering is named at its next start
+
+
+def _marker() -> Path:
+    folder().mkdir(parents=True, exist_ok=True)
+    return folder() / ".starting"
+
+
+def stopped_the_app() -> str:
+    """The id of a plugin the app was registering when it last ended, or "": it froze or crashed it."""
+    try:
+        plugin_id = (folder() / ".starting").read_text(encoding="utf-8").strip()
+        (folder() / ".starting").unlink()
+    except OSError:
+        return ""
+    return plugin_id
 
 
 def tools_added() -> list[Tool]:

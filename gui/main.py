@@ -146,6 +146,8 @@ def main(page: ft.Page) -> None:
         welcome(app)
     elif outcome:
         updated_notice(app, outcome)
+    elif app.plugin_stopped:
+        plugin_stopped_notice(app)
 
     def updated() -> None:
         render_rail()
@@ -294,6 +296,21 @@ def updated_notice(app: App, outcome: dict) -> None:
                                     f"{error or 'it opened the old version'}. This app is unchanged.",
                                     13, t.MUTED), width=460),
         actions=[t.button("Close", lambda e: app.page.pop_dialog())]))
+
+
+def plugin_stopped_notice(app: App) -> None:
+    """A plugin froze or closed the app last time while it started; App turned it off."""
+    def open_plugins(e):
+        app.page.pop_dialog()
+        app.navigate("plugins")
+    app.page.show_dialog(t.dialog(
+        semantics_label="A plugin was turned off",
+        title=t.text("A plugin was turned off", 17, weight=ft.FontWeight.W_600),
+        content=ft.Container(t.text(f"pokeldn closed or stopped answering last time while starting the plugin "
+                                    f"{app.plugin_stopped}. It is off now; turn it on again on the Plugins page "
+                                    "once its author has a fix.", 13, t.MUTED), width=460),
+        actions=[t.secondary_button("Close", lambda e: app.page.pop_dialog()),
+                 t.button("Open Plugins", open_plugins, "plug")]))
 
 
 def welcome(app: App) -> None:

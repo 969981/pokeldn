@@ -19,10 +19,13 @@ def main(argv=None):
     args = parser.parse_args(argv)
     if args.plugins:
         loaded = {p.id: p for p in plugins.load()}
+        print(f"plugin API {plugins.API_VERSION}.{plugins.API_LEVEL}")
         for plugin in plugins.discover():
             state = loaded.get(plugin.id)
             status = "off" if state is None else (f"failed: {state.error}" if state.error else "loaded")
-            print(f"{plugin.id:20} {plugin.name}: {status}")
+            level, message = plugins.compatibility(plugin.api)
+            note = f" ({message})" if level == "deprecated" else ""
+            print(f"{plugin.id:20} {plugin.name}, API {plugins.api_text(plugin.api)}: {status}{note}")
         return 0
     if args.list:
         for game in games:

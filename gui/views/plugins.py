@@ -88,7 +88,8 @@ class PluginsView:
         self.zone = self._zone(compact=bool(rows))
         installed = t.section(
             f"Installed · {len(rows)}" if rows else "Installed",
-            ft.Column(rows, spacing=8) if rows else None,
+            ft.Column([*rows, t.text(f"This pokeldn runs plugin API {plugins.API_VERSION}.{plugins.API_LEVEL}.",
+                                     12, t.FAINT)], spacing=8) if rows else None,
             trailing=ft.Row([
                 t.icon_button("refresh", lambda e: self._reload("Plugins reloaded."), "Look for changes"),
                 t.icon_button("folder", self._open_folder, "Open the plugins folder"),
@@ -123,7 +124,8 @@ class PluginsView:
         forced = plugins.named(plugin)
         on = state is not None
         meta = " · ".join(x for x in (f"Version {plugin.version}" if plugin.version else "",
-                                      f"by {plugin.author}" if plugin.author else "") if x)
+                                      f"by {plugin.author}" if plugin.author else "",
+                                      f"plugin API {plugins.api_text(plugin.api)}") if x)
         lines: list[ft.Control] = [
             ft.Row([t.text(plugin.name, 14, weight=ft.FontWeight.W_600), self._status(plugin, state)],
                    spacing=10, wrap=True),
@@ -142,6 +144,9 @@ class PluginsView:
                 lines.append(ft.Row(chips, spacing=6, run_spacing=6, wrap=True))
         elif plugin.error:
             lines.append(t.badge(plugin.error, t.RED, "warning-diamond"))
+        level, message = plugins.compatibility(plugin.api)
+        if level == "deprecated":
+            lines.append(t.badge(message, t.AMBER, "warning-diamond"))
         if forced:
             lines.append(t.badge("Loaded from POKELDN_PLUGINS: it is on while that variable names it.", t.FAINT))
         elif plugin.entry_point is not None:
@@ -168,7 +173,8 @@ class PluginsView:
             tooltip="More", bgcolor=t.PANEL, menu_position=ft.PopupMenuPosition.UNDER,
             items=menu_items) if menu_items else ft.Container(width=32)
         toggle = t.switch(plugin.id in s.plugins or forced, lambda e, p=plugin: self._toggle(p, e.control.value))
-        toggle.disabled = forced or bool(plugin.error)
+        toggle.disabled = forced or bool(plugin.error) or \
+            plugins.compatibility(plugin.api)[0] in ("newer", "older")
         toggle.tooltip = "Turn on" if not on else "Turn off"
         return t.surface(ft.Container(ft.Row([
             plugin_icon(plugin.icon),
@@ -177,6 +183,8 @@ class PluginsView:
         ], spacing=14, vertical_alignment=ft.CrossAxisAlignment.START), padding=ft.Padding(16, 14, 8, 14)))
 
     def _status(self, plugin: plugins.Plugin, state: plugins.Plugin | None) -> ft.Control:
+        if plugins.compatibility(plugin.api)[0] in ("newer", "older"):
+            return t.chip("Not compatible", "warning-diamond", t.RED)
         if plugin.error or (state is not None and state.error):
             return t.chip("Failed", "warning-diamond", t.RED)
         if state is not None:
@@ -362,7 +370,7 @@ class PluginsView:
             lines.append(t.text(package.description, 13, t.SOFT))
         version_note = {
             "update": (f"Updates {current.name if current else ''} from {current.version if current else '?'} "
-                       f"to {package.version}. Its settings in this app are kept.", t.BLUE, "upload"),
+                       f"to {package.version}. What it saved is kept.", t.BLUE, "upload"),
             "reinstall": (f"Version {package.version} is already installed; this replaces its files.", t.MUTED,
                           "refresh"),
             "downgrade": (f"Installs {package.version} over the newer {current.version if current else '?'}.",
@@ -372,6 +380,9 @@ class PluginsView:
         }.get(action)
         if version_note:
             lines.append(t.badge(*version_note))
+        level, message = plugins.compatibility(package.api)
+        if level == "deprecated":
+            lines.append(t.badge(message, t.AMBER, "warning-diamond"))
         if package.source:
             lines.append(t.badge(f"{os.path.basename(package.source)} · {package.files} files · "
                                  f"{store.size_text(package.size)}", t.FAINT, "archive"))
@@ -426,10 +437,13 @@ class PluginsView:
     # Removing
 
     def _confirm_remove(self, plugin: plugins.Plugin) -> None:
+        kept = plugins.data_folder(plugin.id).is_dir()
+        state = {"data": False}
+
         def done(e):
             self.app.page.pop_dialog()
             try:
-                store.remove(plugin.id)
+                store.remove(plugin.id, data=state["data"])
             except (OSError, store.PackageError) as error:
                 self.error_dialog(f"{plugin.name} was not removed", str(error))
                 return
@@ -440,7 +454,12 @@ class PluginsView:
         self.app.page.show_dialog(t.dialog(
             title=ft.Row([plugin_icon(plugin.icon, 32), t.text(f"Remove {plugin.name}?", 18, expand=True)],
                          spacing=12),
-            content=t.text("Its files are deleted from this computer and its tools leave the Games page. A session "
-                           "it is running keeps going until it ends.", 13, t.MUTED, width=420),
+            content=ft.Column([
+                t.text("Its files are deleted from this computer and its tools leave the Games page. A session "
+                       "it is running keeps going until it ends.", 13, t.MUTED),
+                *([checkbox(f"Also delete what it saved ({store.size_text(store.kept_data(plugin.id))}); "
+                            "otherwise installing it again finds it.", False,
+                            lambda value: state.update(data=value))] if kept else []),
+            ], spacing=12, tight=True, width=420),
             actions=[t.secondary_button("Cancel", lambda e: self.app.page.pop_dialog()),
                      t.button("Remove", done, "trash", color=t.RED)]))

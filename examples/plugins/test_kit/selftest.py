@@ -51,7 +51,8 @@ def main():
             f", radio {os.environ.get('POKELDN_RADIO') or 'none'}")
 
     from pokeldn import plugins
-    check("the plugin API answers", plugins.API_VERSION == 1, f"version {plugins.API_VERSION}")
+    state, message = plugins.compatibility((1, 1))
+    check("the plugin API serves 1.1", state == "ok", message or f"pokeldn runs {plugins.API_VERSION}.{plugins.API_LEVEL}")
     state = {p.id: p for p in plugins.load()}.get("test-kit")
     check("this plugin loaded in the run", bool(state and state.loaded and not state.error),
           state.error if state else "not enabled here")
@@ -67,6 +68,15 @@ def main():
         check("the working folder is writable", True)
     except OSError as error:
         check("the working folder is writable", False, str(error))
+    try:
+        data = plugins.data_folder("test-kit")
+        data.mkdir(parents=True, exist_ok=True)
+        runs = data / "runs.txt"
+        count = (int(runs.read_text()) if runs.is_file() else 0) + 1
+        runs.write_text(str(count))
+        check("its data folder keeps what it writes", True, f"self-test run {count}, kept across updates")
+    except (OSError, ValueError) as error:
+        check("its data folder keeps what it writes", False, str(error))
     try:
         name = radio_check()
         check("the kit's radio installs", name == "KitFactory", name)

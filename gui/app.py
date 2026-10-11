@@ -39,6 +39,7 @@ class App:
         self.page = page
         SESSION.mkdir(parents=True, exist_ok=True)
         self.settings = settings.load()
+        self.plugin_stopped = self._plugin_recovery()
         self.picker = ft.FilePicker()
         self.clipboard = ft.Clipboard()
         self.launcher = ft.UrlLauncher()
@@ -72,6 +73,17 @@ class App:
     @property
     def busy(self) -> bool:
         return self.storage_busy or self.board_busy or bool(self.process and self.process.running)
+
+    def _plugin_recovery(self) -> str:
+        """Turns off a plugin that froze or closed the app while it started, and names it."""
+        from pokeldn import plugins
+        stopped = plugins.stopped_the_app()
+        plugins.watch = True
+        if stopped not in self.settings.plugins:
+            return ""
+        self.settings.plugins = [i for i in self.settings.plugins if i != stopped]
+        self.settings.save()
+        return stopped
 
     def plugin_radio(self):
         """The plugin radio Settings chose (pokeldn.plugins.Radio), or None for the board."""

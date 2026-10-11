@@ -34,7 +34,7 @@ class Package:
     id: str
     name: str
     version: str
-    api: int
+    api: tuple | None
     author: str = ""
     description: str = ""
     homepage: str = ""
@@ -89,13 +89,10 @@ def read(path: str) -> Package:
         plugin_id = str(meta.get("id", ""))
         if not ID.fullmatch(plugin_id):
             raise PackageError("plugin.toml needs an id of lowercase letters, digits, dots, dashes or underscores.")
-        try:
-            api = int(meta.get("api", 0))
-        except (TypeError, ValueError):
-            api = 0
-        if api != plugins.API_VERSION:
-            raise PackageError(f"This plugin was written for plugin API {api}; this pokeldn runs API "
-                               f"{plugins.API_VERSION}. Ask its author for a matching version.")
+        api = plugins.parse_api(meta.get("api"))
+        state, message = plugins.compatibility(api)
+        if state in ("newer", "older"):
+            raise PackageError(message)
         module = str(meta.get("module", "plugin"))
         if f"{prefix}{module}.py" not in names:
             raise PackageError(f"The package has no {module}.py next to plugin.toml.")
@@ -156,13 +153,22 @@ def install(package: Package) -> Path:
     return target
 
 
-def remove(plugin_id: str) -> None:
-    """Deletes plugins/<id>; a plugin elsewhere (POKELDN_PLUGINS, a package) is not the app's to delete."""
+def remove(plugin_id: str, data: bool = False) -> None:
+    """Deletes plugins/<id>, and with `data` what it kept; a plugin elsewhere (POKELDN_PLUGINS, a
+    package) is not the app's to delete."""
     root = plugins.folder().resolve()
     target = (root / plugin_id).resolve()
     if target.parent != root or not (target / "plugin.toml").is_file():
         raise PackageError("Only a plugin installed in the app can be removed here.")
     shutil.rmtree(target)
+    if data and ID.fullmatch(plugin_id):
+        shutil.rmtree(plugins.data_folder(plugin_id), ignore_errors=True)
+
+
+def kept_data(plugin_id: str) -> int:
+    """The bytes a plugin keeps in its data folder."""
+    folder = plugins.data_folder(plugin_id)
+    return sum(p.stat().st_size for p in folder.rglob("*") if p.is_file()) if folder.is_dir() else 0
 
 
 def pack(folder: str, out: str) -> Package:

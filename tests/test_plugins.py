@@ -87,7 +87,7 @@ def test_a_folder_plugin_tool_runs_through_the_cli_child_path(tmp_path):
                                     capture_output=True, text=True, timeout=60)
     listed = run("--list")
     assert "example-echo" in listed.stdout and "FireRed & LeafGreen: Echo" in listed.stdout
-    assert "echo                 Echo: loaded" in run("--plugins").stdout
+    assert "echo                 Echo, API 1.0: loaded" in run("--plugins").stdout
     done = run("example-echo", "--", "--extra", "1")
     assert done.returncode == 0, done.stderr
     assert json.loads((tmp_path / "echo.json").read_text()) == ["--out", "echo.json", "--word", "hello",
@@ -143,12 +143,14 @@ def test_a_plugin_in_the_data_folder_loads_only_once_enabled(isolated):
 
 
 @pytest.mark.parametrize("source, api, error", [
-    (TOOL_PLUGIN, 2, "written for plugin API 2"),
+    (TOOL_PLUGIN, 2, "needs plugin API 2.0"),
+    (TOOL_PLUGIN, '"1.9"', "needs plugin API 1.9"),
     (TOOL_PLUGIN.replace('"example-echo"', '"frlg-trade-host"'), 1, "already taken"),
     (TOOL_PLUGIN.replace('add_tool("frlg"', 'add_tool("snes"'), 1, "no game 'snes'"),
     (RADIO_PLUGIN.replace('"fake"', '"esp32"'), 1, "already taken"),
     (RADIO_PLUGIN + "\n    raise ValueError('half done')\n", 1, "half done"),
-], ids=["api-version", "tool-key-taken", "unknown-game", "radio-taken", "raises-after-a-radio"])
+    (TOOL_PLUGIN + "\n    raise SystemExit(3)\n", 1, "SystemExit: 3"),
+], ids=["api-major", "api-level", "tool-key-taken", "unknown-game", "radio-taken", "raises-after-a-radio", "exits"])
 def test_a_broken_plugin_keeps_its_error_and_adds_nothing(isolated, tmp_path, monkeypatch, source, api, error):
     broken = make(tmp_path, "broken", source, api=api)
     good = make(tmp_path, "good", TOOL_PLUGIN.replace("example-echo", "good-echo"))
@@ -201,7 +203,7 @@ def test_a_package_that_is_not_a_safe_plugin_is_refused_before_anything_runs(tmp
 def test_every_example_packs_into_an_installable_package(tmp_path, example):
     from pokeldn.app import plugin_store
     package = plugin_store.pack(str(example), str(tmp_path / "x.pokeplugin"))
-    assert package.api == plugins.API_VERSION and package.version and package.author
+    assert plugins.compatibility(package.api) == ("ok", "") and package.version and package.author
 
 
 def test_the_hello_example_greets_through_the_cli(tmp_path):
@@ -235,7 +237,7 @@ def test_the_test_kit_installs_from_its_package_and_passes_its_self_test(isolate
     env.pop("POKELDN_PLUGINS", None)
     run = subprocess.run([sys.executable, "-m", "pokeldn", "test-kit-selftest"], cwd=tmp_path, env=env,
                          capture_output=True, text=True, timeout=120)
-    assert "8 of 8 checks passed." in run.stdout, run.stdout + run.stderr
+    assert "9 of 9 checks passed." in run.stdout, run.stdout + run.stderr
 
 
 def test_an_update_replaces_the_files_and_remove_deletes_only_the_apps_own(isolated, tmp_path):
@@ -245,7 +247,9 @@ def test_an_update_replaces_the_files_and_remove_deletes_only_the_apps_own(isola
     (source / "old.txt").write_text("from 1.0.0")
     plugin_store.install(plugin_store.pack(str(source), str(tmp_path / "a.pokeplugin")))
     (source / "old.txt").unlink()
-    (source / "plugin.toml").write_text((source / "plugin.toml").read_text().replace("1.0.0", "1.2.0"))
+    (source / "plugin.toml").write_text((source / "plugin.toml").read_text().replace("1.1.0", "1.2.0"))
+    (plugins.data_folder("test-kit") / "runs.txt").parent.mkdir(parents=True)
+    (plugins.data_folder("test-kit") / "runs.txt").write_text("4")
     newer = plugin_store.pack(str(source), str(tmp_path / "b.pokeplugin"))
     assert plugin_store.compare(newer, plugin_store.installed("test-kit")) == "update"
     target = plugin_store.install(newer)
@@ -256,7 +260,10 @@ def test_an_update_replaces_the_files_and_remove_deletes_only_the_apps_own(isola
     with pytest.raises(plugin_store.PackageError):
         plugin_store.remove("..")
     plugin_store.remove("test-kit")
-    assert not target.exists()
+    assert not target.exists() and (plugins.data_folder("test-kit") / "runs.txt").read_text() == "4"
+    plugin_store.install(newer)
+    plugin_store.remove("test-kit", data=True)
+    assert not plugins.data_folder("test-kit").exists()
 
 
 def shutil_copy(src: Path, dst: Path) -> None:
@@ -298,5 +305,37 @@ def test_the_install_screen_installs_nothing_until_the_risks_are_accepted(isolat
     tick.on_click(None)
     assert not install.disabled
     install.on_click(None)
-    assert plugin_store.installed("test-kit").version == "1.0.0"
+    assert plugin_store.installed("test-kit").version == "1.1.0"
     assert settings.plugins == ["test-kit"] and "test-kit" in {p.id for p in plugins.load() if p.loaded}
+
+
+def test_a_future_pokeldn_runs_a_deprecated_api_and_refuses_a_dropped_one(isolated, tmp_path, monkeypatch):
+    monkeypatch.setattr(plugins, "API_VERSION", 3)
+    monkeypatch.setattr(plugins, "API_LEVEL", 0)
+    monkeypatch.setattr(plugins, "API_OLDEST", 2)
+    monkeypatch.setattr(plugins, "DEPRECATED", {2: "pokeldn 9.0"})
+    old = make(tmp_path, "old", TOOL_PLUGIN, api=1)
+    kept = make(tmp_path, "kept", TOOL_PLUGIN.replace("example-echo", "kept-echo"), api='"2.4"')
+    monkeypatch.setenv("POKELDN_PLUGINS", os.pathsep.join(map(str, (old, kept))))
+    state = {p.id: p for p in plugins.load()}
+    assert "no longer supports" in state["old"].error and not state["old"].loaded
+    assert state["kept"].loaded and plugins.compatibility(state["kept"].api)[0] == "deprecated"
+    from pokeldn.app import plugin_store
+    with pytest.raises(plugin_store.PackageError, match="no longer supports"):
+        plugin_store.pack(str(old), str(tmp_path / "old.pokeplugin"))
+    assert plugin_store.pack(str(kept), str(tmp_path / "kept.pokeplugin")).api == (2, 4)
+
+
+def test_a_plugin_that_kills_the_app_while_starting_is_turned_off_at_the_next_start(isolated, tmp_path):
+    from types import SimpleNamespace
+    from gui.app import App
+    killer = make(tmp_path, "killer", "import os\n\ndef register(api):\n    os._exit(9)\n")
+    code = ("import sys; from pokeldn import plugins; from pokeldn.app import paths; "
+            f"paths.DATA = __import__('pathlib').Path({str(isolated)!r}); plugins.watch = True; plugins.load()")
+    env = dict(os.environ, POKELDN_PLUGINS=str(killer), PYTHONPATH=str(ROOT))
+    assert subprocess.run([sys.executable, "-c", code], env=env, timeout=60).returncode == 9
+    saved = []
+    app = SimpleNamespace(settings=SimpleNamespace(plugins=["killer", "other"], save=lambda: saved.append(1)))
+    assert App._plugin_recovery(app) == "killer"
+    assert app.settings.plugins == ["other"] and saved
+    assert App._plugin_recovery(app) == ""        # named once
