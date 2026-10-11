@@ -8,7 +8,8 @@ from pokeldn.sv.raid import REWARD_ROWS
 
 @dataclass(frozen=True)
 class Field:
-    flag: str | tuple[str, ...]   # "" is positional; a tuple passes the same value to each flag
+    flag: str | tuple[str, ...]   # "" is positional; a tuple passes the same value to each flag, but
+                                  # raidpartners's tuple is its picks' flag then its progress's
     label: str
     kind: str = "text"            # text number choice switch pokemon file builder multi linkcode code
                                   # (eight digits) raidseed rewards raidevent raidden raidpartners, or a
@@ -364,10 +365,6 @@ SV = Game("sv", "Scarlet & Violet", "SV", "sv.md", (
           "Win the raid to receive the rewards."),
          (Field("--raid-pokemon", "Our Pokemon", "pokemon", required=True,
                 help="The Pokemon our player brings. PKHeX checks it is legal."),
-          Field(("--raid-partner", "--raid-partner-progress"), "Raid NPC partners", "raidpartners",
-                help="The trainers who fill the slots no console holds: two with one console joining, "
-                     "one with two, none with three. A partner you leave unpicked is drawn as the game "
-                     "draws it, from the partners' progress."),
           Field("--raid-event", "Raid event", "raidevent",
                 help="A raid from a past Poke Portal News event, from Project Pokemon's EventsGallery. "
                      "Leave it empty, or fold this card, for a standard raid."),
@@ -392,6 +389,10 @@ SV = Game("sv", "Scarlet & Violet", "SV", "sv.md", (
           Field("--raid-players", "Consoles joining", "choice", default="1",
                 choices=(("1", "1 console"), ("2", "2 consoles"), ("3", "3 consoles")),
                 help="The raid waits for this many consoles, each one Ready, before it starts."),
+          Field(("--raid-partner", "--raid-partner-progress"), "Raid NPC partners", "raidpartners",
+                help="The trainers who fill the slots no console holds: two with one console joining, "
+                     "one with two, none with three. A slot you leave unpicked gets a trainer the game "
+                     "draws."),
           Field("--raid-catch-normal", "Catch an event boss again", "switch", hidden=True,
                 requires="--raid-event",
                 help="Offer a boss the event lets a save catch once as a normal catch, under a record "

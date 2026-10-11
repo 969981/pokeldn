@@ -795,7 +795,7 @@ def test_the_raid_partners_card_shows_its_progress_s_pool_and_seats_two_at_most(
 
     def set_value(f, value, rebuild=False):
         values[f.key] = value
-    view = SimpleNamespace(tool=tool, raid_partners_open=True, raid_partners_width=0, raid_reason_width=0,
+    view = SimpleNamespace(tool=tool, raid_partners_open=True, raid_partners_width=0,
                            values=values, set_value=set_value,
                            raid_context=lambda: {"progress": "6star", "content": "standard"},
                            app=SimpleNamespace(settings=SimpleNamespace(save=lambda: None, sprites=False),
@@ -830,7 +830,7 @@ def test_each_console_joining_takes_a_partner_s_slot():
 
     def set_value(f, value, rebuild=False):
         values[f.key] = value
-    view = SimpleNamespace(tool=tool, raid_partners_open=True, raid_partners_width=0, raid_reason_width=0,
+    view = SimpleNamespace(tool=tool, raid_partners_open=True, raid_partners_width=0,
                            values=values, set_value=set_value,
                            raid_context=lambda: {"progress": "6star", "content": "standard"},
                            app=SimpleNamespace(settings=SimpleNamespace(save=lambda: None, sprites=False),
@@ -864,19 +864,18 @@ def test_a_favoured_raid_partner_s_card_shows_a_star_and_why(tmp_path):
     ours.write_bytes(gen9.encrypt(gen9.build(species=184, level=37)))
     for progress, wanted, values in (("6star", raid_partners.RECOMMENDED[80], {}),
                                      ("4star", {}, {"--raid-pokemon": {"file": str(ours)}})):
-        view = SimpleNamespace(tool=tool, raid_partners_open=True, raid_partners_width=0, raid_reason_width=0,
+        view = SimpleNamespace(tool=tool, raid_partners_open=True, raid_partners_width=0,
                                values=values, set_value=None,
                                raid_context=lambda: {"progress": progress, "content": "standard"},
                                app=SimpleNamespace(settings=SimpleNamespace(save=lambda: None, sprites=False),
                                                    ui=lambda work: None))
         card = list(raid_controls(RaidPartnersPicker(view, field).control))
-        for rank, ink, tip in ((1, theme.AMBER, "Favoured by raiders"),
-                               (2, theme.SILVER, "Next tier for raiders")):
-            # Before the card's width is known, the brief reasons.
-            reasons = [brief for r, _, brief, _ in wanted.values() if r == rank]
+        for rank, ink, tier in ((1, theme.AMBER, "Favoured by raiders"),
+                                (2, theme.SILVER, "Next tier for raiders")):
+            reasons = [why for r, why, _ in wanted.values() if r == rank]
             assert [c.value for c in card if isinstance(c, ft.Text) and c.color == ink] == reasons
-            assert ([c.color for c in card if isinstance(c, ft.Image) and c.tooltip == tip]
-                    == [ink] * len(reasons))
+            assert ([c.tooltip for c in card if isinstance(c, ft.Container) and str(c.tooltip).startswith(tier)]
+                    == [f"{tier}: {detail}." for r, _, detail in wanted.values() if r == rank])
         texts = {c.value for c in card if isinstance(c, ft.Text)}
         if values:
             assert {"Camerupt", "Lv. 29"} <= texts and "Lv. —" not in texts
@@ -884,50 +883,6 @@ def test_a_favoured_raid_partner_s_card_shows_a_star_and_why(tmp_path):
                        for text in texts)
         else:
             assert {"Gardevoir", "Lv. —"} <= texts
-
-
-def test_a_favoured_partner_s_reason_has_the_most_words_its_card_holds():
-    """A reason shows at length on a card wide enough for it, in a few words on a narrower one and
-    briefly on the narrowest, each fitting a narrower card than the one before; a redraw starts on the
-    last width's wording."""
-    import flet as ft
-    from gui.views.raid_partners import RaidPartnersPicker, fits
-    from pokeldn.app.catalog import GAMES
-    from pokeldn.sv import raid_partners
-    favoured = [p for p in raid_partners.pool(4) if p.why]
-    least = lambda words: next(width for width in range(1000) if fits(words, width))
-    assert all(least(p.brief) < least(p.why) < least(p.detail) for p in favoured)
-    tool = next(t for game in GAMES for t in game.tools if t.key == "sv-raid-host")
-    field = next(f for f in tool.fields if f.kind == "raidpartners")
-    view = SimpleNamespace(tool=tool, raid_partners_open=True, raid_partners_width=0, raid_reason_width=0,
-                           values={}, set_value=None,
-                           raid_context=lambda: {"progress": "6star", "content": "standard"},
-                           app=SimpleNamespace(settings=SimpleNamespace(save=lambda: None, sprites=False),
-                                               ui=lambda work: None))
-
-    def reasons(picker):
-        return {c.data.trainer: c for c in raid_controls(picker.control)
-                if isinstance(c, ft.Container) and c.on_size_change == picker._resized}
-
-    def shown_as(boxes):
-        return {name: next(level for level in ("detail", "why", "brief")
-                           if box.content.value == getattr(box.data, level)) for name, box in boxes.items()}
-    picker = RaidPartnersPicker(view, field)
-    boxes = reasons(picker)
-    for box in boxes.values():
-        box.content.update = lambda: None
-    # 117 px is a reason's width in a window where Hailey's few words were cut short.
-    cut, roomy = {"Hailey", "Charlotte", "Kylie", "Hunter", "Gianna"}, {"Hunter", "Gianna"}
-    for width, levels in ((300, dict.fromkeys(boxes, "detail")),
-                          (200, {name: "detail" if name in roomy else "why" for name in boxes}),
-                          (117, {name: "brief" if name in cut else "why" for name in boxes}),
-                          (60, dict.fromkeys(boxes, "brief"))):
-        for box in boxes.values():
-            picker._resized(SimpleNamespace(control=box, width=width))
-        assert shown_as(boxes) == levels
-    picker._resized(SimpleNamespace(control=boxes["Eli"], width=300))
-    assert view.raid_reason_width == 300
-    assert set(shown_as(reasons(RaidPartnersPicker(view, field))).values()) == {"detail"}
 
 
 def test_a_narrow_window_stands_the_raid_partners_two_to_a_row():
@@ -939,7 +894,7 @@ def test_a_narrow_window_stands_the_raid_partners_two_to_a_row():
     assert (columns(0), columns(500), columns(380)) == (3, 3, 2)
     tool = next(t for game in GAMES for t in game.tools if t.key == "sv-raid-host")
     field = next(f for f in tool.fields if f.kind == "raidpartners")
-    view = SimpleNamespace(tool=tool, raid_partners_open=True, raid_partners_width=0, raid_reason_width=0,
+    view = SimpleNamespace(tool=tool, raid_partners_open=True, raid_partners_width=0,
                            values={}, set_value=None,
                            raid_context=lambda: {"progress": "6star", "content": "standard"},
                            app=SimpleNamespace(settings=SimpleNamespace(save=lambda: None, sprites=False),
@@ -972,7 +927,7 @@ def test_the_raid_partners_level_follows_our_pokemon(tmp_path):
     for level in (100, 90):
         records[level] = tmp_path / f"lv{level}.pk9"
         records[level].write_bytes(gen9.encrypt(gen9.build(species=184, level=level)))
-    view = SimpleNamespace(tool=tool, raid_partners_open=True, raid_partners_width=0, raid_reason_width=0,
+    view = SimpleNamespace(tool=tool, raid_partners_open=True, raid_partners_width=0,
                            values={"--raid-pokemon": {"file": str(records[100])}}, set_value=None,
                            raid_context=lambda: {"progress": "6star", "content": "standard"},
                            session=SimpleNamespace(refresh=lambda: None),

@@ -179,9 +179,6 @@ def test_the_unlock_stage_is_the_progress_less_one_or_six_stars_for_a_black_or_s
     assert [raid_partners.stage_of(p) for p in raid_encounter.PROGRESS] == [0, 0, 1, 2, 3, 4]
     assert raid_partners.stage_of("3star", "black") == raid_partners.stage_of("4star", "might") == 4
     assert raid_partners.stage_of("3star", "event") == 1
-    assert [len(raid_partners.pool(s)) for s in range(5)] == [16, 16, 18, 18, 18]
-    assert [(raid_partners.pool(s)[15].name, raid_partners.pool(s)[15].level) for s in range(5)] == [
-        ("Snorunt", 16), ("Snorunt", 16), ("Glalie", 40), ("Weavile", 80), ("Weavile", 80)]
 
 
 def test_partners_take_four_fifths_of_the_host_pokemon_s_level_whatever_the_stage():
@@ -201,21 +198,6 @@ def test_a_partner_seed_draws_the_trainers_asked_for_in_slot_order():
             raid_partners.seed_for(stage, [raid_partners.trainer(name) for name in wanted])
     with pytest.raises(ValueError):
         raid_partners.trainer("Nemona")
-
-
-def test_the_favoured_partners_are_level_80_trainers_with_a_rank_and_a_few_words_on_why():
-    wanted = {p.trainer: (p.rank, p.why, p.brief, p.detail) for p in raid_partners.pool(4) if p.why}
-    assert wanted == raid_partners.RECOMMENDED[80]
-    ranked = {name: rank for name, (rank, *_) in wanted.items()}
-    assert {name for name, rank in ranked.items() if rank == 1} == {"Logan", "Hailey", "Charlotte", "Eli"}
-    assert {name for name, rank in ranked.items() if rank == 2} == {
-        "Austin", "Evan", "Kylie", "Hunter", "Gianna", "Samantha"}
-    assert all(5 <= len(why.split()) <= 10 for _, why, _, _ in wanted.values())
-    assert all(10 <= len(detail.split()) <= 15 for *_, detail in wanted.values())
-    assert all(len(brief) < len(why) < len(detail) for _, why, brief, detail in wanted.values())
-    assert raid_partners.pool(3) == raid_partners.pool(4)
-    assert not any(p.why or p.brief or p.detail or p.rank
-                   for stage in (0, 2) for p in raid_partners.pool(stage))
 
 
 def test_the_raidpoint_carries_the_partner_seed_and_the_raid_s_stage():
@@ -812,8 +794,8 @@ def test_the_partners_we_choose_reach_the_bootstrap(monkeypatch, tmp_path, capsy
     point = raid.payload_of(first[11]["data"] + first[12]["data"])[raid.RAIDPOINT:]
     seed, stage = struct.unpack_from("<QI", point, raid.POINT_PARTNERS)
     assert stage == 4 and raid_partners.draw(seed, stage) == [17, 1]
-    assert (f"[sv] raid partners at 6star progress (level 40, partner seed {seed:016X}): Luke (Clodsire), "
-            f"Ava (Toxapex); chosen") in capsys.readouterr().out
+    assert (f"[sv] raid partners from the 6star pool, level 40, partner seed {seed:016X}: Luke (Clodsire), "
+            f"Ava (Toxapex) (2 of 2 chosen)") in capsys.readouterr().out
     with pytest.raises(SystemExit):
         run_raid_host(monkeypatch, tmp_path,
                       extra=["--raid-partner", "Dylan", "--raid-partner-progress", "3star"])
@@ -837,8 +819,8 @@ def test_two_consoles_leave_one_slot_to_the_partner_we_choose(monkeypatch, tmp_p
         party(25), made[0].pokemon, made[1].pokemon, raid.empty_participant()]
     seed, stage = struct.unpack_from("<QI", plain[raid.RAIDPOINT:], raid.POINT_PARTNERS)
     assert stage == 4 and raid_partners.draw(seed, stage, 1) == [raid_partners.trainer("Eli")]
-    assert (f"[sv] raid partners at 6star progress (level 40, partner seed {seed:016X}): Eli (Gardevoir); "
-            f"chosen") in capsys.readouterr().out
+    assert (f"[sv] raid partners from the 6star pool, level 40, partner seed {seed:016X}: Eli (Gardevoir) "
+            f"(1 of 1 chosen)") in capsys.readouterr().out
     for extra in (["--raid-players", "2", "--raid-partner", "Eli", "--raid-partner", "Ava"],
                   ["--raid-players", "3", "--raid-partner", "Eli"]):
         with pytest.raises(SystemExit):

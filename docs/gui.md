@@ -346,35 +346,23 @@ is chosen (`pokeldn.app.command.code_error`).
 
 ## Raid NPC partners
 
-The Tera Raid (Host) tool's Raid NPC partners card chooses the NPC trainers who fill the slots the
-consoles leave empty: two with one console joining, one with two, none with three
-([Partners](sv_raid.md#partners); `gui/views/raid_partners.py`). With nothing chosen it
-passes nothing, and the host draws them from the story progress's pool as a console does. It shows:
+The Tera Raid (Host) tool's Raid NPC partners card, below Consoles joining, chooses the NPC trainers
+who fill the slots the consoles leave empty: two with one console joining, one with two, none with
+three ([Partners](sv_raid.md#partners); `gui/views/raid_partners.py`). With nothing chosen it passes
+nothing, and the host draws them from the story progress's pool as a console does.
 
-- Partners' progress: the five unlock stages, Beginning left out. It starts on the story progress's
-  stage (six stars for a black crystal or a seven-star event raid), marked "(story progress)".
-  Choosing another passes `--raid-partner-progress`; choosing that one again follows the story
-  progress.
-- The stage's trainers, three to a row, or two where three would leave a card under 150 px wide, as
-  in the smallest window: 16 in the first two stages, 18 after. Each card shows the trainer, the
-  Pokemon and, on a line of its own, its level: four fifths of Our Pokemon's, read from its record
-  (`command.raid_pokemon_level`) again whenever Our Pokemon changes, or "Lv. —" before it is built.
-  Its ability, moves and Tera type follow, as Serebii lists them; Dylan's Haxorus's and Luke's
-  Clodsire's, which it leaves out, are Dragon and Ground, as a retail console shows them. A partner
-  raiders want ends on a star, bottom right, after why: gold for the four they favour, silver for
-  the next tier ([Favoured partners](sv_raid.md#favoured-partners)). The reason is the longest of
-  three that fits two lines at the width the card reports: ten to fifteen words on a wide card, a
-  few words, or a brief one on a narrow card ("Cuts special damage; can paralyze" for Hailey). A
-  redraw starts on the last width's columns and wording. Only the pool of stages 3 and 4 has them,
-  and a row with one leaves its other cards room, so they stand level.
+- Partners' progress: the five unlock stages, Beginning left out, starting on the story progress's
+  (six stars for a black crystal or a seven-star event raid). Another stage passes
+  `--raid-partner-progress`.
+- The stage's trainers, three cards to a row, two in a narrow window. A card shows the trainer, the
+  Pokemon, its level (four fifths of Our Pokemon's, `command.raid_pokemon_level`), ability, moves
+  and Tera type. A partner raiders favour ends on why and a star, gold or silver
+  ([Favoured partners](sv_raid.md#favoured-partners)); the star's tooltip says why at more length.
 
-A click picks a trainer, numbered by the slot it takes, and a second click leaves it to the draw.
-With every empty slot picked, the others dim. Raising Consoles joining drops the last pick, whose
-slot the further console takes, and with three the card has none to pick. Each pick passes
-`--raid-partner` in order, and a partner left unpicked is drawn when the host starts. A pick the
-chosen stage lacks (Dylan or Luke below four stars) leaves the choice. Folding only hides the card
-(`GamesView.show_raid_partners`): the choice still goes to the raid, and the header names it, with
-the stage when one is chosen.
+A click seats a trainer, numbered by the slot it takes; a second click leaves the slot to the draw.
+Each pick passes `--raid-partner`, in order. Raising Consoles joining drops the last pick, and a
+pick the chosen stage lacks (Dylan or Luke below four stars) is dropped. Folding only hides the card
+(`GamesView.show_raid_partners`): the choice still goes to the raid, and the header names it.
 
 ## Updates
 

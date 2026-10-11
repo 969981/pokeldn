@@ -29,15 +29,14 @@ class Partner:
     ability: str
     moves: tuple
     tera: str           # Henry's is drawn ("Random")
-    rank: int = 0       # 1 the partners raiders favour, 2 the next they're glad of, 0 the rest
-    why: str = ""       # why raiders want this partner; "" for most
-    brief: str = ""     # `why` in fewer words, for a card too narrow for it
-    detail: str = ""    # `why` in ten to fifteen words, for a card with room
+    rank: int = 0       # 1 the partners raiders favour, 2 the next tier, 0 the rest
+    why: str = ""       # why raiders want this partner, in a few words; "" for most
+    detail: str = ""    # `why` at more length
 
 
 # (species, name, ability, moves, Tera type) per trainer in draw order, by the pool's level, as
 # Serebii's Tera Raid Battle partners page lists them, but for the Tera types of Dylan's Haxorus and
-# Luke's Clodsire, which it leaves out: Dragon and Ground, seen on a retail console (2026-10-11).
+# Luke's Clodsire, which it leaves out: Dragon and Ground, as a retail console showed them.
 # Dylan and Luke are not in the level-16 pool.
 POOLS = {
     16: (
@@ -104,30 +103,29 @@ POOLS = {
 # host's partners.
 LEVELS = (16, 16, 40, 80, 80)
 
-# The partners raiders want, by the pool's level: their rank (1 favoured, 2 the next tier), why, why
-# in fewer words, and why at more length (docs/sv_raid.md, Favoured partners). Only the level-80 pool
-# has the healing, screen and status moves raiders look for.
+# The partners raiders want, by the pool's level: their rank (1 favoured, 2 the next tier), why, and
+# why at more length (docs/sv_raid.md, Favoured partners).
 RECOMMENDED = {
-    80: {"Austin": (2, "Intimidate on each respawn cuts Attack", "Cuts Attack on respawn",
+    80: {"Austin": (2, "Intimidate on each respawn cuts Attack",
                     "Intimidate cuts the boss's Attack on every respawn; Leer lowers its Defense"),
-         "Logan": (1, "Safeguard blocks status; terrain heals", "Blocks status; terrain heals",
+         "Logan": (1, "Safeguard blocks status; terrain heals",
                    "Safeguard prevents status conditions; Grassy Terrain heals each turn but powers Grass "
                    "moves"),
-         "Hailey": (1, "Light Screen cuts special damage; can paralyze", "Cuts special damage; can paralyze",
+         "Hailey": (1, "Light Screen cuts special damage; can paralyze",
                     "Light Screen, when she uses it, cuts the boss's special damage; Discharge can paralyze"),
-         "Evan": (2, "100% accurate Glare paralysis buys turns", "Paralyzes; 100% accurate",
+         "Evan": (2, "100% accurate Glare paralysis buys turns",
                   "Glare paralyzes at 100% accuracy, except a boss with an Electric Tera type"),
-         "Charlotte": (1, "Intimidate and Feather Dance cut Attack", "Cuts Attack harshly; on respawn too",
+         "Charlotte": (1, "Intimidate and Feather Dance cut Attack",
                        "Intimidate on every respawn and Feather Dance both cut the boss's physical Attack"),
-         "Kylie": (2, "Intimidate cuts Attack; breaks screens", "Cuts Attack; breaks screens",
+         "Kylie": (2, "Intimidate cuts Attack; breaks screens",
                    "Intimidate cuts the boss's Attack on every respawn; Raging Bull breaks its screens"),
-         "Hunter": (2, "Will-O-Wisp burn halves physical damage", "Burns; halves physical damage",
+         "Hunter": (2, "Will-O-Wisp burn halves physical damage",
                     "Will-O-Wisp burns the boss, halving the damage its physical moves deal"),
-         "Gianna": (2, "Thunder Wave paralysis buys free turns", "Paralysis buys free turns",
+         "Gianna": (2, "Thunder Wave paralysis buys free turns",
                     "Thunder Wave paralysis can give a free turn to set up, down to chance"),
-         "Eli": (1, "Life Dew heals the whole team", "Heals the whole team",
+         "Eli": (1, "Life Dew heals the whole team",
                  "Life Dew heals the whole team; seven-star solo guides ask for it, often with Bellibolt"),
-         "Samantha": (2, "Leer cuts Defense; Ice Punch can freeze", "Cuts Defense; can freeze",
+         "Samantha": (2, "Leer cuts Defense; Ice Punch can freeze",
                       "Leer lowers the boss's Defense before its shield goes up; Ice Punch can freeze")},
 }
 
@@ -157,7 +155,7 @@ def pool(stage):
     level = LEVELS[stage]
     favoured = RECOMMENDED.get(level, {})
     return tuple(Partner(TRAINERS[i], species, name, level, ability, moves, tera,
-                         *favoured.get(TRAINERS[i], (0, "", "", "")))
+                         *favoured.get(TRAINERS[i], (0, "", "")))
                  for i, (species, name, ability, moves, tera) in enumerate(POOLS[level]))
 
 
@@ -177,7 +175,7 @@ def trainer(name):
     raise ValueError(f"no raid partner is named {name!r}; the trainers are {', '.join(TRAINERS)}")
 
 
-def seed_for(stage, wanted=(), random=os.urandom):
+def seed_for(stage, wanted=(), entropy=os.urandom):
     """-> a random partner seed whose first draws are the trainers `wanted`, in order: none leaves
     every partner to the draw, one fixes the first."""
     wanted = tuple(wanted)
@@ -190,6 +188,6 @@ def seed_for(stage, wanted=(), random=os.urandom):
         if index >= size:
             raise ValueError(f"{TRAINERS[index]} is not among the level-{LEVELS[stage]} partners")
     while True:
-        seed = int.from_bytes(random(8), "little")
+        seed = int.from_bytes(entropy(8), "little")
         if tuple(draw(seed, stage, len(wanted))) == wanted:
             return seed
