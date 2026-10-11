@@ -649,6 +649,4 @@ the host start; its Pokemon stayed in the battle.
 - Whether a retail console's reward screen follows the Lua filter for subjects 2 to 4; subjects 1
   and 5 are measured on a retail guest, the rest on an emulated one.
 - Whether the five-star catch-once records go in the save's list as the seven-star ones do.
-- Several consoles in one lobby are tested against scripted consoles only: whether retail
-  consoles mesh with each other over the board's network, and what the consoles other than the
-  next host do on NetStartHostMigration, are unmeasured.
+- What the consoles other than the next host do on NetStartHostMigration is unmeasured.
