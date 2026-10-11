@@ -106,6 +106,21 @@ if __name__ == "__main__":
 Give shared modules a name no other package uses (`mylib_common`, not `utils`): the plugin's folder
 is added to Python's search path.
 
+### What a plugin can import
+
+The released app carries its own Python 3.13 and no `pip`. A plugin can import:
+
+| what | where it comes from |
+|---|---|
+| the standard library | bundled, except `multiprocessing`, `tkinter`, `curses`, `venv`, `ensurepip`, `profile`, `cProfile`, `pstats`, `trace`, `compileall`, `modulefinder`, `pyclbr`, `tabnanny` and the modules of another platform (`scripts/pack_app.py`, `PLUGIN_STDLIB`) |
+| `trio`, `pycryptodome` (`Crypto`), `zstandard`, `pyserial` (`serial`), `websockets`, `certifi`, `bleak`, `unicorn`, `flet` | pokeldn's own dependencies, at the versions in `requirements.txt` |
+| `ldn` and `pokeldn` | pokeldn itself; only the API table below is stable |
+| any pure-Python module | shipped in the plugin's folder |
+
+A package with compiled code (`numpy`, `Pillow`) works only from source runs where it is installed.
+Test a plugin in a released app before publishing it: the Plugin Test Kit's self-test runs the same
+way there.
+
 ### Fields
 
 A `Field` is one input on the tool's Basic tab; the app passes its value after its flag.
