@@ -24,7 +24,8 @@ from pokeldn import pokemon as pokemon_service
 from pokeldn import config
 from pokeldn import sv
 from pokeldn.ldn import pia6, pia_connect, reliable5
-from pokeldn.sv import pokemon, port2, raid, raid_encounter, raid_event, reference, streams, trade
+from pokeldn.sv import (pokemon, port2, raid, raid_encounter, raid_event, raid_partners, reference,
+                        streams, trade)
 from pokeldn.ldn import game_channel
 from pokeldn.ldn.ldn_mitm_host import IpHostTransport
 from pokeldn.ldn.transport import HostTransport, board_radio, find_ap_phy
@@ -400,6 +401,16 @@ def build_parser():
     ap.add_argument("--raid-players", type=int, default=1, metavar="N",
                     help=f"consoles the raid waits for, 1 to {raid.CONSOLES}; it starts once N "
                          "are in the lobby and every one is Ready, or when the lobby timer runs out")
+    ap.add_argument("--raid-partner", action="append", default=[], metavar="TRAINER",
+                    help=f"an NPC partner the raid seats, in slot order, one per slot the consoles "
+                         f"leave empty ({raid_partners.HOSTED} with one console, 1 with two, none "
+                         f"with three): {', '.join(raid_partners.TRAINERS)}; the host draws a "
+                         f"partner seed that seats them, the rest drawn freely (docs/sv_raid.md, "
+                         f"Partners)")
+    ap.add_argument("--raid-partner-progress", choices=raid_partners.STAGES, default=None,
+                    help="the unlock stage the partners come from, which sets their pool, their "
+                         "level being four fifths of --raid-pokemon's; by default --raid-progress's, "
+                         "six stars for a black crystal or a seven-star event raid")
     ap.add_argument("--send", action="append", default=[],
                     help="PROTO:PORT:HEX, a reliable data message to send once the console has "
                          "joined (host seq 1 on that port, INITIALIZED); repeatable")
@@ -408,7 +419,7 @@ def build_parser():
 
 def prepare_raid(ap, args):
     """-> the raid this host stages, its Pokemon checked by PKHeX and its rewards by the bag's list,
-    before the radio is up."""
+    and its partner seed and unlock stage, before the radio is up."""
     if args.raid_pokemon is None:
         ap.error("--raid-seed needs --raid-pokemon, the Pokemon our player brings")
     if args.trade_offer:
@@ -444,8 +455,18 @@ def prepare_raid(ap, args):
                                         args.raid_progress, args.raid_content)
         where = f"{args.raid_version}, {args.raid_map}, {args.raid_progress}, {args.raid_content}"
         catch = ""
+    if args.raid_partner_progress:
+        stage = raid_partners.STAGES.index(args.raid_partner_progress)
+    else:
+        stage = raid_partners.stage_of(found.progress, found.content)
     try:
-        raid.RaidGroup(found, record, args.raid_reward or None, players=args.raid_players)
+        wanted = [raid_partners.trainer(name) for name in args.raid_partner]
+        if len(wanted) > raid_partners.slots(args.raid_players):
+            raise ValueError(f"--raid-partner: {args.raid_players} console(s) leave "
+                             f"{raid_partners.slots(args.raid_players)} slot(s) to NPC partners")
+        partner_seed = raid_partners.seed_for(stage, wanted)
+        raid.RaidGroup(found, record, args.raid_reward or None, players=args.raid_players,
+                       partner_seed=partner_seed, stage=stage)
     except ValueError as exc:
         ap.error(str(exc))
     rewards = args.raid_reward or found.rewards
@@ -454,8 +475,20 @@ def prepare_raid(ap, args):
           f"{', shiny' if found.is_shiny else ''}{catch}")
     print(f"[sv] raid rewards{'' if args.raid_reward else ' of the seed'}: "
           + ", ".join(f"{item} x{quantity}" for item, quantity in rewards))
+    partners = raid_partners.pool(stage)
+    free = raid_partners.slots(args.raid_players)
+    # Partners take four fifths of the level of the Pokemon in slot 0, ours.
+    ours = pokemon.read(pokemon.load(record)).get("level", 0)
+    level = f"level {raid_partners.level_for(ours)}, " if ours else ""
+    print(f"[sv] raid partners at {raid_partners.STAGES[stage]} progress ({level}partner seed "
+          f"{partner_seed:016X}): "
+          + (", ".join(f"{p.trainer} ({p.name})" for p in
+                       (partners[i] for i in raid_partners.draw(partner_seed, stage, free)))
+             if free else f"none, {args.raid_players} consoles fill the slots")
+          + ("; chosen" if wanted and len(wanted) == free else
+             "; the first chosen" if wanted else "; drawn freely" if free else ""))
     print(f"[sv] our raid Pokemon: {pokemon.describe(pokemon.load(record))}")
-    return found, record
+    return found, record, (partner_seed, stage)
 
 
 def main(argv=None):
@@ -463,7 +496,7 @@ def main(argv=None):
     args = ap.parse_args(argv)
     raiding = args.raid_seed is not None
     if raiding:
-        raid_found, raid_record = prepare_raid(ap, args)
+        raid_found, raid_record, (partner_seed, partner_stage) = prepare_raid(ap, args)
     if args.trade_offer:
         args.trade_offer = [pokemon_service.prepare_file("sv", p, fresh=args.fresh_pid,
             transform=lambda raw: trade.load_offer(raw, args.offer_set)) for p in args.trade_offer]
@@ -599,8 +632,8 @@ def main(argv=None):
     channel_window = reliable5.SendWindow(0.25)
     raid_window = reliable5.SendWindow(0.5)
     raid_hosts = {}             # src_ip -> raid.RaidHost, from the port-2 answer on
-    raid_group = (raid.RaidGroup(raid_found, raid_record, args.raid_reward or None,
-                                 players=args.raid_players) if raiding else None)
+    raid_group = (raid.RaidGroup(raid_found, raid_record, args.raid_reward or None, players=args.raid_players,
+                                 partner_seed=partner_seed, stage=partner_stage) if raiding else None)
     raid_seating = set()        # src_ip whose station list is not yet acknowledged
     list_waiting = {}           # src_ip -> the station-list sequence it has yet to acknowledge
     list_seq = [args.update_seq]

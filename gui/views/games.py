@@ -19,6 +19,7 @@ from pokeldn.app.introspect import flags_of
 from pokeldn.app.paths import SESSION
 from gui.views.pokemon import NAME_LISTS, LinkCodePicker, NamePicker, OfferQueue, PokemonPicker
 from gui.views.raid_event import FOLDED, RaidEventPicker
+from gui.views.raid_partners import RaidPartnersPicker
 from gui.views.raid_seed import RaidSeedPicker
 from gui.views.rewards import RewardPicker
 from gui.views.gifts import GiftBuilder
@@ -69,6 +70,12 @@ class GamesView:
         self.visible = False
         # The Tera Raid host's Raid event card is unfolded while its event is in use (show_raid_event).
         self.raid_event_open = False
+        # Its Raid NPC partners card only folds: the choice stays in force (show_raid_partners). The
+        # width its cards and its favoured partners' reasons last had lets a redraw start on the
+        # columns and the wording that fit.
+        self.raid_partners_open = False
+        self.raid_partners_width = self.raid_reason_width = 0
+        self.raid_partners = None              # the card shown, whose level follows Our Pokemon
         # The override of a boss a save catches once starts unchecked at every launch.
         for stored in app.settings.tool_values.values():
             stored.get("values", {}).pop(RAID_CATCH, None)
@@ -131,6 +138,8 @@ class GamesView:
         if rebuild:
             self.render_body()
             self.cards.update()
+        elif field.kind == "pokemon" and self.raid_partners:
+            self.raid_partners.follow_host()
         self.session.refresh()
 
     def redraw(self) -> None:
@@ -164,6 +173,13 @@ class GamesView:
             self.values[RAID_EVENT] = self.values.pop(FOLDED)
         elif not unfolded and self.values.get(RAID_EVENT):
             self.values[FOLDED] = self.values.pop(RAID_EVENT)
+        self.redraw()
+
+    # NPC partners
+
+    def show_raid_partners(self, unfolded: bool) -> None:
+        """Unfolds or folds the Raid NPC partners card; its choice goes to the raid either way."""
+        self.raid_partners_open = unfolded
         self.redraw()
 
     def raid_event(self):
@@ -256,6 +272,7 @@ class GamesView:
         self.tree.controls = rows
 
     def render_body(self) -> None:
+        self.raid_partners = None
         if self.tool.unavailable:
             self.tabs.visible = False
             self.cards.controls = [t.card("Not available yet", None, self.tool.unavailable)]
@@ -293,6 +310,9 @@ class GamesView:
                 out.extend(GiftBuilder(self, item).cards())
             elif kind == "field" and item.kind == "raidevent":
                 out.append(RaidEventPicker(self, item).control)
+            elif kind == "field" and item.kind == "raidpartners":
+                self.raid_partners = RaidPartnersPicker(self, item)
+                out.append(self.raid_partners.control)
             elif kind == "field" and item.kind == "switch":
                 out.append(t.card(item.label, None, item.help, trailing=self.input(item)))
             elif kind == "field" and item.kind == "pokemon" and item.queue > 1:

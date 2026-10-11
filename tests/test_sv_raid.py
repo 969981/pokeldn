@@ -16,7 +16,8 @@ from pokeldn.app.catalog import GAMES
 from pokeldn.app.command import build
 from pokeldn.app.settings import Settings
 from pokeldn.ldn import channel_table, game_channel, pia6, pia_connect, reliable5
-from pokeldn.sv import lz4, port2, raid, raid_encounter, raid_event, raid_scan, raid_search, streams
+from pokeldn.sv import (lz4, port2, raid, raid_encounter, raid_event, raid_partners, raid_scan, raid_search,
+                        streams)
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "tools", "switch"))
@@ -153,6 +154,79 @@ def test_a_reward_list_replaces_the_seed_s_and_must_fit():
     assert point[0x100:0x3B8] == bytes(0x2B8)
     with pytest.raises(ValueError):
         raid.raid_point(found, [(1, 1)] * (raid.REWARD_ROWS + 1))
+
+
+# What a retail Scarlet joining our host showed in its two empty slots, the partner seed and the
+# unlock stage written over the RaidPoint (docs/sv_raid.md, Partners).
+RETAIL_PARTNERS = [
+    (0, 2, [("Samantha", "Glalie"), ("Zoe", "Sandaconda")]),
+    (0x12345678DEADBEEF, 2, [("Henry", "Bronzong"), ("Ava", "Floatzel")]),
+    (0x26, 2, [("Ava", "Floatzel"), ("Logan", "Gogoat")]),
+    (0, 0, [("Chase", "Dedenne"), ("Samantha", "Snorunt")]),
+    (0, 1, [("Chase", "Dedenne"), ("Samantha", "Snorunt")]),
+    (0, 3, [("Samantha", "Weavile"), ("Zoe", "Mudsdale")]),
+    (0, 4, [("Samantha", "Weavile"), ("Zoe", "Mudsdale")]),
+    (0xAF05B3D1838735C0, 4, [("Eli", "Gardevoir"), ("Ava", "Toxapex")])]
+
+
+@pytest.mark.parametrize("seed, stage, shown", RETAIL_PARTNERS)
+def test_a_partner_seed_draws_the_trainers_a_retail_scarlet_showed(seed, stage, shown):
+    pool = raid_partners.pool(stage)
+    assert [(pool[i].trainer, pool[i].name) for i in raid_partners.draw(seed, stage)] == shown
+
+
+def test_the_unlock_stage_is_the_progress_less_one_or_six_stars_for_a_black_or_seven_star_raid():
+    assert [raid_partners.stage_of(p) for p in raid_encounter.PROGRESS] == [0, 0, 1, 2, 3, 4]
+    assert raid_partners.stage_of("3star", "black") == raid_partners.stage_of("4star", "might") == 4
+    assert raid_partners.stage_of("3star", "event") == 1
+    assert [len(raid_partners.pool(s)) for s in range(5)] == [16, 16, 18, 18, 18]
+    assert [(raid_partners.pool(s)[15].name, raid_partners.pool(s)[15].level) for s in range(5)] == [
+        ("Snorunt", 16), ("Snorunt", 16), ("Glalie", 40), ("Weavile", 80), ("Weavile", 80)]
+
+
+def test_partners_take_four_fifths_of_the_host_pokemon_s_level_whatever_the_stage():
+    """Serebii's 16, 40 and 80 are a Lv 20, 50 and 100 host's; retail Scarlets showed Eli's Gardevoir
+    at Lv 80 beside a Lv 100 host Pokemon and at Lv 29 beside a Lv 37 one, and the level-16 pool's
+    Kirlia and Staravia at Lv 80 beside a Lv 100 one."""
+    assert [raid_partners.level_for(host) for host in (20, 50, 100, 37, 12)] == [16, 40, 80, 29, 9]
+
+
+def test_a_partner_seed_draws_the_trainers_asked_for_in_slot_order():
+    for names in ([], ["Luke"], ["Dylan", "Luke"], ["ava", " Eli "]):
+        wanted = [raid_partners.trainer(name) for name in names]
+        seed = raid_partners.seed_for(4, wanted)
+        assert raid_partners.draw(seed, 4)[:len(wanted)] == wanted
+    for stage, wanted in ((1, ["Dylan"]), (4, ["Ava", "Ava"]), (4, ["Ava", "Eli", "Zoe"])):
+        with pytest.raises(ValueError):
+            raid_partners.seed_for(stage, [raid_partners.trainer(name) for name in wanted])
+    with pytest.raises(ValueError):
+        raid_partners.trainer("Nemona")
+
+
+def test_the_favoured_partners_are_level_80_trainers_with_a_rank_and_a_few_words_on_why():
+    wanted = {p.trainer: (p.rank, p.why, p.brief, p.detail) for p in raid_partners.pool(4) if p.why}
+    assert wanted == raid_partners.RECOMMENDED[80]
+    ranked = {name: rank for name, (rank, *_) in wanted.items()}
+    assert {name for name, rank in ranked.items() if rank == 1} == {"Logan", "Hailey", "Charlotte", "Eli"}
+    assert {name for name, rank in ranked.items() if rank == 2} == {
+        "Austin", "Evan", "Kylie", "Hunter", "Gianna", "Samantha"}
+    assert all(5 <= len(why.split()) <= 10 for _, why, _, _ in wanted.values())
+    assert all(10 <= len(detail.split()) <= 15 for *_, detail in wanted.values())
+    assert all(len(brief) < len(why) < len(detail) for _, why, brief, detail in wanted.values())
+    assert raid_partners.pool(3) == raid_partners.pool(4)
+    assert not any(p.why or p.brief or p.detail or p.rank
+                   for stage in (0, 2) for p in raid_partners.pool(stage))
+
+
+def test_the_raidpoint_carries_the_partner_seed_and_the_raid_s_stage():
+    found = raid_encounter.generate(0xFDAE7B7D)
+    assert struct.unpack_from("<QI", raid.raid_point(found), raid.POINT_PARTNERS) == (0, 2)
+    black = raid_encounter.generate(0x09F3E337, "scarlet", "paldea", "6star", "black")
+    assert struct.unpack_from("<QI", raid.raid_point(black, partner_seed=0x26),
+                              raid.POINT_PARTNERS) == (0x26, 4)
+    assert struct.unpack_from("<I", raid.raid_point(found, stage=0), 0x3E0) == (0,)
+    with pytest.raises(ValueError):
+        raid.raid_point(found, stage=5)
 
 
 def test_lz4_blocks_cross_an_independent_decoder():
@@ -398,7 +472,7 @@ def reliable(protocol, seq, payload, flags):
 
 
 def party(species):
-    return gen9.encrypt(gen9.build(species=species, moves=(33, 0, 0, 0), ot_name="Player"))
+    return gen9.encrypt(gen9.build(species=species, level=50, moves=(33, 0, 0, 0), ot_name="Player"))
 
 
 class RaidGuestConsole:
@@ -724,6 +798,51 @@ def test_the_raid_starts_when_the_lobby_timer_runs_out(monkeypatch, tmp_path, re
     assert timers == list(range(raid.LOBBY_SECONDS, -1, -1))
     assert start_of(console)["t"] - rows[0]["t"] == pytest.approx(raid.LOBBY_SECONDS, abs=1.1)
     assert rows[-1]["data"] == raid.HANDOFF[-1] and console.left
+
+
+def test_the_partners_we_choose_reach_the_bootstrap(monkeypatch, tmp_path, capsys):
+    """`--raid-partner`, in slot order, and `--raid-partner-progress`: the RaidPoint's partner seed
+    draws them from that stage's pool. A trainer the stage's pool lacks is refused before the radio."""
+    console, _ = run_raid_host(monkeypatch, tmp_path, extra=[
+        "--raid-partner", "luke", "--raid-partner", "Ava", "--raid-partner-progress", "6star"])
+    first = {}
+    for row in console.seen:
+        if (row["protocol"], row["port"]) == (0x80, 0) and "data" in row:
+            first.setdefault(row["seq"], row)
+    point = raid.payload_of(first[11]["data"] + first[12]["data"])[raid.RAIDPOINT:]
+    seed, stage = struct.unpack_from("<QI", point, raid.POINT_PARTNERS)
+    assert stage == 4 and raid_partners.draw(seed, stage) == [17, 1]
+    assert (f"[sv] raid partners at 6star progress (level 40, partner seed {seed:016X}): Luke (Clodsire), "
+            f"Ava (Toxapex); chosen") in capsys.readouterr().out
+    with pytest.raises(SystemExit):
+        run_raid_host(monkeypatch, tmp_path,
+                      extra=["--raid-partner", "Dylan", "--raid-partner-progress", "3star"])
+
+
+def test_two_consoles_leave_one_slot_to_the_partner_we_choose(monkeypatch, tmp_path, capsys):
+    """`--raid-players 2`: the consoles take seats 1 and 2, and the RaidPoint's partner seed draws the
+    one partner chosen for seat 3. A second partner, or any with three consoles, is refused before the
+    radio."""
+    assert [raid_partners.slots(n) for n in (1, 2, 3)] == [2, 1, 0]
+    made, _ = run_raid_host(
+        monkeypatch, tmp_path, extra=["--raid-players", "2", "--raid-partner", "Eli",
+                                      "--raid-partner-progress", "6star"], seconds=120,
+        consoles=lambda clock: [RaidGuestConsole(clock, 2.4, n, species, join_at)
+                                for n, species, join_at in ((1, 658, 0.2), (2, 6, 8.0))])
+    rows = lobby_rows(made[0])
+    plain = raid.payload_of(next(r["data"] for r in rows if r["data"][:4] == raid.trade.build(
+        raid.KEY_LOBBY, raid.KIND_BOOTSTRAP, 1)) + next(r["data"] for r in rows
+                                                         if r["rflags"] == raid.FRAGMENT_END_ZLIB))
+    assert [plain[k * gen9.SIZE_PARTY:(k + 1) * gen9.SIZE_PARTY] for k in range(4)] == [
+        party(25), made[0].pokemon, made[1].pokemon, raid.empty_participant()]
+    seed, stage = struct.unpack_from("<QI", plain[raid.RAIDPOINT:], raid.POINT_PARTNERS)
+    assert stage == 4 and raid_partners.draw(seed, stage, 1) == [raid_partners.trainer("Eli")]
+    assert (f"[sv] raid partners at 6star progress (level 40, partner seed {seed:016X}): Eli (Gardevoir); "
+            f"chosen") in capsys.readouterr().out
+    for extra in (["--raid-players", "2", "--raid-partner", "Eli", "--raid-partner", "Ava"],
+                  ["--raid-players", "3", "--raid-partner", "Eli"]):
+        with pytest.raises(SystemExit):
+            run_raid_host(monkeypatch, tmp_path, extra=extra)
 
 
 @pytest.mark.parametrize("capture, extra, word, record, summary", [

@@ -760,6 +760,238 @@ def test_folding_the_raid_event_card_sets_its_event_aside_until_it_unfolds():
     assert view.values["--raid-event"] == "" and "#raid-event-folded" not in view.values
 
 
+def test_folding_the_raid_partners_card_keeps_its_choice():
+    """Folded or not, the host seats the trainers chosen, in order, from the progress chosen; with
+    none chosen it passes nothing and draws them itself."""
+    from pokeldn.app.catalog import GAMES
+    from pokeldn.app.command import build
+    from pokeldn.app.introspect import parser_of
+    from pokeldn.app.settings import Settings
+    tool = next(t for game in GAMES for t in game.tools if t.key == "sv-raid-host")
+    redrawn = []
+    view = SimpleNamespace(tool=tool, raid_partners_open=True, redraw=lambda: redrawn.append(1),
+                           values={"--raid-pokemon": {"file": "/tmp/host.pk9"}, "--raid-seed": "52E6B438",
+                                   "--raid-partner": {"progress": "tera", "picks": ["Logan", "Ava"]}})
+
+    def hosted():
+        return parser_of(tool.script).parse_args(build(tool, view.values, {}, Settings()))
+    for unfolded in (False, True):
+        GamesView.show_raid_partners(view, unfolded)
+        args = hosted()
+        assert view.raid_partners_open == unfolded and redrawn
+        assert (args.raid_partner, args.raid_partner_progress) == (["Logan", "Ava"], "tera")
+    del view.values["--raid-partner"]
+    assert (hosted().raid_partner, hosted().raid_partner_progress) == ([], None)
+
+
+def test_the_raid_partners_card_shows_its_progress_s_pool_and_seats_two_at_most():
+    """The pool follows the story progress unless one is chosen; a trainer it lacks leaves the choice,
+    a third pick none, and choosing the story progress's own stage follows it again."""
+    from gui.views.raid_partners import RaidPartnersPicker
+    from pokeldn.app.catalog import GAMES
+    tool = next(t for game in GAMES for t in game.tools if t.key == "sv-raid-host")
+    field = next(f for f in tool.fields if f.kind == "raidpartners")
+    values = {"--raid-partner": {"progress": "3star", "picks": ["Dylan", "Ava"]}}
+
+    def set_value(f, value, rebuild=False):
+        values[f.key] = value
+    view = SimpleNamespace(tool=tool, raid_partners_open=True, raid_partners_width=0, raid_reason_width=0,
+                           values=values, set_value=set_value,
+                           raid_context=lambda: {"progress": "6star", "content": "standard"},
+                           app=SimpleNamespace(settings=SimpleNamespace(save=lambda: None, sprites=False),
+                                               ui=lambda work: None))
+    picker = RaidPartnersPicker(view, field)
+    assert (picker.stage, picker.default, len(picker.pool)) == (1, 4, 16)
+    assert values["--raid-partner"]["picks"] == ["Ava"]
+    assert picker._summary() == "Ava, one drawn · 3-star raids"
+    picker._pick("Zoe")
+    assert values["--raid-partner"]["picks"] == ["Ava", "Zoe"]
+    picker = RaidPartnersPicker(view, field)
+    picker._pick("Eli")
+    assert values["--raid-partner"]["picks"] == ["Ava", "Zoe"]
+    picker._pick("Ava")
+    assert values["--raid-partner"]["picks"] == ["Zoe"]
+    picker._progress(SimpleNamespace(control=SimpleNamespace(value="6star")))
+    assert values["--raid-partner"]["progress"] == ""
+    picker = RaidPartnersPicker(view, field)
+    assert (picker.stage, len(picker.pool), picker.pool[16].name) == (4, 18, "Haxorus")
+
+
+def test_each_console_joining_takes_a_partner_s_slot():
+    """Consoles joining sets how many partners there are to pick: one with two consoles, a second
+    pick leaving; none with three, the start refused while a pick stands."""
+    from gui.views.raid_partners import RaidPartnersPicker
+    from pokeldn.app import command
+    from pokeldn.app.catalog import GAMES
+    tool = next(t for game in GAMES for t in game.tools if t.key == "sv-raid-host")
+    field = next(f for f in tool.fields if f.kind == "raidpartners")
+    values = {"--raid-pokemon": {"file": "/tmp/host.pk9"}, "--raid-seed": "52E6B438",
+              "--raid-players": "2", "--raid-partner": {"progress": "", "picks": ["Eli", "Gianna"]}}
+
+    def set_value(f, value, rebuild=False):
+        values[f.key] = value
+    view = SimpleNamespace(tool=tool, raid_partners_open=True, raid_partners_width=0, raid_reason_width=0,
+                           values=values, set_value=set_value,
+                           raid_context=lambda: {"progress": "6star", "content": "standard"},
+                           app=SimpleNamespace(settings=SimpleNamespace(save=lambda: None, sprites=False),
+                                               ui=lambda work: None))
+    picker = RaidPartnersPicker(view, field)
+    assert (picker.free, values["--raid-partner"]["picks"], picker._summary()) == (1, ["Eli"], "Eli")
+    picker._pick("Gianna")
+    assert values["--raid-partner"]["picks"] == ["Eli"]
+    assert not [e for e in command.problems(tool, values) if "consoles joining" in e]
+    values["--raid-players"] = "3"
+    assert "With 3 consoles joining, the raid seats no partner." in command.problems(tool, values)
+    picker = RaidPartnersPicker(view, field)
+    assert (picker.free, values["--raid-partner"]["picks"]) == (0, [])
+    assert picker._summary() == "None, 3 consoles fill the slots"
+
+
+def test_a_favoured_raid_partner_s_card_shows_a_star_and_why(tmp_path):
+    """The level-80 cards of the partners raiders want end on a star and its reason, gold for the
+    favoured and silver for the next tier; a pool without any, such as level 40's, shows neither. Each
+    card names the Pokemon and, on a line of its own, its level: four fifths of Our Pokemon's, unknown
+    until Our Pokemon is built."""
+    import flet as ft
+    from gui import theme
+    from gui.views.raid_partners import RaidPartnersPicker
+    from pokeldn import gen9
+    from pokeldn.app.catalog import GAMES
+    from pokeldn.sv import raid_partners
+    tool = next(t for game in GAMES for t in game.tools if t.key == "sv-raid-host")
+    field = next(f for f in tool.fields if f.kind == "raidpartners")
+    ours = tmp_path / "ours.pk9"
+    ours.write_bytes(gen9.encrypt(gen9.build(species=184, level=37)))
+    for progress, wanted, values in (("6star", raid_partners.RECOMMENDED[80], {}),
+                                     ("4star", {}, {"--raid-pokemon": {"file": str(ours)}})):
+        view = SimpleNamespace(tool=tool, raid_partners_open=True, raid_partners_width=0, raid_reason_width=0,
+                               values=values, set_value=None,
+                               raid_context=lambda: {"progress": progress, "content": "standard"},
+                               app=SimpleNamespace(settings=SimpleNamespace(save=lambda: None, sprites=False),
+                                                   ui=lambda work: None))
+        card = list(raid_controls(RaidPartnersPicker(view, field).control))
+        for rank, ink, tip in ((1, theme.AMBER, "Favoured by raiders"),
+                               (2, theme.SILVER, "Next tier for raiders")):
+            # Before the card's width is known, the brief reasons.
+            reasons = [brief for r, _, brief, _ in wanted.values() if r == rank]
+            assert [c.value for c in card if isinstance(c, ft.Text) and c.color == ink] == reasons
+            assert ([c.color for c in card if isinstance(c, ft.Image) and c.tooltip == tip]
+                    == [ink] * len(reasons))
+        texts = {c.value for c in card if isinstance(c, ft.Text)}
+        if values:
+            assert {"Camerupt", "Lv. 29"} <= texts and "Lv. —" not in texts
+            assert any(str(text).startswith("Level 29 partners, four fifths of Our Pokemon's level 37.")
+                       for text in texts)
+        else:
+            assert {"Gardevoir", "Lv. —"} <= texts
+
+
+def test_a_favoured_partner_s_reason_has_the_most_words_its_card_holds():
+    """A reason shows at length on a card wide enough for it, in a few words on a narrower one and
+    briefly on the narrowest, each fitting a narrower card than the one before; a redraw starts on the
+    last width's wording."""
+    import flet as ft
+    from gui.views.raid_partners import RaidPartnersPicker, fits
+    from pokeldn.app.catalog import GAMES
+    from pokeldn.sv import raid_partners
+    favoured = [p for p in raid_partners.pool(4) if p.why]
+    least = lambda words: next(width for width in range(1000) if fits(words, width))
+    assert all(least(p.brief) < least(p.why) < least(p.detail) for p in favoured)
+    tool = next(t for game in GAMES for t in game.tools if t.key == "sv-raid-host")
+    field = next(f for f in tool.fields if f.kind == "raidpartners")
+    view = SimpleNamespace(tool=tool, raid_partners_open=True, raid_partners_width=0, raid_reason_width=0,
+                           values={}, set_value=None,
+                           raid_context=lambda: {"progress": "6star", "content": "standard"},
+                           app=SimpleNamespace(settings=SimpleNamespace(save=lambda: None, sprites=False),
+                                               ui=lambda work: None))
+
+    def reasons(picker):
+        return {c.data.trainer: c for c in raid_controls(picker.control)
+                if isinstance(c, ft.Container) and c.on_size_change == picker._resized}
+
+    def shown_as(boxes):
+        return {name: next(level for level in ("detail", "why", "brief")
+                           if box.content.value == getattr(box.data, level)) for name, box in boxes.items()}
+    picker = RaidPartnersPicker(view, field)
+    boxes = reasons(picker)
+    for box in boxes.values():
+        box.content.update = lambda: None
+    # 117 px is a reason's width in a window where Hailey's few words were cut short.
+    cut, roomy = {"Hailey", "Charlotte", "Kylie", "Hunter", "Gianna"}, {"Hunter", "Gianna"}
+    for width, levels in ((300, dict.fromkeys(boxes, "detail")),
+                          (200, {name: "detail" if name in roomy else "why" for name in boxes}),
+                          (117, {name: "brief" if name in cut else "why" for name in boxes}),
+                          (60, dict.fromkeys(boxes, "brief"))):
+        for box in boxes.values():
+            picker._resized(SimpleNamespace(control=box, width=width))
+        assert shown_as(boxes) == levels
+    picker._resized(SimpleNamespace(control=boxes["Eli"], width=300))
+    assert view.raid_reason_width == 300
+    assert set(shown_as(reasons(RaidPartnersPicker(view, field))).values()) == {"detail"}
+
+
+def test_a_narrow_window_stands_the_raid_partners_two_to_a_row():
+    """Three cards to a row while each is CARD_WIDTH wide, two in a narrower window, such as the
+    smallest the app allows; a redraw starts on the last width's columns."""
+    import flet as ft
+    from gui.views.raid_partners import RaidPartnersPicker, columns
+    from pokeldn.app.catalog import GAMES
+    assert (columns(0), columns(500), columns(380)) == (3, 3, 2)
+    tool = next(t for game in GAMES for t in game.tools if t.key == "sv-raid-host")
+    field = next(f for f in tool.fields if f.kind == "raidpartners")
+    view = SimpleNamespace(tool=tool, raid_partners_open=True, raid_partners_width=0, raid_reason_width=0,
+                           values={}, set_value=None,
+                           raid_context=lambda: {"progress": "6star", "content": "standard"},
+                           app=SimpleNamespace(settings=SimpleNamespace(save=lambda: None, sprites=False),
+                                               ui=lambda work: None))
+
+    def rows(picker):
+        cards = next(c for c in raid_controls(picker.control)
+                     if isinstance(c, ft.Container) and c.on_size_change == picker._spread)
+        return cards, [len(row.controls) for row in cards.content.controls]
+    picker = RaidPartnersPicker(view, field)
+    cards, shape = rows(picker)
+    assert shape == [3] * 6
+    cards.content.update = lambda: None
+    picker._spread(SimpleNamespace(control=cards, width=380))
+    assert [len(row.controls) for row in cards.content.controls] == [2] * 9
+    assert view.raid_partners_width == 380 and rows(RaidPartnersPicker(view, field))[1] == [2] * 9
+
+
+def test_the_raid_partners_level_follows_our_pokemon(tmp_path):
+    """Building or dropping Our Pokemon saves it without a redraw; the partners' card reads its level
+    again, its note and cards showing the new one."""
+    import flet as ft
+    from gui.views.raid_partners import RaidPartnersPicker
+    from pokeldn import gen9
+    from pokeldn.app.catalog import GAMES
+    tool = next(t for game in GAMES for t in game.tools if t.key == "sv-raid-host")
+    field = next(f for f in tool.fields if f.kind == "raidpartners")
+    ours = next(f for f in tool.fields if f.key == "--raid-pokemon")
+    records = {}
+    for level in (100, 90):
+        records[level] = tmp_path / f"lv{level}.pk9"
+        records[level].write_bytes(gen9.encrypt(gen9.build(species=184, level=level)))
+    view = SimpleNamespace(tool=tool, raid_partners_open=True, raid_partners_width=0, raid_reason_width=0,
+                           values={"--raid-pokemon": {"file": str(records[100])}}, set_value=None,
+                           raid_context=lambda: {"progress": "6star", "content": "standard"},
+                           session=SimpleNamespace(refresh=lambda: None),
+                           app=SimpleNamespace(settings=SimpleNamespace(save=lambda: None, sprites=False),
+                                               ui=lambda work: None))
+
+    def shown():
+        texts = [c.value for c in raid_controls(view.raid_partners.control) if isinstance(c, ft.Text)]
+        return {text for text in texts if str(text).startswith(("Lv.", "Level "))}
+    view.raid_partners = RaidPartnersPicker(view, field)
+    view.raid_partners.body.update = lambda: None
+    assert view.raid_partners.level == 80 and "Lv. 80" in shown()
+    GamesView.set_value(view, ours, {"file": str(records[90])})
+    assert view.raid_partners.level == 72
+    assert shown() == {"Lv. 72", "Level 72 partners, four fifths of Our Pokemon's level 90. Pick up to two, "
+                                  "in the order they take the empty slots; a partner you leave is drawn when "
+                                  "the host starts."}
+
+
 def test_the_finder_wants_the_rewards_its_unfolded_list_names():
     """Rows of one item add up; folded or empty, the search wants nothing; a row without an item, one
     the raids searched cannot give, or a list still being made stops the search."""

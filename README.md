@@ -391,6 +391,9 @@ ITEM:QUANTITY` replaces its rewards, and `--raid-pokemon` is the Pokémon pokeld
 of Project Pokemon's [EventsGallery](https://github.com/projectpokemon/EventsGallery), which the app
 downloads and updates on request. `--raid-players N` lets up to three consoles join one raid; it
 starts once N consoles are in the lobby and each has pressed Ready, or when the lobby timer runs out.
+`--raid-partner TRAINER`, up to once for each slot the consoles leave empty (two with one
+console), chooses the NPC partners who fill them, which a console otherwise draws from the host's
+story progress.
 `bin/sv_join.py --raid-pokemon FILE` joins a raid the console hosts. In both, pokeldn's player
 leaves as the battle starts and its Pokémon stays to fight beside the console's. The app's two
 Tera Raid tools carry the flags; see [Tera Raids](docs/sv_raid.md).
