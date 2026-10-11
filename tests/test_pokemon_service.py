@@ -96,13 +96,13 @@ def test_creation_import_and_launcher_preparation_remain_legal(service, game):
 
 
 @pytest.mark.parametrize("game", FORMATS)
-def test_a_built_pokemon_shows_the_trainer_id_typed_in_settings(service, game):
+def test_a_built_pokemon_shows_the_trainer_typed_in_settings(service, game):
     """FireRed shows the 16-bit TID; a Switch title shows the 32-bit id as six digits and a secret ID,
-    here the largest pair 32 bits hold. PKHeX's DisplayTID reads them back."""
-    settings = Settings(tid=12345, sid=54321, switch_tid=967295, switch_sid=4294)
+    here the largest pair 32 bits hold. PKHeX's DisplayTID reads them back. Z-A matches the gender too."""
+    settings = Settings(tid=12345, sid=54321, switch_tid=967295, switch_sid=4294, gender=1)
     built = service.make(game, 25, settings.trainer(game))
     shown = (12345, 54321) if game == "frlg" else (967295, 4294)
-    assert (built["trainer_id"], built["secret_id"]) == shown and built["legal"]
+    assert (built["trainer_id"], built["secret_id"], built["ot_gender"]) == (*shown, 1) and built["legal"]
 
 
 def test_an_event_pokemon_offered_under_a_new_pid_keeps_its_own(service, capsys):

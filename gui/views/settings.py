@@ -79,6 +79,10 @@ class SettingsView:
                 ft.Column([t.text("Name", 11, t.MUTED),
                            t.field(value=s.ot, limit=12, on_change=lambda e: self.save("ot", e.control.value[:12]))],
                           spacing=4, expand=True),
+                ft.Column([t.text("Gender", 11, t.MUTED),
+                           t.dropdown([("0", "Male"), ("1", "Female")], str(s.gender),
+                                      on_select=lambda e: self.save("gender", int(e.control.value)))],
+                          spacing=4, expand=True),
                 ft.Column([t.text("Language", 11, t.MUTED),
                            t.dropdown(list(LANGUAGES), str(s.language),
                                       on_select=lambda e: self.save("language", int(e.control.value)))],
@@ -124,9 +128,10 @@ class SettingsView:
                    "prod.keys dumped from your own console. Needed to talk to the games; it never leaves this "
                    "computer."),
             t.card("Your trainer", trainer,
-                   "The original trainer of every Pokemon the app builds for you. Put your own name and IDs to "
-                   "make them yours: FireRed and LeafGreen show a five-digit ID, the Switch games a six-digit "
-                   "one. The IDs were drawn at random on first launch."),
+                   "The original trainer of every Pokemon the app builds for you. Put your own name, gender and "
+                   "IDs to make them yours, so a traded Pokemon keeps its friendship: FireRed and LeafGreen show "
+                   "a five-digit ID, the Switch games a six-digit one. The IDs were drawn at random on first "
+                   "launch."),
             t.card("Received Pokemon", ft.Row([ft.Container(received.control, expand=True),
                                                t.icon_button("external-link",
                                                              lambda e: open_folder(os.path.expanduser(s.received)),

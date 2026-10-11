@@ -1011,6 +1011,7 @@ JsonObject Describe(Game game, PKM pk, LegalityAnalysis la)
         ["shiny"] = pk.IsShiny,
         ["nickname"] = pk.Nickname,
         ["ot"] = pk.OriginalTrainerName,
+        ["ot_gender"] = pk.OriginalTrainerGender,
         ["trainer_id"] = pk.DisplayTID,
         ["secret_id"] = pk.DisplaySID,
         ["nature"] = strings.natures[(int)pk.StatAlignment],
