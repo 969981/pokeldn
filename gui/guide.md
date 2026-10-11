@@ -41,7 +41,10 @@ Files can be dragged onto the app: a Pokemon file or a Showdown team (`.txt`) on
 and onto Add a trade queues one trade per file. A gift file dropped on the Gift card opens it, and a
 `.bin` dropped on the Board page's Firmware card installs it after a confirmation.
 
-The Pokemon the console sends you are saved in `Documents/pokeldn/Received`.
+The Pokemon the console sends you are saved in `Documents/pokeldn/Received`, and a copy goes to the
+Bank. The Bank's plus button, or a drop on its grid, imports a Pokemon file or a whole game save: each
+legal Pokemon in it is banked once, and the file itself is left as it is. One from an older game leaves
+its held item behind and forgets its HMs, as HOME's way in asks.
 
 ## Free up storage
 

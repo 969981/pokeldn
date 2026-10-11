@@ -1,5 +1,7 @@
 """The bank keeps what a trade brought in and sends it to another game the way HOME moves it."""
 import base64
+import gzip
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -19,6 +21,13 @@ TOOLS = {tool.key: tool for game in GAMES for tool in game.tools}
 def vault(tmp_path, monkeypatch):
     monkeypatch.setattr(bank, "BANK", tmp_path / "Bank")
     return tmp_path
+
+
+# Built by PKHeX's encounter generator: a Black 2 save holding a Patrat with an Oran Berry in party slot 1, a
+# Lillipup in box 1 slot 3 and a Patrat knowing Roar of Time in box 2 slot 1; a Bidoof that knows Rock Smash
+# (.pk4) and a Fletchling holding an Oran Berry (.pk6).
+FIXTURE = json.loads((Path(__file__).parent / "data" / "bank_import.json").read_text(encoding="utf-8"))
+TRAINERS = {game: OWNER for game in pokemon.EXTENSIONS}
 
 
 def receive(service, folder, game, species, options=None):
@@ -136,3 +145,61 @@ def test_a_completed_trade_takes_the_pokemon_out_of_the_bank_and_its_queue(vault
     assert bank.find(entry.id) is None
     panel._exited(0)
     assert values["--offer-file"] == [{"file": "built.pk8", "species": 1}]
+
+
+def imported_from(entry):
+    return json.loads(Path(entry.path).with_suffix(".json").read_text(encoding="utf-8"))["imported"]["where"]
+
+
+def test_a_save_is_imported_slot_by_slot_once_even_after_a_trade_takes_one_out(service, vault):
+    save = vault / "main"          # a 3DS save has no extension; this one is Black 2's size
+    save.write_bytes(gzip.decompress(base64.b64decode(FIXTURE["black2_save_gz"])))
+    before = save.read_bytes()
+    first = bank.import_file(str(save), TRAINERS)
+    assert first.save == "Black 2, ROSA"
+    assert [(p.where, p.species, p.state, p.detail) for p in first.pokemon] == [
+        ("Party, slot 1", "Patrat", "banked", "Left its Oran Berry behind"),
+        ("Box 1, slot 3", "Lillipup", "banked", ""),
+        ("Box 2, slot 1", "Patrat", "refused", "One of its moves is not legal.")]
+    kept = {imported_from(e): e for e in bank.entries()}
+    patrat = service.check_bytes(kept["Party, slot 1"].game, bank.data(kept["Party, slot 1"]))
+    assert patrat["legal"] and patrat["species_id"] == 504 and patrat["held_item_id"] == 0
+    assert patrat["ot"] == "ROSA" and int(patrat["tracker"]) == kept["Party, slot 1"].tracker != 0
+    bank.remove(kept["Party, slot 1"].id)       # as a completed trade takes it out
+    again = bank.import_file(str(save), TRAINERS)
+    assert [p.state for p in again.pokemon] == ["already", "already", "refused"]
+    assert len(bank.entries()) == 1 and save.read_bytes() == before
+
+
+@pytest.mark.parametrize("name, species, gone", [
+    ("bidoof.pk4", 399, "Forgot Rock Smash"),                        # Poke Transfer refuses an HM
+    ("fletchling.pk6", 661, "Left its Oran Berry behind"),
+])
+def test_a_record_of_an_older_game_moves_in_as_home_would_take_it(service, vault, name, species, gone):
+    path = vault / name
+    path.write_bytes(bytes.fromhex(FIXTURE[name.split(".")[1]]))
+    [found] = bank.import_file(str(path), TRAINERS).pokemon
+    assert found.state == "banked" and found.detail.startswith(gone)
+    [entry] = bank.entries()
+    info = service.check_bytes(entry.game, bank.data(entry))
+    assert info["legal"] and info["species_id"] == species and info["held_item_id"] == 0
+    assert "Rock Smash" not in info["moves"] and entry.game == found.game
+    assert [p.state for p in bank.import_file(str(path), TRAINERS).pokemon] == ["already"]
+
+
+def test_a_record_of_a_game_the_bank_holds_is_kept_byte_for_byte(service, vault):
+    built = service.make("swsh", 25, TRAINER, options={"held_item": 1})        # a Master Ball
+    path = vault / "pikachu.pk8"
+    path.write_bytes(base64.b64decode(built["data"]))
+    [found] = bank.import_file(str(path), TRAINERS).pokemon
+    [entry] = bank.entries()
+    assert found.state == "banked" and found.detail == "" and entry.game == "swsh"
+    assert bank.data(entry) == path.read_bytes()
+    assert bank.deposit("swsh", str(path), service.check("swsh", str(path))) is None
+
+
+def test_a_file_pkhex_cannot_read_is_refused(service, vault):
+    path = vault / "notes.pk6"
+    path.write_bytes(b"not a pokemon")
+    with pytest.raises(pokemon.BuilderError, match="neither a Pokemon nor a game save"):
+        bank.import_file(str(path), TRAINERS)

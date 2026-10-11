@@ -169,12 +169,41 @@ fields and runs PKHeX's legality check; an edit that would make a legal Pokemon 
 the record is left as it was. A saved edit rewrites the record and its `.json` (summary, verdict,
 SHA-256) and the destinations are checked again. A Pokemon queued for a trade is not editable.
 
+### Importing
+
+The Bank page's plus button, or a file dropped on its grid, imports a Pokemon file or a game save. The
+helper's `import` command reads the file with PKHeX: `SaveUtil.TryGetSaveFile` first, the file name
+helping (a 3DS save is a file named `main` with no extension), then `FileUtil.TryGetPKM` for a single
+record of any format PKHeX knows (`.pk1` to `.pk9`, `.pb7`, `.pb8`, `.pa8`, `.pa9`, `.ck3`, `.xk3`,
+`.bk4`, `.rk4` and the rest). A save gives each occupied party slot, then each occupied box slot. The
+file is only read.
+
+| record | what the bank keeps |
+|---|---|
+| of a game the bank holds (`PK3`, `PB7`, `PK8`, `PB8`, `PA8`, `PK9`, `PA9`) | the record as it is, held item and moves included, when PKHeX finds it legal |
+| any other format | the record with its held item taken off, as a Pokemon enters HOME without one, and, in a Gen 3 or Gen 4 record, its HM moves forgotten, as Pal Park and Poke Transfer refuse them; when PKHeX then finds it legal, it moves as a bank move would to the first game that takes it, in the order FireRed/LeafGreen, Scarlet/Violet, Sword/Shield, Brilliant Diamond/Shining Pearl, Legends Arceus, Legends Z-A |
+
+A record PKHeX finds not legal in its own format is refused with PKHeX's reason; the move's moveset
+suggestion never stands in for a move the record's own game did not allow. A record with a bad checksum,
+an egg of another game and a species no reachable game holds are refused too. The `.json` of an
+imported Pokemon carries `imported`: the file name, the slot, the source format and what was taken off.
+
+`Bank/.imported` holds one key per imported record: the SHA-256 of its decrypted stored bytes, before
+anything is taken off. A record whose key is there is not imported again, even once a trade has taken it
+out of the bank; a record whose bytes are already banked is not banked twice. A save imported again after
+the game was played brings in only the records that changed.
+
+A Ditto imported from a FireRed save completed a trade into a retail Scarlet from the Bank page, and
+importing that save again banked none of its 104 records.
+
 A record received from a retail Sword and moved to Legends Z-A, with the bank's tracker and its PID
 kept, showed its level and original trainer on a retail Z-A's trade box and completed the trade.
 
 `tests/test_bank.py` moves records between six pairs of games through the real helper and checks
 that the destination's launcher takes them, along with each refusal, an edit kept and refused, and the
-run that takes a traded Pokemon out of the bank.
+run that takes a traded Pokemon out of the bank. It imports a Black 2 save, a Gen 4 and a Gen 6 file built by
+PKHeX's encounter generator (`tests/data/bank_import.json`): the held item and the HM go,
+an illegal record is refused, and a second import banks nothing.
 
 ### Unresolved
 
@@ -278,10 +307,10 @@ all have both sprites; 1026 returns 404. When a shiny sprite is missing, the nor
 | Session panel, Offering: each queued offer in trade order, its summary as a tooltip | 46 px tile |
 | Session panel, Received: each Pokemon file the run saved, read by PKHeX, with its summary | 46 px tile |
 
-Sprites are drawn with nearest-neighbour filtering at 1:1, never at a size in between. A 46 px tile
-crops the canvas around the visible pixels (`pokeldn.app.sprites.bounds`) and draws them at 1:1 when
-they fit in 46 px, else at 1:2. Of 33 sprites sampled, the visible box ran from 36x29 (Eevee) to the
-full 96 px width (Lugia, Reshiram). At 1:2 a sprite lands on whole device pixels of a 2x display.
+A 96 px sprite is the whole canvas at 1:1, nearest-neighbour. A 46 px tile crops the canvas around the
+visible pixels (`pokeldn.app.sprites.bounds`) and scales them, smoothed, until the longer side is
+40 px, so every tile shows its Pokemon at one size. Visible boxes run from 28 px (Togepi) to the full
+96 px width (Lugia); a fixed 1:1 or 1:2 choice drew a 50 px sprite at 50 px and a 56 px one at 28.
 
 The Received list matches files by the run's `{stamp}`, which every tool's output path carries; a
 launcher adds `-N` for trade N (`pokeldn.pokemon.trade_path`) or writes into a folder or prefix so

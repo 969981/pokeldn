@@ -125,6 +125,12 @@ class Service:
         reply["file"] = self.keep(game, reply)
         return reply
 
+    def import_records(self, data: bytes, name: str, trainers: dict[str, dict]) -> dict:
+        """Each Pokemon in a Pokemon file or a game save, as the bank would keep it [services/pkhex Import].
+        `trainers` maps every game to the trainer who receives a Pokemon HOME moves there."""
+        return self._ask({"cmd": "import", "game": "sv", "name": name, "trainers": trainers,
+                          "data": base64.b64encode(data).decode()})
+
     def prepare(self, game: str, data: bytes, *, fresh=False, fields=None) -> bytes:
         reply = self.check_bytes(game, data, fresh=fresh, fields=fields)
         if not reply["legal"]:
