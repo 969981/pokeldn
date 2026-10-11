@@ -193,6 +193,9 @@ anything is taken off. A record whose key is there is not imported again, even o
 out of the bank; a record whose bytes are already banked is not banked twice. A save imported again after
 the game was played brings in only the records that changed.
 
+A Ditto imported from a FireRed save completed a trade into a retail Scarlet from the Bank page, and
+importing that save again banked none of its 104 records.
+
 A record received from a retail Sword and moved to Legends Z-A, with the bank's tracker and its PID
 kept, showed its level and original trainer on a retail Z-A's trade box and completed the trade.
 
@@ -304,10 +307,10 @@ all have both sprites; 1026 returns 404. When a shiny sprite is missing, the nor
 | Session panel, Offering: each queued offer in trade order, its summary as a tooltip | 46 px tile |
 | Session panel, Received: each Pokemon file the run saved, read by PKHeX, with its summary | 46 px tile |
 
-Sprites are drawn with nearest-neighbour filtering at 1:1, never at a size in between. A 46 px tile
-crops the canvas around the visible pixels (`pokeldn.app.sprites.bounds`) and draws them at 1:1 when
-they fit in 46 px, else at 1:2. Of 33 sprites sampled, the visible box ran from 36x29 (Eevee) to the
-full 96 px width (Lugia, Reshiram). At 1:2 a sprite lands on whole device pixels of a 2x display.
+A 96 px sprite is the whole canvas at 1:1, nearest-neighbour. A 46 px tile crops the canvas around the
+visible pixels (`pokeldn.app.sprites.bounds`) and scales them, smoothed, until the longer side is
+40 px, so every tile shows its Pokemon at one size. Visible boxes run from 28 px (Togepi) to the full
+96 px width (Lugia); a fixed 1:1 or 1:2 choice drew a 50 px sprite at 50 px and a 56 px one at 28.
 
 The Received list matches files by the run's `{stamp}`, which every tool's output path carries; a
 launcher adds `-N` for trade N (`pokeldn.pokemon.trade_path`) or writes into a folder or prefix so
