@@ -131,23 +131,9 @@ game's own format (`.pk3`, `.pb7`, `.pk8`, `.pb8`, `.pa8`, `.pk9`, `.pa9`) with 
 Clear local files never touches the folder; with `POKELDN_DATA` set, the bank is `Bank` inside that
 folder instead.
 
-**Scan and import** recursively reads `Documents/pokeldn/Import`. It accepts PKHeX's standard
-individual Pokemon formats (`.pk1` through `.pk9`, `.sk2`, `.ck3`, `.xk3`, `.bk4`, `.rk4`, `.pb7`,
-`.pb8`, `.pa8` and `.pa9`) and complete main-series saves that PKHeX recognizes. Save files may be
-extensionless, as Nintendo 3DS `main` files are. Every occupied party and PC slot is considered.
-
-Native Bank formats keep their generation. Other records are moved to the newest compatible game the
-Bank supports. The imported copy loses its held item; a Gen 3 copy also loses HM moves that would block
-HOME transfer, and PKHeX may adjust moves for the destination game. PKHeX must find the resulting record
-legal: records that remain invalid, corrupt, incompatible or unsupported are reported and never replaced
-with newly fabricated encounters. Source files are never changed. Source SHA-256 values and save slot locations make
-an unchanged source safe to scan again; equal records in two occupied save slots remain two possessions.
-The Bank `.json` records the source file, save and slot, original format, original legality and each cleanup.
-
 | step | what happens |
 |---|---|
 | a trade completes | the session panel reads each received file with PKHeX and banks a copy; the Received file stays; bytes already in the bank are not banked twice |
-| Scan and import completes | supported files and occupied save slots are checked and deposited; duplicates, cleanup and failures are reported |
 | a Pokemon is banked | its `.json` keeps the species, the summary, PKHeX's verdict, the source file, a SHA-256 of the bytes and a random 63-bit HOME tracker |
 | the page lists the destinations | the helper's `destinations` command tries a move to all seven games and reports each refusal |
 | a destination's trade tool is chosen | the helper's `move` command converts the record, the result joins that tool's offer queue with `"bank": id`, and the app opens the tool |
@@ -183,12 +169,38 @@ fields and runs PKHeX's legality check; an edit that would make a legal Pokemon 
 the record is left as it was. A saved edit rewrites the record and its `.json` (summary, verdict,
 SHA-256) and the destinations are checked again. A Pokemon queued for a trade is not editable.
 
+### Importing
+
+The Bank page's plus button, or a file dropped on its grid, imports a Pokemon file or a game save. The
+helper's `import` command reads the file with PKHeX: `SaveUtil.TryGetSaveFile` first, the file name
+helping (a 3DS save is a file named `main` with no extension), then `FileUtil.TryGetPKM` for a single
+record of any format PKHeX knows (`.pk1` to `.pk9`, `.pb7`, `.pb8`, `.pa8`, `.pa9`, `.ck3`, `.xk3`,
+`.bk4`, `.rk4` and the rest). A save gives each occupied party slot, then each occupied box slot. The
+file is only read.
+
+| record | what the bank keeps |
+|---|---|
+| of a game the bank holds (`PK3`, `PB7`, `PK8`, `PB8`, `PA8`, `PK9`, `PA9`) | the record as it is, held item and moves included, when PKHeX finds it legal |
+| any other format | the record with its held item taken off, as a Pokemon enters HOME without one, and, in a Gen 3 or Gen 4 record, its HM moves forgotten, as Pal Park and Poke Transfer refuse them; when PKHeX then finds it legal, it moves as a bank move would to the first game that takes it, in the order FireRed/LeafGreen, Scarlet/Violet, Sword/Shield, Brilliant Diamond/Shining Pearl, Legends Arceus, Legends Z-A |
+
+A record PKHeX finds not legal in its own format is refused with PKHeX's reason; the move's moveset
+suggestion never stands in for a move the record's own game did not allow. A record with a bad checksum,
+an egg of another game and a species no reachable game holds are refused too. The `.json` of an
+imported Pokemon carries `imported`: the file name, the slot, the source format and what was taken off.
+
+`Bank/.imported` holds one key per imported record: the SHA-256 of its decrypted stored bytes, before
+anything is taken off. A record whose key is there is not imported again, even once a trade has taken it
+out of the bank; a record whose bytes are already banked is not banked twice. A save imported again after
+the game was played brings in only the records that changed.
+
 A record received from a retail Sword and moved to Legends Z-A, with the bank's tracker and its PID
 kept, showed its level and original trainer on a retail Z-A's trade box and completed the trade.
 
 `tests/test_bank.py` moves records between six pairs of games through the real helper and checks
 that the destination's launcher takes them, along with each refusal, an edit kept and refused, and the
-run that takes a traded Pokemon out of the bank.
+run that takes a traded Pokemon out of the bank. It imports a Black 2 save, a Gen 4 and a Gen 6 file built by
+PKHeX's encounter generator (`tests/data/bank_import.json`): the held item and the HM go,
+an illegal record is refused, and a second import banks nothing.
 
 ### Unresolved
 

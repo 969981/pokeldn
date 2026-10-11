@@ -7,22 +7,15 @@ import json
 import os
 import random
 import re
-import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from uuid import uuid4
 
-from pokeldn.app.paths import BANK, IMPORT
+from pokeldn.app.paths import BANK
 from pokeldn.pokemon import EXTENSIONS
 
 FILES = re.compile(r"\.(pk3|pb7|pk8|pb8|pa8|pk9|pa9)$", re.IGNORECASE)
-IMPORT_EXTENSIONS = frozenset({
-    "pk1", "pk2", "pk3", "pk4", "pk5", "pk6", "pk7", "pk8", "pk9",
-    "sk2", "ck3", "xk3", "bk4", "rk4", "pb7", "pb8", "pa8", "pa9",
-})
 GAME_OF = {extension: game for game, extension in EXTENSIONS.items()}
-_deposit_lock = threading.Lock()
 
 
 @dataclass(frozen=True)
@@ -48,11 +41,6 @@ def library() -> Path:
     return BANK
 
 
-def inbox() -> Path:
-    """The folder scanned for external Pokemon records and game saves."""
-    return IMPORT
-
-
 def _meta_path(path) -> Path:
     return Path(path).with_suffix(".json")
 
@@ -67,51 +55,17 @@ def _read_meta(path) -> dict:
 
 def _write_meta(path, meta: dict) -> None:
     target = _meta_path(path)
-    tmp = target.with_name(f".{target.name}.{uuid4().hex}.tmp")
-    try:
-        tmp.write_text(json.dumps(meta, indent=2), encoding="utf-8")
-        os.replace(tmp, target)
-    finally:
-        tmp.unlink(missing_ok=True)
+    tmp = target.with_suffix(".tmp")
+    tmp.write_text(json.dumps(meta, indent=2), encoding="utf-8")
+    os.replace(tmp, target)
 
 
 def _digest(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def _digests(folder=None) -> set[str]:
-    """Hashes whose metadata still has its matching Bank record."""
-    folder = Path(folder or BANK)
-    if not folder.is_dir():
-        return set()
-    found = set()
-    for meta_path in folder.glob("*.json"):
-        meta = _read_meta(meta_path)
-        extension = EXTENSIONS.get(str(meta.get("game", "")))
-        if meta.get("sha256") and extension and meta_path.with_suffix(f".{extension}").is_file():
-            found.add(str(meta["sha256"]))
-    return found
-
-
-def _source_digests(folder=None) -> set[str]:
-    """Imported file hashes, including sources changed by conversion or cleanup."""
-    folder = Path(folder or BANK)
-    if not folder.is_dir():
-        return set()
-    return {str(meta["source_sha256"]) for path in folder.glob("*.json")
-            if (meta := _read_meta(path)).get("source_sha256")}
-
-
-def _save_source_locations(folder=None) -> set[tuple[str, str]]:
-    """Save hash and stable slot pairs already imported."""
-    folder = Path(folder or BANK)
-    if not folder.is_dir():
-        return set()
-    return {
-        (str(meta["source_save_sha256"]), str(meta["source_slot"]))
-        for path in folder.glob("*.json")
-        if (meta := _read_meta(path)).get("source_save_sha256") and meta.get("source_slot")
-    }
+def _banked(folder: Path) -> set[str]:
+    return {_read_meta(p).get("sha256") for p in folder.glob("*.json")} if folder.is_dir() else set()
 
 
 def _entry(path: Path) -> Entry | None:
@@ -148,159 +102,95 @@ def data(entry: Entry) -> bytes:
 def deposit(game: str, source: str, info: dict, folder=None) -> Entry | None:
     """Keep a copy of the record at `source`, which PKHeX read as `info`. None when the bank already holds
     these bytes: a received file is read again while it grows, and on every later scan."""
-    content = Path(source).read_bytes()
-    return deposit_bytes(game, content, info, folder=folder, origin=str(source))
+    return _keep(game, Path(source).read_bytes(), info, Path(folder or BANK), str(source))
 
 
-def deposit_bytes(game: str, content: bytes, info: dict, *, folder=None, origin: str = "",
-                  metadata: dict | None = None, allow_duplicate: bool = False) -> Entry | None:
-    """Atomically add one native record and its metadata; return None for an exact duplicate."""
-    if game not in EXTENSIONS:
-        raise ValueError(f"unknown game {game}")
-    folder = Path(folder or BANK)
-    content = bytes(content)
+def _keep(game: str, content: bytes, info: dict, folder: Path, origin: str, banked: set[str] | None = None,
+          **extra) -> Entry | None:
+    """`banked` is the SHA-256 of each record in the folder, read once for many deposits and kept up to date."""
     digest = _digest(content)
+    if banked is None:
+        banked = _banked(folder)
+    if digest in banked:
+        return None
+    banked.add(digest)
     from pokeldn.pokemon import summary
-    reserved = {"game", "species", "species_id", "shiny", "summary", "legal", "tracker", "created",
-                "origin", "sha256"}
-    extra = {key: value for key, value in (metadata or {}).items() if key not in reserved}
-    with _deposit_lock:
-        if not allow_duplicate and digest in _digests(folder):
-            return None
-        folder.mkdir(parents=True, exist_ok=True)
-        name = re.sub(r"[^A-Za-z0-9]+", "", str(info.get("species", ""))) or "pokemon"
-        while True:
-            stem = f"{name}-{time.strftime('%Y%m%d-%H%M%S')}-{uuid4().hex[:12]}"
-            path = folder / f"{stem}.{EXTENSIONS[game]}"
-            if not path.exists() and not _meta_path(path).exists():
-                break
-        meta = {
-            "game": game, "species": info.get("species", ""), "species_id": int(info.get("species_id") or 0),
-            "shiny": bool(info.get("shiny")), "summary": summary(info), "legal": bool(info.get("legal")),
-            # HOME gives each Pokemon a tracker when it enters; a string, since JSON readers lose 64-bit precision.
-            "tracker": str(random.randrange(1, 1 << 63)), "created": time.time(),
-            "origin": str(origin), "sha256": digest, **extra,
-        }
-        data_tmp = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
-        meta_target = _meta_path(path)
-        meta_tmp = meta_target.with_name(f".{meta_target.name}.{uuid4().hex}.tmp")
-        committed_data = False
-        try:
-            data_tmp.write_bytes(content)
-            meta_tmp.write_text(json.dumps(meta, indent=2), encoding="utf-8")
-            os.replace(data_tmp, path)
-            committed_data = True
-            os.replace(meta_tmp, meta_target)
-        except Exception:
-            if committed_data:
-                path.unlink(missing_ok=True)
-            raise
-        finally:
-            data_tmp.unlink(missing_ok=True)
-            meta_tmp.unlink(missing_ok=True)
-        return _entry(path)
+    folder.mkdir(parents=True, exist_ok=True)
+    name = re.sub(r"[^A-Za-z0-9]+", "", str(info.get("species", ""))) or "pokemon"
+    stem = f"{name}-{time.strftime('%Y%m%d-%H%M%S')}-{random.getrandbits(32):08x}"
+    path = folder / f"{stem}.{EXTENSIONS[game]}"
+    path.write_bytes(content)
+    _write_meta(path, {
+        "game": game, "species": info.get("species", ""), "species_id": int(info.get("species_id") or 0),
+        "shiny": bool(info.get("shiny")), "summary": summary(info), "legal": bool(info.get("legal")),
+        # HOME gives each Pokemon a tracker when it enters; a string, since JSON readers lose 64-bit precision.
+        "tracker": str(int(info.get("tracker") or 0) or random.randrange(1, 1 << 63)), "created": time.time(),
+        "origin": origin, "sha256": digest, **extra,
+    })
+    return _entry(path)
 
 
-def _imported_record(info: dict) -> tuple[str, bytes]:
-    if not info.get("legal"):
-        from pokeldn.pokemon import BuilderError
-        raise BuilderError(str(info.get("problems") or info.get("report") or
-                               "PKHeX finds this Pokemon not legal."))
-    return str(info["game"]), base64.b64decode(info["data"], validate=True)
+# Importing
+
+# The largest file read: PKHeX takes a save of any size it knows, the biggest a few megabytes.
+IMPORT_LIMIT = 64 << 20
+LEDGER = ".imported"      # one services/pkhex Import key per line: what was imported, even if since traded
 
 
-def scan_import_folder(trainers: dict[str, dict], *, service=None, progress=None) -> dict:
-    """Import Pokemon files and every occupied slot in game saves below the Import folder."""
-    from pokeldn import pokemon
+@dataclass(frozen=True)
+class ImportedPokemon:
+    where: str            # "Party, slot 1", "Box 2, slot 3"; "" for a Pokemon file
+    species: str
+    species_id: int
+    shiny: bool
+    state: str            # "banked", "already" (imported before, or its exact record is banked) or "refused"
+    game: str             # the bank game it is kept in; "" when refused
+    detail: str           # what HOME's way in took off ("Left its Oran Berry behind"), or why it was refused
 
-    IMPORT.mkdir(parents=True, exist_ok=True)
-    all_files = sorted((path for path in IMPORT.rglob("*") if path.is_file()), key=lambda path: str(path).lower())
 
-    def candidate(path: Path) -> bool:
-        if path.suffix[1:].lower() in IMPORT_EXTENSIONS:
-            return True
-        try:
-            return 32 * 1024 <= path.stat().st_size <= 64 * 1024 * 1024
-        except OSError:
-            return False
+@dataclass
+class Imported:
+    name: str             # the file's name
+    save: str             # "Black 2, ROSA" for a game save, "" for a Pokemon file
+    pokemon: list[ImportedPokemon]
 
-    files = [path for path in all_files if candidate(path)]
-    result = {"found": len(files), "imported": 0, "duplicates": 0, "skipped": 0, "failed": 0,
-              "cleaned": 0, "ignored": len(all_files) - len(files), "issues": []}
-    known_sources = _source_digests()
-    known_save_slots = _save_source_locations()
-    helper = service or pokemon.SERVICE
-    for done, path in enumerate(files, 1):
-        relative = str(path.relative_to(IMPORT))
-        try:
-            source = path.read_bytes()
-            source_digest = _digest(source)
-            extension = path.suffix[1:].lower()
-            if extension in IMPORT_EXTENSIONS:
-                if source_digest in known_sources:
-                    result["duplicates"] += 1
-                else:
-                    info = helper.import_bytes(source, path.suffix, trainers)
-                    game, content = _imported_record(info)
-                    added = deposit_bytes(
-                        game, content, info, origin=str(path),
-                        metadata={"source_kind": "import-file", "source_file": relative,
-                                  "source_extension": extension, "source_sha256": source_digest,
-                                  "source_format": str(info.get("source_format", "")),
-                                  "source_legal": bool(info.get("source_legal", True)),
-                                  "converted": bool(info.get("converted")),
-                                  "automatic_cleanup": list(info.get("cleanup") or [])},
-                    )
-                    if added is None:
-                        result["duplicates"] += 1
-                    else:
-                        result["imported"] += 1
-                        result["cleaned"] += int(bool(info.get("cleaned")))
-                        known_sources.add(source_digest)
-            else:
-                save = helper.import_save(source, path.name, trainers)
-                for mon in save.get("pokemon", []):
-                    location = str(mon.get("location", "Unknown save slot"))
-                    slot = f"{mon.get('container', '')}:{mon.get('box', -1)}:{mon.get('slot', -1)}"
-                    source_slot = source_digest, slot
-                    if source_slot in known_save_slots:
-                        result["duplicates"] += 1
-                        continue
-                    if not mon.get("readable", True) or mon.get("error") or not mon.get("legal"):
-                        result["skipped"] += 1
-                        reason = str(mon.get("error") or mon.get("problems") or mon.get("report") or
-                                     "PKHeX finds this Pokemon not legal.").splitlines()[0]
-                        result["issues"].append({"file": relative, "location": location, "reason": reason})
-                        continue
-                    game, content = _imported_record(mon)
-                    deposit_bytes(
-                        game, content, mon, origin=str(path), allow_duplicate=True,
-                        metadata={"source_kind": "save-file", "source_file": relative,
-                                  "source_save_sha256": source_digest, "source_location": location,
-                                  "source_slot": slot, "source_format": str(mon.get("source_format", "")),
-                                  "source_legal": bool(mon.get("source_legal", True)),
-                                  "save_format": str(save.get("format", "")),
-                                  "save_version": str(save.get("version", "")),
-                                  "save_trainer": str(save.get("name", "")),
-                                  "converted": bool(mon.get("converted")),
-                                  "automatic_cleanup": list(mon.get("cleanup") or []),
-                                  "egg": bool(mon.get("egg"))},
-                    )
-                    result["imported"] += 1
-                    result["cleaned"] += int(bool(mon.get("cleaned")))
-                    known_save_slots.add(source_slot)
-        except (OSError, ValueError, KeyError, pokemon.BuilderError) as error:
-            if "does not recognize this as a supported game save" in str(error):
-                result["found"] -= 1
-                result["ignored"] += 1
-            else:
-                result["skipped"] += 1
-                result["issues"].append({"file": relative, "reason": str(error).splitlines()[0]})
-        except Exception as error:
-            result["failed"] += 1
-            result["issues"].append({"file": relative, "reason": str(error)})
-        if progress:
-            progress(done, len(files))
+    def count(self, state: str) -> int:
+        return sum(p.state == state for p in self.pokemon)
+
+
+def import_file(path: str, trainers: dict[str, dict], folder=None) -> Imported:
+    """Bank each Pokemon in a Pokemon file or a game save PKHeX reads; the file is only read [docs/gui.md,
+    Importing]. A record imported once is not imported again, even after it left the bank in a trade.
+    `trainers` maps each game to who receives a Pokemon HOME moves there. OSError or BuilderError."""
+    from pokeldn.pokemon import SERVICE, BuilderError
+    folder = Path(folder or BANK)
+    source = Path(path)
+    if source.stat().st_size > IMPORT_LIMIT:
+        raise BuilderError("This file is too big to be a Pokemon or a game save.")
+    reply = SERVICE.import_records(source.read_bytes(), source.name, trainers)
+    ledger = folder / LEDGER
+    try:
+        seen = set(ledger.read_text(encoding="utf-8").split())
+    except OSError:
+        seen = set()
+    result, banked = Imported(source.name, reply.get("save", ""), []), _banked(folder)
+    for record in reply["pokemon"]:
+        if "refusal" in record:
+            state, detail = "refused", record["refusal"].splitlines()[0]
+        else:
+            key = record["key"]
+            entry = None if key in seen else _keep(
+                record["game"], base64.b64decode(record["data"]), record, folder, str(source), banked,
+                imported={"file": source.name, "where": record["where"], "from": record["source"],
+                          "notes": record["notes"]})
+            state, detail = ("already", "") if entry is None else ("banked", " · ".join(record["notes"]))
+            if key not in seen:
+                seen.add(key)
+                folder.mkdir(parents=True, exist_ok=True)
+                with ledger.open("a", encoding="utf-8") as out:
+                    out.write(key + "\n")
+        result.pokemon.append(ImportedPokemon(record["where"], record["species"], int(record["species_id"]),
+                                              bool(record["shiny"]), state, record.get("game", ""), detail))
     return result
 
 

@@ -125,15 +125,11 @@ class Service:
         reply["file"] = self.keep(game, reply)
         return reply
 
-    def import_bytes(self, data: bytes, extension: str, trainers: dict[str, dict]) -> dict:
-        """Read a standard PKHeX entity file into a Bank-supported game format."""
-        return self._ask({"cmd": "file_import", "game": "sv", "extension": extension.lstrip(".").lower(),
-                          "trainers": trainers, "data": base64.b64encode(bytes(data)).decode()})
-
-    def import_save(self, data: bytes, file_name: str, trainers: dict[str, dict]) -> dict:
-        """Extract every occupied party and box slot from a save PKHeX recognizes."""
-        return self._ask({"cmd": "save_import", "game": "sv", "file_name": file_name,
-                          "trainers": trainers, "data": base64.b64encode(bytes(data)).decode()})
+    def import_records(self, data: bytes, name: str, trainers: dict[str, dict]) -> dict:
+        """Each Pokemon in a Pokemon file or a game save, as the bank would keep it [services/pkhex Import].
+        `trainers` maps every game to the trainer who receives a Pokemon HOME moves there."""
+        return self._ask({"cmd": "import", "game": "sv", "name": name, "trainers": trainers,
+                          "data": base64.b64encode(data).decode()})
 
     def prepare(self, game: str, data: bytes, *, fresh=False, fields=None) -> bytes:
         reply = self.check_bytes(game, data, fresh=fresh, fields=fields)
