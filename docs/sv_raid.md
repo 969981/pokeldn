@@ -343,7 +343,9 @@ Both functions are in Lua chunk `be21e65463b9a98f`, SHA-256
 `raid_point` builds the seed's rows as a retail host does: each fixed row's table subject, the
 lottery table's rare flag, three more lottery draws under subject 4 and the difficulty's Tera Shard
 boost under subject 5. For seeds 7B741233 (three stars) and 09F3E337 (black) its 45 rows equal the
-retail points' bytes. Chosen rewards go under subject 0 with no bonus rows, so a guest receives
+retail points' bytes. A retail Scarlet guest holding the Glimmering Charm, sent seed 7B741233's
+rows, listed Ice Tera Shard x1 and x2: the subject-5 row, and not the host's subject-1 x1 row.
+Chosen rewards go under subject 0 with no bonus rows, so a guest receives
 every one. A retail console awarded a row rewritten to Quick Ball x500, with the other
 rows cleared and one bonus row left, as written.
 
@@ -640,8 +642,8 @@ the host start; its Pokemon stayed in the battle.
   Every raid hosted with it began its battle, on retail and emulated consoles.
 - End-to-end reward-screen checks for Raid Power Lv. 2 and 3 and six-star bonus rows.
 - What the RaidPoint's u64 at 0x3d8 and byte 0x3b4 hold.
-- Whether a retail console's reward screen follows the Lua filter for subjects 1 to 5; the filter
-  is read from the binary and measured on an emulated guest.
+- Whether a retail console's reward screen follows the Lua filter for subjects 2 to 4; subjects 1
+  and 5 are measured on a retail guest, the rest on an emulated one.
 - Whether the five-star catch-once records go in the save's list as the seven-star ones do.
 - Several consoles in one lobby are tested against scripted consoles only: whether retail
   consoles mesh with each other over the board's network, and what the consoles other than the
