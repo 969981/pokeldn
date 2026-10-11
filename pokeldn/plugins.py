@@ -246,9 +246,10 @@ def load() -> list[Plugin]:
         return list(_loaded.values())
     _done = True
     on = set(enabled())
-    for plugin in discover():
-        if not named(plugin) and plugin.id not in on:
-            continue
+    wanted = [p for p in discover() if named(p) or p.id in on]
+    if wanted:
+        _guard(wanted)
+    for plugin in wanted:
         _loaded[plugin.id] = plugin
         if plugin.error:          # plugin.toml did not parse
             continue
@@ -271,12 +272,42 @@ def load() -> list[Plugin]:
     return list(_loaded.values())
 
 
+def _guard(wanted: list[Plugin]) -> None:
+    """Puts every plugin's code under pokeldn.plugin_guard before any of it runs."""
+    import tempfile
+    from pokeldn import plugin_guard
+    from pokeldn.app.paths import DATA, LOGS, SESSION
+    code = [folder(), *_named()]
+    for plugin in wanted:
+        if plugin.entry_point is not None:
+            try:
+                spec = importlib.util.find_spec(plugin.entry_point.value.split(":")[0].split(".")[0])
+            except (ImportError, ValueError):
+                spec = None
+            if spec is not None and spec.origin:     # a package's folder, or a lone module's own file
+                code += list(spec.submodule_search_locations or [spec.origin])
+    plugin_guard.install(code, [folder(), DATA / "plugin-data", SESSION, LOGS, tempfile.gettempdir(), *_named()])
+
+
 watch = False     # the app sets it: a plugin that ends the app while registering is named at its next start
 
 
 def _marker() -> Path:
     folder().mkdir(parents=True, exist_ok=True)
     return folder() / ".starting"
+
+
+def turn_off_the_one_that_stopped(settings) -> str:
+    """Turns off, in `settings`, a plugin that froze or closed the app while it started, and names it;
+    then watches this start."""
+    global watch
+    stopped = stopped_the_app()
+    watch = True
+    if stopped not in settings.plugins:
+        return ""
+    settings.plugins = [i for i in settings.plugins if i != stopped]
+    settings.save()
+    return stopped
 
 
 def stopped_the_app() -> str:
@@ -322,9 +353,11 @@ def radios() -> list[Radio]:
 def _reset() -> None:
     """Forgets every loaded plugin; for tests."""
     global _done
+    from pokeldn import plugin_guard
     _done = False
     _loaded.clear()
     _radios.clear()
+    plugin_guard.clear()
 
 
 def reload() -> list[Plugin]:

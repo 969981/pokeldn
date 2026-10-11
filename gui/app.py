@@ -8,6 +8,7 @@ import flet as ft
 import serial
 
 from gui import board
+from pokeldn import plugins
 from pokeldn.app import settings, update
 from pokeldn.app.paths import SESSION
 from gui.views.widgets import on_ui
@@ -39,7 +40,7 @@ class App:
         self.page = page
         SESSION.mkdir(parents=True, exist_ok=True)
         self.settings = settings.load()
-        self.plugin_stopped = self._plugin_recovery()
+        self.plugin_stopped = plugins.turn_off_the_one_that_stopped(self.settings)   # and watches this start
         self.picker = ft.FilePicker()
         self.clipboard = ft.Clipboard()
         self.launcher = ft.UrlLauncher()
@@ -74,22 +75,10 @@ class App:
     def busy(self) -> bool:
         return self.storage_busy or self.board_busy or bool(self.process and self.process.running)
 
-    def _plugin_recovery(self) -> str:
-        """Turns off a plugin that froze or closed the app while it started, and names it."""
-        from pokeldn import plugins
-        stopped = plugins.stopped_the_app()
-        plugins.watch = True
-        if stopped not in self.settings.plugins:
-            return ""
-        self.settings.plugins = [i for i in self.settings.plugins if i != stopped]
-        self.settings.save()
-        return stopped
-
     def plugin_radio(self):
         """The plugin radio Settings chose (pokeldn.plugins.Radio), or None for the board."""
         if not self.settings.radio:
             return None
-        from pokeldn import plugins
         return plugins.radio(self.settings.radio)
 
     def radio_port(self, present: list[board.Port] | None = None) -> str:

@@ -328,7 +328,6 @@ def test_a_future_pokeldn_runs_a_deprecated_api_and_refuses_a_dropped_one(isolat
 
 def test_a_plugin_that_kills_the_app_while_starting_is_turned_off_at_the_next_start(isolated, tmp_path):
     from types import SimpleNamespace
-    from gui.app import App
     killer = make(tmp_path, "killer", "import os\n\ndef register(api):\n    os._exit(9)\n")
     code = ("import sys; from pokeldn import plugins; from pokeldn.app import paths; "
             f"paths.DATA = __import__('pathlib').Path({str(isolated)!r}); plugins.watch = True; plugins.load()")
@@ -336,6 +335,96 @@ def test_a_plugin_that_kills_the_app_while_starting_is_turned_off_at_the_next_st
     assert subprocess.run([sys.executable, "-c", code], env=env, timeout=60).returncode == 9
     saved = []
     app = SimpleNamespace(settings=SimpleNamespace(plugins=["killer", "other"], save=lambda: saved.append(1)))
-    assert App._plugin_recovery(app) == "killer"
-    assert app.settings.plugins == ["other"] and saved
-    assert App._plugin_recovery(app) == ""        # named once
+    try:
+        assert plugins.turn_off_the_one_that_stopped(app.settings) == "killer"
+        assert app.settings.plugins == ["other"] and saved
+        assert plugins.turn_off_the_one_that_stopped(app.settings) == ""        # named once
+    finally:
+        plugins.watch = False
+
+
+VANDAL = '''
+import os, shutil, subprocess, sys
+from pathlib import Path
+
+from pokeldn.plugins import Tool
+
+def attempt(label, fn):
+    try:
+        fn()
+        print(label, "ALLOWED")
+    except PermissionError:
+        print(label, "STOPPED")
+
+def register(api):
+    v = os.environ["VICTIM"]                      # a folder in the test's own temporary directory
+    gone = os.path.join(v, "no-such-file")         # the commands name a missing file: harmless if they ran
+    attempt("rmtree", lambda: shutil.rmtree(v))
+    attempt("remove", lambda: os.remove(os.path.join(v, "a.txt")))
+    attempt("unlink", lambda: Path(v, "a.txt").unlink())
+    attempt("overwrite", lambda: open(os.path.join(v, "a.txt"), "w").close())
+    attempt("append", lambda: Path(v, "a.txt").open("a").close())
+    attempt("move-away", lambda: os.replace(os.path.join(v, "a.txt"), api.data / "a.txt"))
+    attempt("move-over", lambda: os.replace(api.folder / "plugin.toml", os.path.join(v, "a.txt")))
+    attempt("rm", lambda: subprocess.run(["rm", "-f", gone]))
+    attempt("shell", lambda: subprocess.run(f"echo hi && rm -f {gone}", shell=True))
+    attempt("system", lambda: os.system(f"rm -f {gone}"))
+    attempt("sudo", lambda: subprocess.run(["/usr/bin/sudo", "-n", "true"]))
+    attempt("new-file", lambda: open(os.path.join(v, f"new-{os.getpid()}.txt"), "w").close())
+    attempt("own-data", lambda: ((api.data / "x").write_text("1"), (api.data / "x").write_text("2"), (api.data / "x").unlink()))
+    attempt("own-folder", lambda: ((api.folder / "y").write_text("1"), (api.folder / "y").unlink()))
+    attempt("python", lambda: subprocess.run([sys.executable, "-c", "pass"], check=True))
+    api.add_tool("frlg", Tool("vandal-wipe", "Wipe", "wipe.py", "", ()))
+'''
+WIPE = '''
+import os
+
+def build_parser():
+    import argparse
+    return argparse.ArgumentParser()
+
+if __name__ == "__main__":
+    try:
+        os.remove(os.path.join(os.environ["VICTIM"], "a.txt"))
+        print("script ALLOWED")
+    except PermissionError as error:
+        print("script STOPPED", error)
+'''
+
+
+def test_the_guardrails_stop_a_plugin_deleting_or_overwriting_the_players_files(tmp_path):
+    victim = tmp_path / "victim"
+    victim.mkdir()
+    (victim / "a.txt").write_text("precious")
+    (tmp_path / "tmp").mkdir()
+    folder = make(tmp_path, "vandal", VANDAL, wipe_py=WIPE)
+    env = dict(os.environ, POKELDN_PLUGINS=str(folder), POKELDN_DATA=str(tmp_path / "data"), PYTHONPATH=str(ROOT),
+               VICTIM=str(victim), TMPDIR=str(tmp_path / "tmp"), TEMP=str(tmp_path / "tmp"), TMP=str(tmp_path / "tmp"))
+    loaded = subprocess.run([sys.executable, "-m", "pokeldn", "--plugins"], cwd=tmp_path, env=env,
+                            capture_output=True, text=True, timeout=60)
+    verdicts = dict(line.split() for line in loaded.stdout.splitlines() if line.endswith(("ALLOWED", "STOPPED")))
+    stopped = ("rmtree", "remove", "unlink", "overwrite", "append", "move-away", "move-over", "rm", "shell",
+               "system", "sudo")
+    assert verdicts == {**dict.fromkeys(stopped, "STOPPED"),
+                        **dict.fromkeys(("new-file", "own-data", "own-folder", "python"), "ALLOWED")}, loaded.stdout
+    assert "vandal               Vandal, API 1.0: loaded" in loaded.stdout
+    script = subprocess.run([sys.executable, "-m", "pokeldn", "vandal-wipe"], cwd=tmp_path, env=env,
+                            capture_output=True, text=True, timeout=60)
+    assert "script STOPPED pokeldn's plugin guardrails stopped the deletion of" in script.stdout, script.stdout + script.stderr
+    assert (victim / "a.txt").read_text() == "precious"
+
+
+@pytest.mark.parametrize("files, findings", [
+    ({"plugin.py": "def register(api):\n    pass\n"}, []),
+    ({"plugin.py": VANDAL}, ["Starts other programs", "Deletes files"]),
+    ({"plugin.py": "import socket, ctypes\nexec(__import__('base64').b64decode('cGFzcw=='))\nK = 'prod.keys'\n",
+      "helper.dylib": "\0"},
+     ["Uses the internet or the network", "Calls native code directly, which the guardrails cannot watch",
+      "Runs code it builds while running, which this check cannot read", "Names your Switch keys file",
+      "Ships 1 compiled file this check cannot read"]),
+    ({"plugin.py": "def register(api):\n  ret urn\n"}, ["Has Python files pokeldn cannot read"]),
+], ids=["clean", "deletes-and-runs", "network-native-hidden-keys", "unreadable"])
+def test_the_install_screen_lists_what_a_plugins_code_does(tmp_path, files, findings):
+    from pokeldn.app import plugin_store
+    package = plugin_store.read(str(zipped(tmp_path / "x.pokeplugin", {"plugin.toml": GOOD_TOML, **files})))
+    assert package.findings == findings

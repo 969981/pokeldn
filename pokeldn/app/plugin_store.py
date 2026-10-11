@@ -4,6 +4,7 @@ A package is a zip holding plugin.toml at its root or inside one top folder, bes
 module and files (docs/plugins.md, Packages). Nothing in a package runs before it is installed and
 turned on.
 """
+import ast
 import json
 import os
 import re
@@ -44,6 +45,7 @@ class Package:
     source: str = ""
     prefix: str = ""                 # the top folder the files sit in, or ""
     members: list = field(default_factory=list)
+    findings: list = field(default_factory=list)   # what its code does (scan)
 
 
 def _version(text: str) -> tuple:
@@ -96,12 +98,70 @@ def read(path: str) -> Package:
         module = str(meta.get("module", "plugin"))
         if f"{prefix}{module}.py" not in names:
             raise PackageError(f"The package has no {module}.py next to plugin.toml.")
+        findings = scan({n: archive.read(n) for n in names})
         icon_name = f"{prefix}{meta.get('icon', 'icon.png')}"
         icon = archive.read(icon_name) if icon_name in names else b""
         return Package(plugin_id, str(meta.get("name", plugin_id)), str(meta.get("version", "")), api,
                        str(meta.get("author", "")), str(meta.get("description", "")),
                        str(meta.get("homepage", "")), len(infos), sum(i.file_size for i in infos), icon,
-                       os.path.abspath(path), prefix, names)
+                       os.path.abspath(path), prefix, names, findings)
+
+
+NETWORK = {"socket", "ssl", "urllib", "http", "requests", "httpx", "aiohttp", "websockets", "websocket", "ftplib",
+           "smtplib", "poplib", "imaplib", "xmlrpc", "paramiko", "asyncssh"}
+PROGRAMS = {"system", "popen", "startfile", "execv", "execve", "execl", "execlp", "execvp", "spawnv", "spawnl",
+            "posix_spawn", "posix_spawnp"}
+DELETES = {"remove", "unlink", "rmdir", "rmtree", "removedirs", "truncate"}
+COMPILED = (".so", ".dylib", ".dll", ".pyd", ".exe", ".bin", ".jar")
+
+
+def scan(files: dict) -> list[str]:
+    """What a plugin's Python files do that a player should know before installing, one line each.
+    A reading of the source: it cannot prove a plugin safe, and code built at run time escapes it."""
+    found: dict[str, None] = {}
+    compiled = [n for n in files if n.lower().endswith(COMPILED)]
+    for name, data in files.items():
+        if not name.endswith(".py"):
+            continue
+        try:
+            tree = ast.parse(data, name)
+        except (SyntaxError, ValueError):
+            found["Has Python files pokeldn cannot read"] = None
+            continue
+        for node in ast.walk(tree):
+            modules = [a.name for a in node.names] if isinstance(node, ast.Import) else \
+                [node.module or ""] if isinstance(node, ast.ImportFrom) else []
+            for module in modules:
+                top = module.split(".")[0]
+                if top in NETWORK:
+                    found["Uses the internet or the network"] = None
+                if top == "subprocess":
+                    found["Starts other programs"] = None
+                if top in ("ctypes", "cffi"):
+                    found["Calls native code directly, which the guardrails cannot watch"] = None
+            if isinstance(node, ast.Call):
+                callee = node.func.attr if isinstance(node.func, ast.Attribute) else \
+                    node.func.id if isinstance(node.func, ast.Name) else ""
+                if callee in PROGRAMS:
+                    found["Starts other programs"] = None
+                if callee in DELETES:
+                    found["Deletes files"] = None
+                if callee in ("exec", "eval", "compile", "__import__") or \
+                        (callee == "loads" and isinstance(node.func, ast.Attribute)
+                         and getattr(node.func.value, "id", "") == "marshal"):
+                    found["Runs code it builds while running, which this check cannot read"] = None
+            if isinstance(node, ast.Constant) and isinstance(node.value, str) and \
+                    ("prod.keys" in node.value or "title.keys" in node.value):
+                found["Names your Switch keys file"] = None
+    if compiled:
+        found[f"Ships {len(compiled)} compiled file{'s' * (len(compiled) != 1)} this check cannot read"] = None
+    return list(found)
+
+
+def scan_folder(folder: Path) -> list[str]:
+    files = {str(p.relative_to(folder)): p.read_bytes() for p in folder.rglob("*")
+             if p.is_file() and not any(part in SKIP for part in p.relative_to(folder).parts)}
+    return scan(files)
 
 
 def installed(plugin_id: str) -> plugins.Plugin | None:

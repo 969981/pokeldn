@@ -15,7 +15,9 @@ ACTIONS = {"install": "Install", "update": "Update", "reinstall": "Reinstall", "
 RISKS = (
     "It runs as a program on this computer, with your account's access to every file, your prod.keys included.",
     "It can use the network, your board and the sessions you start.",
-    "pokeldn does not check, sign or support plugins, and cannot undo what one does.",
+    "pokeldn's guardrails stop a plugin deleting or overwriting your files and running erase commands, "
+    "but a plugin written to get around them can.",
+    "pokeldn does not review, sign or support plugins, and cannot undo what one does.",
 )
 
 
@@ -263,7 +265,8 @@ class PluginsView:
     def _toggle(self, plugin: plugins.Plugin, value: bool) -> None:
         if value and plugin.folder is not None and not store.consented(plugin):
             self.consent(store.Package(plugin.id, plugin.name, plugin.version, plugin.api, plugin.author,
-                                       plugin.description, plugin.homepage), "enable", plugin)
+                                       plugin.description, plugin.homepage,
+                                       findings=store.scan_folder(plugin.folder)), "enable", plugin)
             self.render(update=True)     # the switch stays off until the user accepts
             return
         self._set_enabled(plugin.id, value)
@@ -386,6 +389,7 @@ class PluginsView:
         if package.source:
             lines.append(t.badge(f"{os.path.basename(package.source)} · {package.files} files · "
                                  f"{store.size_text(package.size)}", t.FAINT, "archive"))
+        lines.append(self._findings(package.findings))
         lines.append(ft.Container(ft.Row([
             t.pixel_icon("warning-diamond", size=24, color=t.RED),
             ft.Column([t.text("Plugins run with full access", 14, weight=ft.FontWeight.W_600),
@@ -407,6 +411,24 @@ class PluginsView:
                 ft.Container(ft.Row([ft.Container(expand=True), t.secondary_button("Cancel", close), go],
                                     spacing=8), padding=ft.Padding(26, 12, 22, 22)),
             ], spacing=0, tight=True), width=540, border_radius=20)))
+
+    @staticmethod
+    def _findings(findings: list[str]) -> ft.Control:
+        """What a reading of its code found; it informs, it cannot clear a plugin."""
+        if findings:
+            body = [t.text("What its code does", 14, weight=ft.FontWeight.W_600),
+                    *[ft.Row([t.text("·", 13, t.AMBER), t.text(f, 12, t.SOFT, expand=True)], spacing=8,
+                             vertical_alignment=ft.CrossAxisAlignment.START) for f in findings]]
+            color, icon = t.AMBER, "search"
+        else:
+            body = [t.text("What its code does", 14, weight=ft.FontWeight.W_600),
+                    t.text("No network, program, deletion or hidden code found in its files. A reading of "
+                           "the code cannot prove a plugin safe.", 12, t.SOFT)]
+            color, icon = t.BLUE, "search"
+        return ft.Container(ft.Row([t.pixel_icon(icon, size=24, color=color), ft.Column(body, spacing=6, expand=True)],
+                                   spacing=12, vertical_alignment=ft.CrossAxisAlignment.START),
+                            padding=16, border_radius=14, bgcolor=ft.Colors.with_opacity(0.06, color),
+                            border=ft.Border.all(1, ft.Colors.with_opacity(0.25, color)))
 
     def _accepted(self, package: store.Package, action: str, current, enable: bool) -> None:
         if action == "enable":

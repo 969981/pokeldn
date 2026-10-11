@@ -38,7 +38,10 @@ def test_a_moved_pokemon_keeps_who_it_is_and_its_launcher_takes_it(service, vaul
     offer = pokemon.prepare_file(target, item["file"], fresh=False)   # what the launcher sends
     moved = service.check_bytes(target, Path(offer).read_bytes())
     assert moved["legal"] and moved["species_id"] == 25 and item["bank"] == entry.id
-    assert (moved["pid"], moved["encryption_constant"]) == (built["pid"], built["encryption_constant"])
+    pid = built["pid"]
+    if source == "frlg" and 8 <= TRAINER["tid"] ^ TRAINER["sid"] ^ pid >> 16 ^ pid & 0xFFFF < 16:
+        pid ^= 0x80000000     # HOME flips it so Gen 6's shiny threshold of 16 keeps it non-shiny
+    assert (moved["pid"], moved["encryption_constant"]) == (pid, built["encryption_constant"])
     assert (moved["ot"], moved["trainer_id"]) == (built["ot"], built["trainer_id"])
     assert int(moved["tracker"]) == entry.tracker != 0
 

@@ -30,6 +30,9 @@ def child(argv: list[str]) -> None:
     mode, target, *args = argv
     if mode == "--run":
         path = os.path.join(ROOT, target)
+        if os.path.isabs(target):     # a plugin's script: loading the plugins puts it under their guardrails
+            from pokeldn import plugins
+            plugins.load()
         sys.argv = [path, *args]
         sys.path.insert(0, os.path.dirname(path))
         runpy.run_path(path, run_name="__main__")

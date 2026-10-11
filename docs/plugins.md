@@ -31,6 +31,27 @@ names it. Removing a plugin asks whether to delete what it saved as well.
 A plugin runs as Python inside pokeldn, with the same access to files, keys, the network and the
 board. Nothing in a package runs before it is installed and turned on.
 
+### Guardrails
+
+Two checks stop the obvious harm. Neither is a sandbox: a plugin written to get around them can.
+
+The install screen reads the package's Python files and lists what they do: use the network, start
+other programs, delete files, call native code (`ctypes`, `cffi`), run code built at run time
+(`exec`, `eval`, `compile`, `marshal`), name `prod.keys`, or ship compiled files the reading cannot
+see into. An empty list means none was found, not that the plugin is safe.
+
+While a plugin's code is on the call stack, in the app and in every run, an audit hook
+(`pokeldn/plugin_guard.py`) refuses with `PermissionError`:
+
+| refused | allowed |
+|---|---|
+| deleting, emptying, moving or overwriting a file outside the plugin's folders | the same inside its folder, its data folder, the session folder, the logs folder and the temporary folder |
+| starting `rm`, `del`, `rd`, `Remove-Item`, `shred`, `dd`, `format`, `mkfs`, `diskutil`, `diskpart`, `sudo`, `su` and similar, directly or inside a shell command, or any command with `-delete` or `--no-preserve-root` | starting any other program |
+| | creating a new file anywhere |
+
+Code with no plugin on its call stack, pokeldn's own included, is never refused; pokeldn code a
+plugin calls is. A plugin that needs a refused action asks the player to do it.
+
 ## Making a plugin
 
 ### The folder
