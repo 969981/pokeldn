@@ -518,3 +518,39 @@ def test_a_github_repository_address_reads_its_latest_release(monkeypatch):
     assert plugin_updates.latest("https://github.com/someone/kit.git") == (
         "1.3.0", "https://github.com/x/kit.pokeplugin", reply["html_url"])
     assert asked == ["https://api.github.com/repos/someone/kit/releases/latest"]
+
+
+@pytest.mark.parametrize("name", ["..\\outside.py", "a/..\\outside.py", "a\\..\\outside.py",
+                                  "C:/outside.py", "CON.py", "a./x.py", "a /x.py"])
+def test_plugin_paths_are_safe_on_windows_as_well_as_posix(tmp_path, name):
+    from pokeldn.app import plugin_store
+    package = zipped(tmp_path / "x.pokeplugin", {"plugin.toml": GOOD_TOML, "plugin.py": "", name: ""})
+    with pytest.raises(plugin_store.PackageError, match="unsafe path"):
+        plugin_store.read(str(package))
+
+
+def test_plugin_install_rechecks_a_package_changed_after_preview(isolated, tmp_path):
+    from pokeldn.app import plugin_store
+    path = zipped(tmp_path / "x.pokeplugin", {"plugin.toml": GOOD_TOML, "plugin.py": ""})
+    preview = plugin_store.read(str(path))
+    zipped(path, {"plugin.toml": GOOD_TOML, "plugin.py": "raise SystemExit('changed')"})
+    with pytest.raises(plugin_store.PackageError, match="changed"):
+        plugin_store.install(preview)
+    assert not (plugins.folder() / "ok").exists()
+
+
+def test_plugin_version_metadata_never_becomes_a_download_path(tmp_path, monkeypatch):
+    import io
+    from pokeldn.app import plugin_updates, update
+    monkeypatch.setattr(update, "_open", lambda *a: io.BytesIO(b"package"))
+    metadata = plugin_updates.Available("ok", "/../../outside", "https://example.org/ok.pokeplugin")
+    downloaded = plugin_updates.download(metadata, tmp_path / "download")
+    assert downloaded.parent == tmp_path / "download" and downloaded.read_bytes() == b"package"
+
+
+def test_plugin_source_review_is_bounded_before_parsing(tmp_path):
+    from pokeldn.app import plugin_store
+    path = zipped(tmp_path / "x.pokeplugin", {"plugin.toml": GOOD_TOML,
+                                             "plugin.py": "#" * (plugin_store.MAX_SOURCE + 1)})
+    with pytest.raises(plugin_store.PackageError, match="source"):
+        plugin_store.read(str(path))

@@ -142,7 +142,8 @@ class Relay(threading.Thread):
             else:
                 self.refused += 1
                 reason = str(message[3]) if len(message) > 3 else ""
-                if reason not in self.reasons:
+                reason = reason[:256]
+                if reason not in self.reasons and len(self.reasons) < 64:
                     self.reasons.add(reason)
                     self.pool.log(f"[online] {self.url} refused an event: {reason}")
         elif message[0] == "NOTICE" and len(message) >= 2:
@@ -199,8 +200,12 @@ class RelayPool:
             self.on_eose(relay.url, sub_id)
 
     def stored(self, relay, event_id):
+        if not isinstance(event_id, str) or len(event_id) != 64:
+            return
         with self.lock:
-            self.kept.setdefault(str(event_id), set()).add(relay.url)
+            if event_id not in self.kept and len(self.kept) >= 1024:
+                del self.kept[next(iter(self.kept))]
+            self.kept.setdefault(event_id, set()).add(relay.url)
 
     def publish(self, event) -> int:
         with self.lock:

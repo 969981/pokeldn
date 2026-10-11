@@ -23,7 +23,12 @@ class Available:
 
 def allowed(url: str) -> bool:
     """HTTPS, or HTTP to this computer while an author tests."""
-    parts = urllib.parse.urlsplit(url)
+    try:
+        if not isinstance(url, str) or len(url) > 4096 or any(ord(c) < 32 for c in url):
+            return False
+        parts = urllib.parse.urlsplit(url)
+    except ValueError:
+        return False
     return parts.scheme == "https" or (parts.scheme == "http" and parts.hostname in ("127.0.0.1", "localhost"))
 
 
@@ -45,7 +50,7 @@ def latest(url: str) -> tuple[str, str, str]:
         if not isinstance(reply, dict):
             raise OSError("no plugin version")
         version, download, page = str(reply.get("version", "")), str(reply.get("url", "")), str(reply.get("page", ""))
-    if not version or not isinstance(download, str) or not allowed(download):
+    if not version or len(version) > 96 or not isinstance(download, str) or not allowed(download):
         raise OSError(f"{url} names no .{plugin_store.EXTENSION} to download")
     return version, download, page
 
@@ -70,11 +75,13 @@ def download(available: Available, folder: Path) -> Path:
     """Fetches the package into an emptied `folder`; an OSError past the package size limit."""
     shutil.rmtree(folder, ignore_errors=True)
     folder.mkdir(parents=True)
-    dest = folder / f"{available.plugin}-{available.version}.{plugin_store.EXTENSION}"
+    if not plugin_store.ID.fullmatch(available.plugin) or not allowed(available.download):
+        raise OSError("the plugin download is invalid")
+    dest = folder / f"{available.plugin}.{plugin_store.EXTENSION}"
     done = 0
     try:
         with update._open(available.download) as reply, dest.open("wb") as out:
-            while chunk := reply.read(1 << 16):
+            for chunk in update.chunks(reply, 60):
                 done += len(chunk)
                 if done > plugin_store.MAX_BYTES:
                     raise OSError("the download is too large to be a plugin")

@@ -344,7 +344,7 @@ def test_the_released_firmware_lands_only_when_every_image_matches_its_checksum(
     every = [asset(n) for n in [*names, "SHA256SUMS"]]
     routes["/releases"] = json.dumps([{"tag_name": "v9.0.0", "draft": True, "assets": every},
                                       {"tag_name": "v8.0.0", "assets": [asset("pokeldn-macos-arm64.zip")]},
-                                      {"tag_name": "v7.0.0", "assets": every}]).encode()
+                                      {"tag_name": "v7.0.0", "html_url": f"{base}/page", "assets": every}]).encode()
     monkeypatch.setattr(board_module, "RELEASES", f"{base}/releases")
     try:
         if tamper:

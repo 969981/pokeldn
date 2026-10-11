@@ -19,10 +19,12 @@ from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 
 from pokeldn import plugins
+from pokeldn.app import archives
 
 EXTENSION = "pokeplugin"
 MAX_FILES = 2000
 MAX_BYTES = 64 << 20
+MAX_SOURCE = 512 << 10
 ID = re.compile(r"[a-z0-9][a-z0-9._-]{0,63}")
 CONSENT = ".installed.json"     # written when the user accepted the risks for this plugin
 SIGNATURE = "plugin.sig"         # the author's key and signature over every other file
@@ -52,10 +54,14 @@ class Package:
     findings: list = field(default_factory=list)   # what its code does (scan)
     key: str = ""                    # the author's public key (base64), when signed
     updates: str = ""                # where its newer versions are published
+    digest: str = ""
 
 
 def _version(text: str) -> tuple:
-    return tuple(int(n) for n in re.findall(r"\d+", text)[:4])
+    if not isinstance(text, str) or len(text) > 96:
+        return ()
+    parts = re.findall(r"\d+", text)[:4]
+    return tuple(int(n) for n in parts) if all(len(n) <= 9 for n in parts) else ()
 
 
 def compare(package: Package, installed: plugins.Plugin | None) -> str:
@@ -67,15 +73,32 @@ def compare(package: Package, installed: plugins.Plugin | None) -> str:
 
 
 def read(path: str) -> Package:
+    try:
+        return _read(path)
+    except (OSError, zipfile.BadZipFile, NotImplementedError, RuntimeError, ValueError, RecursionError) as error:
+        raise PackageError(f"The plugin package could not be read ({error}).") from None
+
+
+def _read(path: str) -> Package:
     """Reads and checks a package without extracting it."""
     try:
-        archive = zipfile.ZipFile(path)
+        if os.path.getsize(path) > MAX_BYTES + (1 << 20):
+            raise PackageError("The package is too large to be a plugin.")
+        archive = archives.open_zip(path, MAX_FILES)
     except (OSError, zipfile.BadZipFile) as error:
         raise PackageError(f"{os.path.basename(path)} is not a plugin package ({error}).") from None
     with archive:
+        try:
+            archives.bounded(((i.filename, i.file_size, i) for i in archive.infolist()),
+                             MAX_FILES, MAX_BYTES, MAX_BYTES)
+        except OSError as error:
+            raise PackageError(f"The package holds an unsafe path or is too large: {error}") from None
         infos = [i for i in archive.infolist() if not i.is_dir()]
         if len(infos) > MAX_FILES or sum(i.file_size for i in infos) > MAX_BYTES:
             raise PackageError("The package is too large to be a plugin.")
+        sources = [i for i in infos if i.filename.endswith(".py")]
+        if any(i.file_size > MAX_SOURCE for i in sources) or sum(i.file_size for i in sources) > 8 << 20:
+            raise PackageError("The package has too much Python source to review safely.")
         names = [i.filename for i in infos]
         for info in infos:
             parts = PurePosixPath(info.filename).parts
@@ -113,7 +136,8 @@ def read(path: str) -> Package:
         return Package(plugin_id, str(meta.get("name", plugin_id)), str(meta.get("version", "")), api,
                        str(meta.get("author", "")), str(meta.get("description", "")),
                        str(meta.get("homepage", "")), len(infos), sum(i.file_size for i in infos), icon,
-                       os.path.abspath(path), prefix, names, findings, key, str(meta.get("updates", "")))
+                       os.path.abspath(path), prefix, names, findings, key, str(meta.get("updates", "")),
+                       hashlib.sha256(_manifest(plugin_id, str(meta.get("version", "")), contents)).hexdigest())
 
 
 NETWORK = {"socket", "ssl", "urllib", "http", "requests", "httpx", "aiohttp", "websockets", "websocket", "ftplib",
@@ -219,7 +243,7 @@ def scan(files: dict) -> list[str]:
             continue
         try:
             tree = ast.parse(data, name)
-        except (SyntaxError, ValueError):
+        except (SyntaxError, ValueError, RecursionError):
             found["Has Python files pokeldn cannot read"] = None
             continue
         for node in ast.walk(tree):
@@ -284,6 +308,10 @@ def accept(plugin: plugins.Plugin, key: str = "") -> None:
 def install(package: Package) -> Path:
     """Extracts the package as plugins/<id>, replacing an installed copy only once the new one is
     whole. The caller has shown the risks and the user accepted them."""
+    current = read(package.source)
+    if (current.id, current.version, current.key, current.digest) != (package.id, package.version, package.key, package.digest):
+        raise PackageError("The package changed after it was checked.")
+    package = current
     root = plugins.folder()
     root.mkdir(parents=True, exist_ok=True)
     target = root / package.id
@@ -291,15 +319,15 @@ def install(package: Package) -> Path:
     shutil.rmtree(staging, ignore_errors=True)
     staging.mkdir()
     try:
-        with zipfile.ZipFile(package.source) as archive:
+        with archives.open_zip(package.source, MAX_FILES) as archive:
             for name in package.members:
                 relative = name[len(package.prefix):]
                 if not relative or any(part in SKIP for part in PurePosixPath(relative).parts):
                     continue
-                out = staging / relative
+                out = archives.destination(staging, relative)
                 out.parent.mkdir(parents=True, exist_ok=True)
                 with archive.open(name) as src, open(out, "wb") as dst:
-                    shutil.copyfileobj(src, dst)
+                    archives.copy(src, dst, archive.getinfo(name).file_size)
         (staging / CONSENT).write_text(json.dumps({"accepted": time.strftime("%Y-%m-%d %H:%M"),
                                                    "source": os.path.basename(package.source),
                                                    "version": package.version}), encoding="utf-8")
