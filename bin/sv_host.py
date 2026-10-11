@@ -618,6 +618,14 @@ def main(argv=None):
         """-> the station index of the console at `ip`: 1 to 3 in a raid, 1 in a trade."""
         return station_ids.get(ip, {}).get("index", CONSOLE_STATION_INDEX)
 
+    net_tables = {}             # src_ip -> the Net 0x11 station addresses it was last sent
+
+    def net_table(ip):
+        """-> the Net 0x11 addresses for `ip`: ours, the seated consoles by index, then `ip` if
+        not yet seated."""
+        seated = sorted((o for o in station_ids if o in current_ips and raiding), key=seat_of)
+        return (transport.our_ip, *seated, *(() if ip in seated else (ip,)))
+
     def seated_stations():
         """-> the station list: ours, then every seated console by index."""
         host_player = dict(player_id=host_player_id, name=args.host_player_name)
@@ -912,6 +920,15 @@ def main(argv=None):
                                             code=args.code))
                 print(f"[sv] advertising {players} player(s)")
             if not args.no_net_probe:
+                if raiding:
+                    # A Pia host sends every station the new table on each seat change (`0x69c79c`,
+                    # docs/sv_raid.md, Several consoles).
+                    for ip in [o for o in station_ids if o in current_ips]:
+                        table = net_table(ip)
+                        if ip in net_tables and net_tables[ip] != table:
+                            net_answered.discard(ip)
+                            net_request_seq.pop(ip, None)
+                            net_sent.pop(ip, None)
                 for ip in list(seen_ips):
                     # A retail host sends Net 0x11 once; a repeat is a fresh connection request.
                     if ip in net_answered:
@@ -923,13 +940,12 @@ def main(argv=None):
                     if not raiding or ip not in net_request_seq:
                         net_seqid += 1
                         net_request_seq[ip] = net_seqid
-                    others = [o for o, _ in sorted(((o, seat_of(o)) for o in station_ids
-                                                    if o != ip and o in current_ips and raiding),
-                                                   key=lambda item: item[1])]
-                    if len(others) >= raid.CONSOLES:
+                    table = net_table(ip)
+                    if len(table) > raid.CONSOLES + 1:
                         continue                # every seat is taken
+                    net_tables[ip] = table
                     probe = build_net_probe(
-                        keys, transport.our_ip, transport.our_mac, [transport.our_ip, *others, ip],
+                        keys, transport.our_ip, transport.our_mac, list(table),
                         net_request_seq[ip], os.urandom(8),
                         args.max_participants if args.net_stations is None else args.net_stations,
                         net_flags=(ESTABLISHING_FLAGS if args.net_flags is None

@@ -652,6 +652,11 @@ def test_three_consoles_fight_one_raid(monkeypatch, tmp_path):
         lists = [pia_connect.parse_session_update_v11(r["data"], route_bytes=0) for r in console.seen
                  if r["protocol"] == 0x98 and r["data"][0] == 5]
         assert [st["station_index"] for st in lists[-1]["stations"]] == [0, 1, 2, 3]
+        tables = [r["data"] for r in console.seen if r["protocol"] == 0x2C and r["data"][1] == 0x11
+                  and r["data"][29] == 0]
+        # Each new seat reaches the seated consoles' Net tables too, under a new sequence.
+        assert [tables[-1][30 + 21 * k + 1] for k in range(4)] == [0, 1, 2, 3]
+        assert int.from_bytes(tables[-1][4:8], "big") > int.from_bytes(tables[0][4:8], "big") or n == 3
         accepts = [r["data"] for r in console.seen if (r["protocol"], r["port"]) == (0x80, 2)
                    and r.get("data", b"")[:1] == b"\x09"]
         # Every member's code, ours 0, whatever the order the consoles joined in.

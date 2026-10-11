@@ -53,7 +53,7 @@ a single one, with that console's index wherever a single console's raid has 1:
 |---|---|
 | join response | station index and join order *k* |
 | station list | every seated station, ours first; each new seat and each departure from the lobby sends the list to every seated console under the next sequence, resent until each one's type 6 |
-| Net 0x11 | our station, then the seated consoles by index, then the joiner |
+| Net 0x11 | our station, then the seated consoles by index, then the joiner; each change of seats goes to every seated console under its next sequence |
 | destination bitmap | `1 << k` under three destination bits |
 | bulk ack | entry *k* |
 | opening | 0x81 ports *k* and 4 + *k*, the ports the console sends on |
@@ -90,6 +90,28 @@ the number of stations.
 The host hands the network to the lowest index still on it, as for one console; the other consoles
 draw the is-migrating Net 0x11 and NetStartHostMigration with no Session type 7. The run ends once
 every console has left the network or each handover has run out.
+
+A Pia host sends the new Net 0x11 to every station on each change of LDN participants: `0x69c310`
+compares the previous and current connection status, `0x69c79c` increments the one counter
+`[NetProtocol+0x60]` and sends every slot to each station but its own, rankings in ascending IPv4
+order (`0x6a05ec`). On LDN a joiner's 0x11 receiver `0x69db14` creates no station from its entries
+(`0x6a2fac` returns 0): it stores the host's address and ids, copies rankings onto stations it already
+has and answers 0x12. A joiner's stations come from the LDN node list (`nn::ldn::GetNetworkInfo`,
+`0x6b43a8`), port 12345.
+
+The type-5 receiver `0x6d7f8c` creates each newly listed station in `0x6d840c` only when its IPv4
+and port are in that node list (`0x6a8320`); otherwise it sends no type 6 and resets its applied
+sequence to 0xffff (`0x6d81a4`), so a later copy of the same list is evaluated again.
+
+Session type 9 (`0x6d4ef0`), from a joiner to the host, `09 | its constant id | count | count
+constant ids`, names the stations it has not heard from (`0x6d4a60`) and repeats every 3000 ms. The
+host's receiver `0x6d940c` hands a single named station to the kick job (`0x6dc878`) and resends the
+station list to every station.
+
+With two consoles over the ESP32 board, the second seated 62 s after the first, the first console
+sent no type 6 for the list naming the second over 90 s of resends, while the second acknowledged
+its list and sent the type 9 naming the first 13 s after its seat. Whether the first console's node
+list held the second is unmeasured.
 
 A random player id of the form `10 00` and fourteen random bytes drew no type 6 from a retail
 console; the anonymous id `00000000000000010000000000000000` (`pia_connect.DEFAULT_PLAYER_ID`) seated
