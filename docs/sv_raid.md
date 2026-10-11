@@ -77,10 +77,11 @@ ids at `+0xa0`, their codes at `+0xc0`, the count at `+0xc4` and the closed byte
 receiver `0x279b9c4` replays a type 9 for each member.
 
 The lobby's participants are the port-2 members: the Lua lobby (chunk `be21e654`, receiver
-`0.15829`) files every message under its sender's code, and under 253 a sender with no code. Each
-console sends its state 0x18 and its Pokemon to the others on entering the lobby, and a station
-receiving a 0x18 answers with its own Ready state and Pokemon; the consoles of one lobby exchange
-their Pokemon among themselves.
+`0.15829`; a `0.N` here is the chunk's main function's prototype N, counted from 0) files every
+message under its sender's code, and under 253 a sender with no code. Each console sends its state
+0x18 and its Pokemon to the others on entering the lobby, and a station receiving a 0x18 answers
+with its own Ready state and Pokemon; the consoles of one lobby exchange their Pokemon among
+themselves.
 
 The reliable header's receive check (`0x6f0410`..`0x6f0430`) tests the receiver's own bit,
 `index & 31` of word `index >> 5` (bit 0 station 0), for any destination count from 1 to 23. A
@@ -232,12 +233,15 @@ not, since a ready console resends it to each newcomer.
 
 In the game's code a guest answers 0x0c with 0x0d at once, with no Ready check, and a guest whose
 timer reaches 0 waits for the bootstrap (`Raid_Start_Ready`, `0.27137`): only the host starts a
-battle. A retail host readies on its player's first choice and sends 0x0c on the second, with no
-test of the guests' Ready (`0.27095`); at timer 0 it breaks the lobby up when no member is ready
-and starts otherwise. `Raid_Start_Go` (`0.27140`) resends 0x0c until every member has answered
-0x0d, then sends the bootstrap, slot *k* the Pokemon of the member with code *k*; ours waits for
-every console's 0x0d too. Waiting for every console's Ready before the start is this host's own
-rule, and it starts at timer 0 whoever is ready.
+battle. A guest that holds the bootstrap without having readied ends its lobby before the timer
+(`0.27104`) and goes to the battle the same way. A retail host readies on its player's first choice
+and sends 0x0c on the second (`0.27095`), but from the first, `Raid_Start_Ready` disables its menu
+and hides the menu's first button, the one that starts, until every other member is ready: its
+player can start only once every guest is ready. At timer 0 it breaks the lobby up when no member
+is ready and starts otherwise. `Raid_Start_Go` (`0.27140`) resends 0x0c until every member has
+answered 0x0d, then sends the bootstrap, slot *k* the Pokemon of the member with code *k*; ours
+waits for every console's 0x0d too, and starts once every console is ready or at timer 0 whoever
+is ready.
 
 A gated message leaves 50 ms after its milestone; the Net 0x50 and the station list repeat every
 0.5 s until answered, and the raid messages every 0.5 s until acknowledged. A retail console once
@@ -648,6 +652,3 @@ the host start; its Pokemon stayed in the battle.
 - Several consoles in one lobby are tested against scripted consoles only: whether retail
   consoles mesh with each other over the board's network, and what the consoles other than the
   next host do on NetStartHostMigration, are unmeasured.
-- What the menu element `Raid_Start_Ready` switches when every guest is ready is on a retail
-  host's screen (`f6277C172`, `0.27137`), and when the second end test of `0.27104` ends a lobby
-  before its timer.
