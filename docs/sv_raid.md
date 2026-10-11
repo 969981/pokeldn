@@ -340,8 +340,11 @@ randomness 6. Executing its unchanged Lua function with the six-star table data 
 Both functions are in Lua chunk `be21e65463b9a98f`, SHA-256
 `c1a4f4e2625912cf0b739a642a79ba3357df0557a544b92da22a6cb139de2815`.
 
-`raid_point` writes the seed's rows (or the chosen ones) under subject 0 and no bonus rows, so a
-guest receives every row, the host's included. A retail console awarded a row rewritten to Quick Ball x500, with the other
+`raid_point` builds the seed's rows as a retail host does: each fixed row's table subject, the
+lottery table's rare flag, three more lottery draws under subject 4 and the difficulty's Tera Shard
+boost under subject 5. For seeds 7B741233 (three stars) and 09F3E337 (black) its 45 rows equal the
+retail points' bytes. Chosen rewards go under subject 0 with no bonus rows, so a guest receives
+every one. A retail console awarded a row rewritten to Quick Ball x500, with the other
 rows cleared and one bonus row left, as written.
 
 ## The seed
@@ -496,7 +499,8 @@ is legal only with the Mightiest Mark (`RibbonMarkMightiest`), which the console
 Magikarp the console caught under 2026071799 has it.
 
 A fixed reward row's subject 3 (`Only Once` in `Encounters.txt`: a seven-star raid's TM and Ability
-Patch) is a separate rule, and `raid_point` gives every row to every player anyway.
+Patch) is a separate rule; `raid_point` writes the table's subject and each console's reward
+filter applies it.
 An event boss can be any species, so the personal entries, move PP and names past the raid bosses'
 come from `pokeldn/sv/data/species.json` (`scripts/gen_sv_species_data.py`, the PKHeX revision of
 `raid_base.json`).
@@ -636,8 +640,8 @@ the host start; its Pokemon stayed in the battle.
   Every raid hosted with it began its battle, on retail and emulated consoles.
 - End-to-end reward-screen checks for Raid Power Lv. 2 and 3 and six-star bonus rows.
 - What the RaidPoint's u64 at 0x3d8 and byte 0x3b4 hold.
-- What a retail console does with a fixed reward row's subject (host, guests, once), which
-  `raid_point` writes as 0, every player's.
+- Whether a retail console's reward screen follows the Lua filter for subjects 1 to 5; the filter
+  is read from the binary and measured on an emulated guest.
 - Whether the five-star catch-once records go in the save's list as the seven-star ones do.
 - Several consoles in one lobby are tested against scripted consoles only: whether retail
   consoles mesh with each other over the board's network, and what the consoles other than the

@@ -54,10 +54,10 @@ BOOTSTRAP_SIZE = 5 * gen9.SIZE_PARTY + 0x3E8
 RAIDPOINT = 5 * gen9.SIZE_PARTY
 POINT_SIZE = 0x3E8
 POINT_NAME = "RaidPoint_POKELDN_0"
-POINT_REWARDS = 0x0E4             # rows of item, quantity, 0, subject
+POINT_REWARDS = 0x0E4             # rows of item, quantity, rare, subject
 POINT_SUMMARY = 0x3B8
 REWARD_ROWS = (POINT_SUMMARY - POINT_REWARDS) // 16           # 45
-SUBJECT_ALL = 0                   # the table's SubjectType: 0 everyone, 1 host, 2 guests
+SUBJECT_ALL = 0                   # the table's SubjectType: 0 everyone, 1 host, 2 guests, 3 once
 CONTENT_STANDARD = 2
 POINT_TIME = 0x30                 # the record's raidTimeData; zero leaves the console's own limits
 # The crystal word: the save's raid content, 0 standard, 1 black (retail), 2 an event, 3 a seven-star
@@ -165,9 +165,13 @@ def boss_record(raid):
 
 def raid_point(raid, rewards=None, name=POINT_NAME):
     """-> the 0x3e8-byte RaidPoint: identity, stars, crystal and catch level, the boss's HP
-    coefficient and its 37-word action profile, reward rows every player receives, the summary.
-    Unknown words stay zero."""
-    rows = raid.rewards if rewards is None else tuple(rewards)
+    coefficient and its 37-word action profile, the reward rows, the summary. The seed's rows
+    keep retail's subjects and bonus rows; chosen `rewards` go to every player. Unknown words
+    stay zero."""
+    if rewards is not None:
+        rows = tuple((item, quantity, 0, SUBJECT_ALL) for item, quantity in rewards)
+    else:
+        rows = raid.rows or tuple((item, quantity, 0, SUBJECT_ALL) for item, quantity in raid.rewards)
     if len(rows) > REWARD_ROWS:
         raise ValueError(f"a RaidPoint holds at most {REWARD_ROWS} reward rows")
     out = bytearray(POINT_SIZE)
@@ -180,8 +184,8 @@ def raid_point(raid, rewards=None, name=POINT_NAME):
                      raid.row.get("capture_rate", 1), raid.row["capture_level"])
     struct.pack_into("<7I", out, POINT_TIME, *(raid.row.get("time") or (0,) * 7))
     struct.pack_into("<37I", out, 0x4C, *raid.row["boss_desc"])
-    for index, (item, quantity) in enumerate(rows):
-        struct.pack_into("<IIII", out, POINT_REWARDS + index * 16, item, quantity, 0, SUBJECT_ALL)
+    for index, row in enumerate(rows):
+        struct.pack_into("<IIII", out, POINT_REWARDS + index * 16, *row)
     struct.pack_into("<7I", out, POINT_SUMMARY, raid.stars, gen9.internal_index(raid.species),
                      raid.boss["form"], raid.boss["gender"], raid.boss["level"], 0, raid.tera_type)
     struct.pack_into("<I", out, 0x3E0, CONTENT_STANDARD)

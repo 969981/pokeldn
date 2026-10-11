@@ -90,8 +90,9 @@ def test_the_bootstrap_matches_retail_records():
 
 def test_the_raidpoint_matches_three_retail_points():
     """Words of a two-star (Growlithe, BD13FB43) and a four-star (Forretress, FDAE7B7D) retail
-    RaidPoint, Violet, Paldea, four-star progress, and a three-star (Larvitar, 7B741233) Scarlet one.
-    Retail rows carry the table's subject (2 guests, 1 host) and end with the host's bonus rows."""
+    RaidPoint, Violet, Paldea, four-star progress, a three-star (Larvitar, 7B741233) and a black
+    (09F3E337) Scarlet one. Retail rows carry the table's subject (2 guests, 1 host), the rare flag,
+    then three more lottery draws under subject 4 and the Tera Shard boost under subject 5."""
     two = raid.raid_point(raid_encounter.generate(0xBD13FB43), name="RaidPoint_12_1_11")
     assert two[:0x30] == bytes.fromhex("52616964506f696e745f31325f315f3131000000000000004000000000000000"
                                        "02000000000000000100000014000000")
@@ -106,17 +107,17 @@ def test_the_raidpoint_matches_three_retail_points():
     assert [struct.unpack_from("<II", four, 0xE4 + 16 * i) for i in range(15)] == [
         (1126, 2), (1127, 1), (1983, 4), (567, 2), (1983, 2), (1868, 1), (1868, 2), (1126, 1),
         (157, 1), (1126, 1), (171, 3), (171, 3), (1126, 1), (89, 1), (1983, 2)]
-    assert four[0xE4 + 16 * 15:0x3B8] == bytes(0x3B8 - 0xE4 - 16 * 15)
     assert struct.unpack_from("<7I", four, 0x3B8) == (4, 205, 0, 0, 45, 0, 1)
     three = raid.raid_point(raid_encounter.generate(0x7B741233, "scarlet", "paldea", "5star"),
                             name="RaidPoint_14_1_12")
     assert three[:0x30] == bytes.fromhex("52616964506f696e745f31345f315f313200000000000000"
                                          "400000000000000003000000000000000100000023000000")
-    # Retail's subjects are 2 on row 4 and 1 on row 6; ours give every row to every player.
-    assert [struct.unpack_from("<IIxxxxI", three, 0xE4 + 16 * i) for i in range(14)] == [
-        (1125, 1, 0), (1126, 2, 0), (1993, 3, 0), (566, 2, 0), (1993, 2, 0), (1867, 1, 0),
-        (1867, 1, 0), (159, 1, 0), (90, 1, 0), (1126, 2, 0), (1126, 1, 0), (159, 1, 0), (91, 1, 0),
-        (0, 0, 0)]
+    assert [struct.unpack_from("<4I", three, 0xE4 + 16 * i) for i in range(18)] == [
+        (1125, 1, 0, 0), (1126, 2, 0, 0), (1993, 3, 0, 0), (566, 2, 0, 0), (1993, 2, 0, 2),
+        (1867, 1, 0, 0), (1867, 1, 0, 1), (159, 1, 0, 0), (90, 1, 0, 0), (1126, 2, 0, 0),
+        (1126, 1, 0, 0), (159, 1, 0, 0), (91, 1, 0, 0), (91, 1, 0, 4), (1125, 1, 0, 4),
+        (90, 1, 0, 4), (1867, 2, 0, 5), (0, 0, 0, 0)]
+    assert three[0xE4 + 16 * 17:0x3B4] == bytes(0x3B4 - 0xE4 - 16 * 17)
     assert struct.unpack_from("<37I", three, 0x4C)[:14] == (800, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 2, 75,
                                                             201)
     assert struct.unpack_from("<7I", three, 0x3B8) == (3, 246, 0, 1, 35, 0, 14)
@@ -128,6 +129,12 @@ def test_the_raidpoint_matches_three_retail_points():
     assert struct.unpack_from("<14I", black, 0x4C) == (2500, 65, 55, 9999, 35, 0, 0, 20, 75, 35, 1, 1,
                                                        85, 0)
     assert struct.unpack_from("<7I", black, 0x3B8) == (6, 1008, 0, 0, 90, 0, 17)
+    assert [struct.unpack_from("<4I", black, 0xE4 + 16 * i) for i in range(20)] == [
+        (1127, 4, 0, 0), (1128, 1, 0, 0), (2049, 5, 0, 0), (566, 3, 0, 0), (2049, 3, 0, 2),
+        (1879, 3, 0, 0), (1879, 3, 0, 1), (1127, 2, 0, 0), (1233, 1, 0, 0), (1127, 1, 0, 0),
+        (566, 2, 0, 0), (1127, 2, 0, 0), (50, 1, 0, 0), (2049, 2, 0, 0), (92, 1, 0, 0),
+        (92, 1, 0, 4), (91, 1, 0, 4), (795, 1, 1, 4), (1879, 12, 0, 5), (0, 0, 0, 0)]
+    assert black[0xE4 + 16 * 19:0x3B4] == bytes(0x3B4 - 0xE4 - 16 * 19)
 
 
 def test_a_boss_past_916_is_named_by_its_devid():
