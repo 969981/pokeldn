@@ -11,8 +11,8 @@ class Field:
     flag: str | tuple[str, ...]   # "" is positional; a tuple passes the same value to each flag
     label: str
     kind: str = "text"            # text number choice switch pokemon file builder multi linkcode code
-                                  # (eight digits) raidseed rewards raidevent raidden, or a PKHeX name
-                                  # list: species move item ball
+                                  # (eight digits) raidseed rewards raidevent raidden raidpartners, or a
+                                  # PKHeX name list: species move item ball
     help: str = ""
     default: str | bool = ""
     choices: tuple[tuple[str, str], ...] = ()
@@ -364,6 +364,10 @@ SV = Game("sv", "Scarlet & Violet", "SV", "sv.md", (
           "Win the raid to receive the rewards."),
          (Field("--raid-pokemon", "Our Pokemon", "pokemon", required=True,
                 help="The Pokemon our player brings. PKHeX checks it is legal."),
+          Field(("--raid-partner", "--raid-partner-progress"), "Raid NPC partners", "raidpartners",
+                help="The trainers who fill the slots no console holds: two with one console joining, "
+                     "one with two, none with three. A partner you leave unpicked is drawn as the game "
+                     "draws it, from the partners' progress."),
           Field("--raid-event", "Raid event", "raidevent",
                 help="A raid from a past Poke Portal News event, from Project Pokemon's EventsGallery. "
                      "Leave it empty, or fold this card, for a standard raid."),

@@ -1,0 +1,230 @@
+"""The Tera Raid host's Raid NPC partners card: the progress the partners come from and one of that
+pool's trainers for each slot the consoles joining leave empty, in slot order (pokeldn.sv.raid_partners);
+the host draws a partner seed that seats them when it starts, and draws a partner left unpicked as the
+game does. Folding only hides the card: the choice goes to the raid."""
+
+import flet as ft
+
+from gui import theme as t
+from gui.views.sprites import MINI, Sprite
+from pokeldn.app import command
+from pokeldn.sv import raid_partners
+
+COLUMNS = 3
+# A card narrower than this cuts the trainer's, the Pokemon's and the moves' names, so a narrow window
+# shows two to a row.
+CARD_WIDTH = 150
+GAP = 8
+MOVES_HEIGHT = 31                           # two 11 px lines at the theme's 1.4 line height
+RANKS = {1: (t.AMBER, "Favoured by raiders"), 2: (t.SILVER, "Next tier for raiders")}
+REASON_SIZE = 11
+# A letter's width as a share of the font's size, above the reasons' average in Segoe UI (0.45) and
+# Arial (0.46): measured word by word in both, every reason judged to fit two lines 60 to 600 px wide
+# does.
+LETTER = 0.5
+
+
+def fits(text: str, width: float, lines: int = 2) -> bool:
+    """-> whether `text` wraps into `lines` lines `width` px wide at REASON_SIZE, word by word."""
+    room = width / (REASON_SIZE * LETTER)
+    used, line = 1, 0
+    for word in text.split():
+        line = line + 1 + len(word) if line else len(word)
+        if line > room:
+            used, line = used + 1, len(word)
+            if used > lines or line > room:
+                return False
+    return True
+
+
+def columns(width: float) -> int:
+    """-> the cards to a row in `width` px: COLUMNS while each is CARD_WIDTH wide, else two; COLUMNS
+    before the width is known."""
+    return COLUMNS if not width or (width - GAP * (COLUMNS - 1)) / COLUMNS >= CARD_WIDTH else 2
+
+
+def reason(partner, width: float) -> str:
+    """-> why raiders want `partner` at the most length `width` px holds: its detail, its few words, or
+    briefly."""
+    return next((words for words in (partner.detail, partner.why) if fits(words, width)), partner.brief)
+
+
+class RaidPartnersPicker:
+    """`view` is the GamesView: it keeps the card open across redraws, holds the values and gives the
+    raid's context, whose progress and crystal set the partners' progress unless one is chosen. Its
+    Consoles joining sets how many partners there are to pick."""
+
+    def __init__(self, view, field):
+        self.view, self.app, self.field = view, view.app, field
+        self.open = view.raid_partners_open
+        stored = view.values.get(field.key)
+        self.value = dict(stored) if isinstance(stored, dict) else {"progress": "", "picks": []}
+        context = view.raid_context()
+        self.default = raid_partners.stage_of(context["progress"], context.get("content", "standard"))
+        chosen = self.value.get("progress")
+        self.stage = raid_partners.STAGES.index(chosen) if chosen in raid_partners.STAGES else self.default
+        self.pool = raid_partners.pool(self.stage)
+        self.consoles = command.raid_consoles(view.tool, view.values)
+        self.free = raid_partners.slots(self.consoles)
+        # Partners take four fifths of the level of Our Pokemon, the host's; 0 until it is built.
+        self.host = command.raid_pokemon_level(view.values)
+        self.level = raid_partners.level_for(self.host)
+        # A trainer this progress's pool lacks (Dylan and Luke below four stars) leaves the choice, and
+        # a console joining takes the last pick's slot.
+        names = {p.trainer for p in self.pool}
+        picks = [name for name in self.value.get("picks", ()) if name in names][:self.free]
+        if isinstance(stored, dict) and picks != list(self.value.get("picks", ())):
+            self.value["picks"] = picks
+            view.values[field.key] = self.value
+            self.app.settings.save()
+        self.picks = picks
+        self.chevron = t.pixel_icon("chevron-down" if self.open else "chevron-right", color=t.FAINT)
+        summary = self._summary()
+        header = ft.Container(ft.Row([
+            self.chevron, t.text(field.label, 13, weight=ft.FontWeight.W_600),
+            ft.Container(t.text(summary, 12, t.BLUE if picks or chosen else t.MUTED, max_lines=1,
+                                overflow=ft.TextOverflow.ELLIPSIS), expand=True,
+                         alignment=ft.Alignment.CENTER_RIGHT),
+        ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER), on_click=self._toggle,
+            tooltip="Show or hide the raid's partners")
+        self.body = ft.Column([], spacing=10, visible=self.open)
+        if self.open:
+            self.body.controls = self._body()
+        self.control = t.surface(ft.Container(ft.Column([header, self.body], spacing=10, tight=True),
+                                              padding=16))
+
+    def _summary(self) -> str:
+        labels = dict(next(f for f in self.view.tool.fields if f.key == "--raid-progress").choices)
+        stage = f" · {labels.get(self.value['progress'], '')}" if self.value.get("progress") else ""
+        if not self.free:
+            return f"None, {self.consoles} consoles fill the slots"
+        if not self.picks:
+            return f"Drawn as the game draws them{stage}"
+        names = ", ".join(self.picks)
+        return (names if len(self.picks) == self.free else f"{names}, one drawn") + stage
+
+    def _body(self) -> list[ft.Control]:
+        labels = dict(next(f for f in self.view.tool.fields if f.key == "--raid-progress").choices)
+        options = [(key, labels.get(key, key) + (" (story progress)" if n == self.default else ""))
+                   for n, key in enumerate(raid_partners.STAGES)]
+        progress = t.dropdown(options, raid_partners.STAGES[self.stage], on_select=self._progress)
+        lead = (f"Level {self.level} partners, four fifths of Our Pokemon's level {self.host}."
+                if self.level else "Partners take four fifths of Our Pokemon's level.")
+        if not self.free:
+            note = (f"{lead} With {self.consoles} consoles joining no slot is left empty: a partner "
+                    "takes the slot of a console that does not join.")
+        elif self.free == 1:
+            note = (f"{lead} Pick one for the slot the consoles leave empty, or leave it to be drawn "
+                    "when the host starts.")
+        else:
+            note = (f"{lead} Pick up to two, in the order they take the empty slots; a partner you "
+                    "leave is drawn when the host starts.")
+        # The cards' width sets how many stand to a row.
+        cards = ft.Container(ft.Column(self._rows(), spacing=GAP), size_change_interval=100,
+                             on_size_change=self._spread)
+        return [t.text(self.field.help, 12, t.MUTED),
+                t.labeled_control("Partners' progress", progress),
+                t.text(note, 12, t.MUTED),
+                cards]
+
+    def _rows(self) -> list[ft.Control]:
+        count = columns(self.view.raid_partners_width)
+        rows = []
+        for i in range(0, len(self.pool), count):
+            partners = self.pool[i:i + count]
+            # A row with a favoured partner gives every card the reason's room, so they stand level.
+            footer = any(p.why for p in partners)
+            row = [self._card(p, footer) for p in partners]
+            row += [ft.Container(expand=True) for _ in range(count - len(row))]
+            rows.append(ft.Row(row, spacing=GAP, vertical_alignment=ft.CrossAxisAlignment.START))
+        return rows
+
+    def _card(self, partner, footer=False) -> ft.Control:
+        picked = partner.trainer in self.picks
+        full = len(self.picks) >= self.free
+        order = ft.Container(t.text(str(self.picks.index(partner.trainer) + 1), 11, t.BG,
+                                    weight=ft.FontWeight.W_700),
+                             width=20, height=20, border_radius=10, bgcolor=t.BLUE,
+                             alignment=ft.Alignment.CENTER) if picked else ft.Container()
+        title = ft.Row([
+            Sprite(self.app, partner.species, size=MINI).control,
+            # The level on a line of its own, so a narrow card cuts neither it nor the Pokemon.
+            ft.Column([t.text(partner.trainer, 13, weight=ft.FontWeight.W_600, max_lines=1),
+                       t.text(partner.name, 11, t.MUTED, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS),
+                       t.text(f"Lv. {self.level}" if self.level else "Lv. —", 11, t.MUTED, max_lines=1)],
+                      spacing=0, expand=True),
+            order,
+        ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.START)
+        details = ft.Column([
+            t.text(partner.ability, 11, t.SOFT, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS),
+            # Two lines whatever the moves' length, so the cards of a row stand level.
+            ft.Container(t.text(" · ".join(partner.moves), 11, t.MUTED, max_lines=2,
+                                overflow=ft.TextOverflow.ELLIPSIS), height=MOVES_HEIGHT),
+            t.text(f"Tera {partner.tera}", 11, t.MUTED, max_lines=1),
+        ], spacing=0)
+        column = [title, details]
+        if footer:
+            # Wanted by raiders: a star in the bottom right, gold for the favoured and silver for the
+            # next tier, after why: briefly until the card's width is known, then at the most length
+            # it holds.
+            wanted = None
+            if partner.why:
+                ink, tip = RANKS[partner.rank]
+                wanted = ft.Row([
+                    ft.Container(t.text(reason(partner, self.view.raid_reason_width), REASON_SIZE, ink,
+                                        max_lines=2, overflow=ft.TextOverflow.ELLIPSIS,
+                                        text_align=ft.TextAlign.RIGHT),
+                                 expand=True, data=partner, size_change_interval=100,
+                                 on_size_change=self._resized),
+                    t.pixel_icon("star", 12, color=ink, tooltip=tip),
+                ], spacing=6, vertical_alignment=ft.CrossAxisAlignment.END)
+            column.append(ft.Container(wanted, height=MOVES_HEIGHT,
+                                       alignment=ft.Alignment.BOTTOM_RIGHT))
+        return ft.Container(
+            ft.Column(column, spacing=6), expand=True, padding=10, border_radius=12,
+            bgcolor=t.SELECTED if picked else t.FIELD,
+            border=ft.Border.all(1, t.BLUE if picked else t.OUTLINE),
+            opacity=0.45 if full and not picked else 1.0,
+            on_click=None if full and not picked else (lambda _e, name=partner.trainer: self._pick(name)),
+            tooltip=None if full and not picked else ("Leave to the draw" if picked else "Seat this partner"))
+
+    # Changes
+
+    def _toggle(self, _e) -> None:
+        self.view.show_raid_partners(not self.open)
+
+    def _spread(self, e) -> None:
+        before = columns(self.view.raid_partners_width)
+        self.view.raid_partners_width = e.width
+        if columns(e.width) != before:
+            e.control.content.controls = self._rows()
+            e.control.content.update()
+
+    def _resized(self, e) -> None:
+        self.view.raid_reason_width = e.width
+        words = reason(e.control.data, e.width)
+        if e.control.content.value != words:
+            e.control.content.value = words
+            e.control.content.update()
+
+    def follow_host(self) -> None:
+        """Our Pokemon changed, which the view saves without a redraw: the partners' level follows."""
+        host = command.raid_pokemon_level(self.view.values)
+        if host != self.host:
+            self.host, self.level = host, raid_partners.level_for(host)
+            if self.open:
+                self.body.controls = self._body()
+                self.body.update()
+
+    def _progress(self, e) -> None:
+        # The story progress's own stage follows the story progress, rather than holding it.
+        chosen = e.control.value
+        self.value["progress"] = "" if raid_partners.STAGES.index(chosen) == self.default else chosen
+        self.view.set_value(self.field, self.value, rebuild=True)
+
+    def _pick(self, name: str) -> None:
+        picks = [p for p in self.picks if p != name]
+        if name not in self.picks:
+            picks.append(name)
+        self.value["picks"] = picks[:self.free]
+        self.view.set_value(self.field, self.value, rebuild=True)
