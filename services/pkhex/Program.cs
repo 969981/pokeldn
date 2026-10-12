@@ -995,6 +995,12 @@ JsonObject Event(Game game, JsonObject request)
 // The items a Sword/Shield gift may give or a gifted Pokemon may hold; the GUI lists the same set.
 static IReadOnlySet<ushort> GiftItems() => ItemStorage8SWSH.GetAllHeld().ToHashSet();
 
+// A Gigantamax form: the species Max Soup changes (Gigantamax.CanToggle) and Melmetal, whose factor came only from
+// Pokemon GO. The factor stays through evolution: Sword's card 1641 gave it to a Bulbasaur for its Venusaur.
+static bool CanGigantamax(ushort species, byte form) =>
+    species == (ushort)PKHeX.Core.Species.Melmetal || Gigantamax.CanToggle(species, form) ||
+    EvolutionTree.Evolves8.Forward.GetEvolutions(species, form).Any(e => Gigantamax.CanToggle(e.Species, e.Form));
+
 static IReadOnlySet<ushort> RaidRewardItems()
 {
     InventoryType[] pouches = [InventoryType.Items, InventoryType.TMHMs, InventoryType.Medicine, InventoryType.Berries,
@@ -1027,8 +1033,8 @@ JsonObject Gift(byte[] data)
         if (data[0x243] > 3 || (data[0x246] > 24 && data[0x246] != 255) ||
             data[0x247] > 4 || data[0x248] > 4 || data[0x24A] > 10)
             throw new InvalidDataException("Invalid gift gender, nature, ability, shininess or Dynamax level.");
-        if (data[0x24B] > 1 || (data[0x24B] == 1 && !Gigantamax.CanToggle(card.Species, card.Form)))
-            throw new InvalidDataException("This species has no Gigantamax form.");
+        if (data[0x24B] > 1 || (data[0x24B] == 1 && !CanGigantamax(card.Species, card.Form)))
+            throw new InvalidDataException("Neither this species nor its evolutions have a Gigantamax form.");
     }
     else if (card.IsItem)
     {

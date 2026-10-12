@@ -720,6 +720,43 @@ def test_the_boost_settings_leave_with_the_last_unticked_boost(monkeypatch):
     assert frlg_builder.KEEP.label not in texts(builder.presets())
 
 
+def test_a_pokemon_home_card_is_outlined_in_amber_and_says_why(monkeypatch):
+    """The Pokemon a HOME card gives carries no HOME tracker, whatever the HOME tracker setting: its tile and
+    summary give the "empty" warning [docs/swsh_gift.md, Official event cards]."""
+    from gui.views import gifts as view_module
+    from pokeldn.app.catalog import GAMES
+    from pokeldn.app.settings import Settings
+    from pokeldn.swsh import events
+
+    def walk(control):
+        yield control
+        for child in [*(getattr(control, "controls", None) or []), getattr(control, "content", None)]:
+            if child is not None:
+                yield from walk(child)
+
+    def texts(control):
+        return [c.value for c in walk(control) if isinstance(getattr(c, "value", None), str)]
+
+    monkeypatch.setattr(pokemon.NamePicker, "_load", lambda self: None)
+    tool = next(tool for game in GAMES for tool in game.tools if tool.key == "swsh-gift")
+    field = next(field for field in tool.fields if field.kind == "builder")
+    view = SimpleNamespace(tool=tool, values={}, extra={},
+                           app=SimpleNamespace(settings=Settings(), picker=None, ui=lambda f: None))
+    view.set_value = lambda field, value, rebuild=False: view.values.__setitem__(field.key, value)
+    builder = view_module.GiftBuilder(view, field)
+    warning = pokemon.builder.HOME_TRACKER_WARNINGS["empty"]
+    reason = f"{warning}. {events.HOME_WHY}"
+    for group, home in ((events.HOME, True), ("Pokemon", False)):
+        card = next(e for e in events.load() if e["group"] == group)
+        builder.value.update(mode="event", event=card["key"], event_search=card["label"])
+        builder.cards()
+        assert (reason in texts(builder.effects)) == home, group
+        tile = next(c for c in walk(builder.events()) if isinstance(c, ft.Container) and c.on_click
+                    and card["label"] in texts(c))
+        assert (warning in texts(tile)) == home, group
+        assert (tile.border.top.color == view_module.t.AMBER) == home, group
+
+
 def test_viewer_cleanup_removes_only_this_apps_older_viewers(tmp_path, monkeypatch):
     import flet_desktop
     from gui import flet_client

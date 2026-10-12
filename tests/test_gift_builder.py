@@ -296,6 +296,8 @@ def test_pkhex_takes_every_sword_preset_and_refuses_what_the_game_cannot_hold():
     assert (gmax[0x15], gmax[wc8.POKEMON["gigantamax"][0]], gmax[wc8.POKEMON["dynamax_level"][0]]) == (21, 1, 10)
     with pytest.raises(pokemon.BuilderError, match="Gigantamax"):
         pokemon.SERVICE.validate_gift(swsh.record(dict(swsh.PRESET["gmax-pikachu"].state, species=26)))
+    for species in (1, 809):      # Bulbasaur for its Venusaur; Melmetal, which Max Soup leaves alone
+        pokemon.SERVICE.validate_gift(swsh.record(dict(swsh.PRESET["gmax-pikachu"].state, species=species)))
     cape = bytearray(swsh.record(swsh.PRESET["gold-backpack"].state))
     struct.pack_into("<II", cape, 0x20, 15, 0)                # the setter 0x0143a450 takes categories 0..14
     with pytest.raises(pokemon.BuilderError, match="clothing"):
