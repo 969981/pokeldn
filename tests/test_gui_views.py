@@ -1158,12 +1158,13 @@ GIFT_COPIES = {
                       "species_id": 964, "form": "", "level": 50, "shiny": False, "nature": "Adamant",
                       "ability": "Zero to Hero", "ball": "Cherish Ball", "held_item": "Mystic Water", "legal": True,
                       "home_tracker": "", "encounter": "Event Gift (WC9)",
-                      "moves": ["Jet Punch", "Wave Crash", "Haze", "Protect"], "ot": "Gavin"},
+                      "moves": ["Jet Punch", "Wave Crash", "Haze", "Protect"], "ot": "Gavin", "your_ot": False,
+                      "refused": ""},
     "9021-906-0-11": {"file": "sprigatito.pk9", "title": "Pokémon HOME Gift", "species": "Sprigatito",
                       "species_id": 906, "form": "", "level": 5, "shiny": False, "nature": "Jolly",
                       "ability": "Protean", "ball": "Poke Ball", "held_item": "", "legal": True,
                       "home_tracker": "empty", "encounter": "Event Gift (WC9)",
-                      "moves": ["Scratch", "Tail Whip", "Leafage"], "ot": "ASH"},
+                      "moves": ["Scratch", "Tail Whip", "Leafage"], "ot": "ASH", "your_ot": True, "refused": ""},
 }
 GIFT_TRAINER = {"ot": "ASH", "tid": 1, "sid": 2, "language": 2, "gender": 0}
 
@@ -1234,10 +1235,27 @@ def test_the_mystery_gift_card_finds_an_event_pokemon_and_offers_a_fresh_copy(mo
     gift_tile(control, "Palafin").on_click(None)
     run()
     assert asked[-1] == ("sv", "0503-964-0-10", GIFT_TRAINER)
-    assert {k: saved[-1][k] for k in ("file", "event", "species", "legal")} == {
-        "file": "palafin.pk9", "event": "0503-964-0-10", "species": 964, "legal": True}
+    assert {k: saved[-1][k] for k in ("file", "event", "species", "legal", "your_ot")} == {
+        "file": "palafin.pk9", "event": "0503-964-0-10", "species": 964, "legal": True, "your_ot": False}
     assert {"Legal", "Jet Punch, Wave Crash, Haze, Protect · OT Gavin"} <= set(gift_texts(control))
     assert gift_tile(control, "Palafin").border.top.color == t.BLUE
+
+
+def test_a_gift_the_trainer_could_not_receive_says_why_and_is_not_picked(monkeypatch):
+    """A card no save in the trainer's language received (pokeldn.pokemon.Service.gift_event, refused): its tile
+    is illegal and says why, and picking it leaves the offer as it was, saying why."""
+    why = "card 1501 gave it in Japanese alone, never to a save in English"
+    pikachu = next(e for e in GIFT_EVENTS if e["key"] == "1501-25-0-2")
+    monkeypatch.setitem(pikachu, "legal", False)
+    monkeypatch.setitem(pikachu, "refused", why)
+    monkeypatch.setitem(GIFT_COPIES, "1501-25-0-2", {"title": pikachu["title"], "legal": True, "your_ot": True,
+                                                     "refused": why})
+    control, run, asked, saved = gift_picker(monkeypatch)
+    assert f"Illegal: {why}" in gift_texts(control)
+    gift_tile(control, "Pikachu").on_click(None)
+    run()
+    assert asked[-1] == ("sv", "1501-25-0-2", GIFT_TRAINER) and saved == []
+    assert f"Your trainer from Settings cannot receive this gift: {why}." in gift_texts(control)
 
 
 @pytest.mark.parametrize("mode", ["empty", "made"])
@@ -1270,6 +1288,65 @@ def test_a_home_gift_shows_what_the_home_tracker_setting_gave_it(monkeypatch, tm
     assert command.missing_offer(tools["sv-gift-host"], {"--trade-offer": entry}) == ""
     entry["legal"] = False
     assert command.missing_offer(tools["sv-host"], {"--trade-offer": [entry]}) == "The Pokemon is not legal."
+
+
+def test_made_for_the_receiving_player_follows_the_gift_picked(monkeypatch):
+    """A gift with its card's own trainer holds Made for the receiving player off, disabled and faded, its note
+    saying why; one that names its receiver gives the switch back as it was set. Picking redraws nothing."""
+    import flet as ft
+    from pokeldn.app.catalog import GAMES
+    monkeypatch.setattr(ft.BaseControl, "update", lambda self: None)
+    tool = next(t for game in GAMES for t in game.tools if t.key == "sv-gift-host")
+    offer, receiver = tool.fields[:2]
+    redrawn = []
+    view = SimpleNamespace(tool=tool, values={}, raid_partners=None, locks=[],
+                           app=SimpleNamespace(settings=SimpleNamespace(save=lambda: None)),
+                           session=SimpleNamespace(refresh=lambda: None), render_body=lambda: redrawn.append(1))
+    view.description = lambda f: GamesView.description(view, f)
+    view.follow_locks = lambda: GamesView.follow_locks(view)
+    switch, note = GamesView.input(view, receiver), t.text(GamesView.description(view, receiver), 12, t.MUTED)
+    view.locks.append((receiver, switch, note))
+    assert (switch.value, switch.disabled, note.value) == (True, False, receiver.help)
+
+    GamesView.set_value(view, offer, dict(GIFT_COPIES["0503-964-0-10"], event="0503-964-0-10"))
+    why = "This gift has its card's own trainer, OT Gavin, and goes as made."
+    assert (switch.value, switch.disabled, switch.opacity) == (False, True, 0.45)
+    assert note.value == f"{receiver.help} {why}"
+    assert GamesView.input(view, receiver).disabled                  # a redraw draws it locked too
+    GamesView.set_value(view, offer, dict(GIFT_COPIES["9021-906-0-11"], event="9021-906-0-11"))
+    assert (switch.value, switch.disabled, switch.opacity, note.value) == (True, False, 1.0, receiver.help)
+    assert redrawn == [] and receiver.key not in view.values         # the switch keeps its own setting
+
+
+def test_a_switch_redraws_the_cards_only_when_another_field_follows_it(monkeypatch):
+    """Made for the receiving player turns without a redraw, which would load the gift list again; a switch
+    another field shows or hides with redraws the cards, and a Shiny switch turns the sprite in place."""
+    from pokeldn.app.catalog import Tool
+    monkeypatch.setattr(ft.BaseControl, "update", lambda self: None)
+    gift = next(t for game in GAMES for t in game.tools if t.key == "sv-gift-host")
+    egg, shiny = Field("--egg", "Egg", "switch"), Field("--shiny", "Shiny", "switch", shiny=True)
+    species = Field("--species", "Species", "species", default="25")
+    own = Tool("own", "Own", "own.py", "", (), (egg, Field("--steps", "Hatch steps", requires="--egg"), shiny,
+                                                 species))
+    redrawn, shown = [], []
+
+    def view_of(tool):
+        view = SimpleNamespace(tool=tool, values={}, raid_partners=None, locks=[], app=SimpleNamespace(
+            settings=SimpleNamespace(save=lambda: None)), session=SimpleNamespace(refresh=lambda: None),
+            render_body=lambda: redrawn.append(tool.key), cards=SimpleNamespace(update=lambda: None),
+            sprites={species.key: SimpleNamespace(show=lambda *a: shown.append(a))})
+        for name in ("set_value", "switched", "shiny", "description", "follow_locks"):
+            setattr(view, name, getattr(GamesView, name).__get__(view))
+        return view
+
+    def turn(view, field, on):
+        GamesView.input(view, field).on_change(SimpleNamespace(control=SimpleNamespace(value=on)))
+        return view.values[field.key]
+    view = view_of(gift)
+    assert (turn(view, gift.fields[1], False), turn(view, gift.fields[1], True), redrawn) == (False, True, [])
+    view = view_of(own)
+    assert (turn(view, shiny, True), redrawn, shown) == (True, [], [(25, True)])
+    assert (turn(view, egg, True), redrawn) == (True, ["own"])
 
 
 def test_a_short_gift_list_shows_whole_and_a_long_one_scrolls(monkeypatch):

@@ -77,6 +77,7 @@ class GamesView:
         self.raid_partners_open = False
         self.raid_partners_width = 0
         self.raid_partners = None              # the card shown, whose level follows Our Pokemon
+        self.locks = []                        # (field, switch, note) the chosen gift can lock (command.locked)
         # The override of a boss a save catches once starts unchecked at every launch.
         for stored in app.settings.tool_values.values():
             stored.get("values", {}).pop(RAID_CATCH, None)
@@ -141,7 +142,34 @@ class GamesView:
             self.cards.update()
         elif field.kind == "pokemon" and self.raid_partners:
             self.raid_partners.follow_host()
+        elif field.events:
+            self.follow_locks()
         self.session.refresh()
+
+    def switched(self, field: Field, on: bool) -> None:
+        """A switch redraws the cards only when another field shows, hides or changes with it: a redraw reads
+        a Mystery Gift card's gift list again. A Shiny switch turns the sprites in place."""
+        drives = any(field.key in (f.unless, f.requires) or f.when[:1] == (field.key,) for f in self.tool.fields)
+        self.set_value(field, on, rebuild=drives)
+        if field.shiny and not drives:
+            for f in self.tool.fields:
+                if f.key in self.sprites:
+                    species = str(command.value_of(f, self.values) or "")
+                    self.sprites[f.key].show(int(species) if species.isdigit() else 0, self.shiny())
+
+    def follow_locks(self) -> None:
+        """The switches the chosen Mystery Gift Pokemon locks follow it without a redraw, which would read the
+        gift list again: off and disabled, their note saying why, while it has its own trainer."""
+        for field, control, note in self.locks:
+            why = command.locked(field, self.tool, self.values)
+            control.value = bool(command.value_of(field, self.values)) and not why
+            control.disabled, control.opacity = bool(why), 0.45 if why else 1.0
+            note.value = self.description(field)
+            for shown in (control, note):
+                try:
+                    shown.update()
+                except RuntimeError:    # the card was redrawn away
+                    pass
 
     def redraw(self) -> None:
         """Saves the values and redraws the cards and the session on them."""
@@ -306,6 +334,7 @@ class GamesView:
                 cards.append(("field", field))
         out = []
         self.sprites = {}
+        self.locks = []
         for kind, item in cards:
             if kind == "field" and item.kind == "builder":
                 out.extend(GiftBuilder(self, item).cards())
@@ -314,6 +343,10 @@ class GamesView:
             elif kind == "field" and item.kind == "raidpartners":
                 self.raid_partners = RaidPartnersPicker(self, item)
                 out.append(self.raid_partners.control)
+            elif kind == "field" and item.kind == "switch" and item.your_ot:
+                control, note = self.input(item), t.text(self.description(item), 12, t.MUTED)
+                self.locks.append((item, control, note))
+                out.append(t.card(item.label, note, trailing=control))
             elif kind == "field" and item.kind == "switch":
                 out.append(t.card(item.label, None, item.help, trailing=self.input(item)))
             elif kind == "field" and item.kind == "pokemon" and item.queue > 1:
@@ -363,7 +396,8 @@ class GamesView:
     def description(self, field: Field) -> str:
         selected = command.value_of(field, self.values)
         detail = dict(field.choice_help).get(selected, "") if field.kind == "choice" else ""
-        return " ".join(part for part in (field.help, detail) if part)
+        why = command.locked(field, self.tool, self.values) if field.your_ot else ""
+        return " ".join(part for part in (field.help, detail, why) if part)
 
     def offer_queue(self, field: Field) -> OfferQueue:
         return OfferQueue(self.app, self.game.key, command.value_of(field, self.values), field.queue,
@@ -372,7 +406,10 @@ class GamesView:
     def input(self, field: Field, grouped: bool = False) -> ft.Control:
         value = command.value_of(field, self.values)
         if field.kind == "switch":
-            return t.switch(bool(value), lambda e: self.set_value(field, e.control.value, rebuild=True))
+            why = command.locked(field, self.tool, self.values) if field.your_ot else ""
+            control = t.switch(bool(value) and not why, lambda e: self.switched(field, e.control.value))
+            control.disabled, control.opacity = bool(why), 0.45 if why else 1.0   # follow_locks
+            return control
         if field.kind == "choice":
             choices = self.raid_choices(field) or field.choices
             control = t.dropdown([(k or EMPTY, label) for k, label in choices], value or EMPTY,

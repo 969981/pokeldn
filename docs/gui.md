@@ -454,7 +454,15 @@ whole; more scroll in a box of their own (`event_gifts.FIT`).
 
 A click makes a fresh copy for the trainer in Settings and keeps it with the built Pokemon. It becomes
 the trade's offer, shown under the list with its legality, moves and OT. A copy keeps the trainer it
-was made with: pick the gift again after changing the trainer.
+was made with: pick the gift again after changing the trainer. A gift that names its receiver but
+never reached saves in the trainer's language, such as Let's Go's Chinese Meltan and Melmetal for any
+other, has an illegal tile that says why, and a click on it says so and keeps the offer
+([Saves a card reached](gift_simulated.md#saves-a-card-reached)). With Made for the receiving player
+on, the default, the trade makes a gift that names its receiver again for the console's own save
+([Made for the receiving player](gift_simulated.md#made-for-the-receiving-player)). A gift with its
+card's own trainer goes as made: picking it turns the switch off, disabled and faded, and the note
+under it names that trainer (`command.locked`). The launch then passes no `--for-receiver`. Picking a
+gift that names its receiver gives the switch back as it was set.
 
 A gift HOME gave, on any game but Let's Go, has the tracker the HOME tracker setting gives it
 ([The HOME tracker setting](#the-home-tracker-setting)). Its tile is outlined in amber and, as the
@@ -503,7 +511,11 @@ nothing. Code in the app reaches the manager directly (`popup.attach`). `pokeldn
 picks which pop-ups show and which wait; `gui.popups.Dialogs` draws them. An app dialog's
 `page.pop_dialog()` closes the app's own top dialog, never a pop-up opened above it.
 
-The app raises its own pop-ups for an update that did not install and for a plugin it turned off.
+Mystery Gift - Simulated raises a warning when a gift made for the receiving player goes with the
+trainer from Settings instead, saying why: the save names no one, or its copy stopped at the card,
+PKHeX, the offer check or the loader ([The trade](gift_simulated.md#the-trade)). There is one per
+console (`receiver_gift.pop_up`), a newer reason replacing the one open. The app raises its own for
+an update that did not install and for a plugin it turned off.
 
 ## Updates
 

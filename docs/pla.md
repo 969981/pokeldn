@@ -471,7 +471,8 @@ save's 0x80-byte MyStatus block (PKHeX `MyStatus8a`):
 Pia writes the header (serializer `0x7533e8`, chunk loop `0x7529f8`); the game hands over the block
 alone, `0x753554(stream, exchange + 0xa0, 0x80, 0)` at `0x26bfd28`, after `0x26c564c` copies it whole
 from the step's own copy (`0x1024038`, the block's own serializer: the block sits at `+0x68` of its
-object).
+object). A gift made for the receiving player reads the console's trainer
+(`data_exchange.read_trainer`, [Made for the receiving player](gift_simulated.md#made-for-the-receiving-player)).
 
 The block's two other non-zero fields are 32-bit:
 

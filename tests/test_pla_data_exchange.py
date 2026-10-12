@@ -75,7 +75,7 @@ def test_the_reference_record_is_the_male_player_with_the_third_skin():
 def test_a_female_record_carries_the_female_player_with_the_same_skin():
     record = data_exchange.build_record(gender=1)
     look = data_exchange.LOOK_OFFSET
-    assert record[data_exchange.GENDER_OFFSET] == 1
+    assert data_exchange.read_trainer(record)["gender"] == 1
     assert int.from_bytes(record[look:look + data_exchange.LOOK_SIZE], "little") == 7
     changed = [offset for offset in range(data_exchange.RECORD_SIZE)
                if record[offset] != data_exchange.REFERENCE_RECORD[offset]]

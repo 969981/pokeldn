@@ -45,6 +45,7 @@ while (Console.ReadLine() is { } line)
             "make" => Make(game, request),
             "paste" => Paste(game, request),
             "check" => Check(game, Convert.FromBase64String((string)request["data"]!), request),
+            "owner" => Owner(game, Convert.FromBase64String((string)request["data"]!)),
             "gift" => Gift(Convert.FromBase64String((string)request["data"]!)),
             "events" => Events(),
             "event" => Event(game, request),
@@ -227,7 +228,8 @@ JsonObject Options(Game game, JsonObject request)
     {
         if (!Enum.TryParse<GameVersion>(v, out var chosen) || !versions.Contains(chosen))
             throw new ArgumentException("This version is incompatible with the selected game.");
-        versions = [chosen, .. versions.Where(x => x != chosen)];
+        // "only_version": the trainer's own game alone, as a gift made for a receiving player (docs/gift_simulated.md).
+        versions = (bool?)request["only_version"] ?? false ? [chosen] : [chosen, .. versions.Where(x => x != chosen)];
     }
     return (versions, new SimpleTrainerInfo(versions[0])
     {
@@ -525,6 +527,32 @@ PKM Parse(Game game, byte[] data)
     if (pk.GetType() != game.Blank().GetType())
         throw new InvalidDataException($"Expected {game.Blank().GetType().Name}, received {pk.GetType().Name}.");
     return pk;
+}
+
+// Whose a Pokemon is, read with no legality check, for a gift made for the save that offers it
+// (docs/gift_simulated.md, Made for the receiving player): its original trainer, its current handler (0 while
+// still with that trainer), the handler's name, gender and language, and the version it came from.
+JsonObject Owner(Game game, byte[] data)
+{
+    var pk = Parse(game, data);
+    if (!pk.ChecksumValid)
+        throw new InvalidDataException("The Pokemon checksum is invalid.");
+    return new JsonObject
+    {
+        ["species"] = pk.Species,
+        ["shiny"] = pk.IsShiny,
+        ["egg"] = pk.IsEgg,
+        ["ot"] = pk.OriginalTrainerName,
+        ["tid"] = pk.TID16,
+        ["sid"] = pk.SID16,
+        ["gender"] = pk.OriginalTrainerGender,
+        ["language"] = pk.Language,
+        ["handler"] = pk.CurrentHandler,
+        ["ht_name"] = pk.HandlingTrainerName,
+        ["ht_gender"] = pk.HandlingTrainerGender,
+        ["ht_language"] = pk is IHandlerLanguage handler ? handler.HandlingTrainerLanguage : 0,
+        ["version"] = (int)pk.Version,
+    };
 }
 
 JsonObject Check(Game game, byte[] data, JsonObject request)
@@ -1060,6 +1088,7 @@ JsonObject GiftEventList(Game game, JsonObject request)
     foreach (var (key, gift) in GiftEvents(game))
     {
         var (pk, la) = MakeGift(gift, versions, trainer);
+        (pk, la, var refused) = InTrainerLanguage(gift, pk, la, trainer);
         var moves = new JsonArray();
         foreach (var move in pk.Moves)
             if (move != 0)
@@ -1084,7 +1113,8 @@ JsonObject GiftEventList(Game game, JsonObject request)
             ["ball"] = strings.balllist[pk.Ball],
             ["held_item"] = pk.HeldItem == 0 ? "" : items[pk.HeldItem],
             ["moves"] = moves,
-            ["legal"] = Accepted(la),
+            ["legal"] = Accepted(la) && refused.Length == 0,
+            ["refused"] = refused,
             ["home_tracker"] = TrackerState(pk, la),
         }));
     }
@@ -1096,7 +1126,11 @@ JsonObject GiftEventList(Game game, JsonObject request)
 }
 
 // A fresh copy of one of the game's Mystery Gift Pokemon, as the request's trainer receives it, for a trade to pass
-// on (docs/gift_simulated.md), legal under the app's HOME tracker setting (MendGift).
+// on (docs/gift_simulated.md), legal under the app's HOME tracker setting (MendGift). `refused` says why no save
+// like the trainer's received a card that gives the receiver's own trainer, "" when one did: the copy names that
+// save as its OT, so it must be one the card reached, on the save's version when made for it alone
+// ("only_version", ReachedVersion) and in its language (InTrainerLanguage). A card with its own trainer is never
+// refused: its copy is a traded Pokemon, which any save may hold.
 JsonObject GiftEvent(Game game, JsonObject request)
 {
     var key = (string)request["key"]!;
@@ -1104,17 +1138,83 @@ JsonObject GiftEvent(Game game, JsonObject request)
                ?? throw new ArgumentException($"PKHeX has no Mystery Gift Pokemon {key} for this game.");
     var (versions, trainer) = Trainer(game, request);
     var (pk, la) = MakeGift(gift, versions, trainer);
-    if (!Accepted(la))
+    var refused = "";
+    if (YourOT(pk, trainer))
+    {
+        if (versions.Length < game.Versions.Length && !ReachedVersion(gift, versions[0]))
+            refused = NeverTo(gift, game.Versions.Where(version => ReachedVersion(gift, version)), versions[0]);
+        else if (Accepted(la))
+            (pk, la, refused) = InTrainerLanguage(gift, pk, la, trainer);
+        else if (game.Versions.Except(versions).Where(version => Accepted(MakeGift(gift, [version], trainer).Legality))
+                     .ToArray() is { Length: > 0 } elsewhere)
+            refused = NeverTo(gift, elsewhere, versions[0]);
+    }
+    if (!Accepted(la) && refused.Length == 0)
         throw new InvalidDataException($"PKHeX made an illegal {strings.specieslist[gift.Species]} from card "
                                        + $"{gift.CardID}: {Plain(la).Replace("\n", " ")}");
     var reply = Describe(game, pk, la);
     reply["key"] = key;
     reply["title"] = gift.CardTitle.Trim();
+    reply["your_ot"] = YourOT(pk, trainer);
+    reply["refused"] = refused;
     return reply;
 }
 
 // A card that gives the receiver's own trainer, not one of its own: the copy carries the trainer it was made for.
 static bool YourOT(PKM pk, ITrainerInfo trainer) => pk.OriginalTrainerName == trainer.OT && pk.TID16 == trainer.TID16;
+
+// Whether saves of `version` received the card. HOME's (cards 9000 on) reached either version's saves, whatever
+// origin they fix. Any other card that fixes the Pokemon's origin reached that version's alone (Scarlet/Violet's
+// card 1540: Violet a Koraidon, Scarlet a Miraidon); otherwise its own restriction says (PKHeX's
+// CanBeReceivedByVersion): Scarlet/Violet's RestrictVersion (1 Scarlet, 2 Violet), Let's Go's IRestrictVersion.
+static bool ReachedVersion(MysteryGift gift, GameVersion version) => gift switch
+{
+    { CardID: >= 9000 } => true,
+    WC9 { OriginGame: not 0 } card => (GameVersion)card.OriginGame == version,
+    WB8 { OriginGame: not 0 } card => (GameVersion)card.OriginGame == version,
+    WC9 { RestrictVersion: 1 } => version == GameVersion.SL,
+    WC9 { RestrictVersion: 2 } => version == GameVersion.VL,
+    IRestrictVersion restricted => restricted.CanBeReceivedByVersion(version),
+    _ => true,
+};
+
+static string NeverTo(MysteryGift gift, IEnumerable<GameVersion> reached, GameVersion version) =>
+    $"card {gift.CardID} gave it to {string.Join(" and ", reached.Select(VersionName))} alone, never to "
+    + VersionName(version);
+
+// A card that gives the receiver's own trainer reaches a save in that trainer's language, and the copy is in it.
+// Where the card fixes another (Let's Go's Chinese Meltan and Melmetal, cards 1501 and 1502), the copy in the
+// trainer's language is checked: legal, it is the copy; refused, no save in that language received the card, and
+// -> why, with the copy as the card makes it. A card with its own trainer keeps its language, whoever receives it.
+(PKM Pokemon, LegalityAnalysis Legality, string Refused) InTrainerLanguage(MysteryGift gift, PKM pk,
+    LegalityAnalysis la, ITrainerInfo trainer)
+{
+    if (!Accepted(la) || !YourOT(pk, trainer) || pk.Language == trainer.Language)
+        return (pk, la, "");
+    var copy = pk.Clone();
+    copy.Language = trainer.Language;
+    if (!copy.IsNicknamed)
+        copy.ClearNickname();
+    var checkedCopy = Refresh(copy);
+    return Accepted(checkedCopy)
+        ? (copy, checkedCopy, "")
+        : (pk, la, $"card {gift.CardID} gave it in {LanguageName(pk.Language)} alone, never to a save in "
+                   + LanguageName(trainer.Language));
+}
+
+static string LanguageName(int language) => language switch
+{
+    1 => "Japanese", 2 => "English", 3 => "French", 4 => "Italian", 5 => "German", 7 => "Spanish", 8 => "Korean",
+    9 => "Simplified Chinese", 10 => "Traditional Chinese", 11 => "Latin American Spanish",
+    _ => $"language {language}",
+};
+
+static string VersionName(GameVersion version) => version switch
+{
+    GameVersion.GP => "Let's Go Pikachu", GameVersion.GE => "Let's Go Eevee", GameVersion.BD => "Brilliant Diamond",
+    GameVersion.SP => "Shining Pearl", GameVersion.PLA => "Legends Arceus", GameVersion.SL => "Scarlet",
+    GameVersion.VL => "Violet", GameVersion.ZA => "Legends Z-A", _ => version.ToString(),
+};
 
 // A gift made on each of the game's versions in turn (some cards come to one version only), rolled again where its
 // own check refuses a PID. The first legal copy is kept.

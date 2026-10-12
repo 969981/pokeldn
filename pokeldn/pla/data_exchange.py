@@ -92,6 +92,19 @@ def read_record(record):
                 name=name.split("\0")[0])
 
 
+def read_trainer(record):
+    """-> the trainer a decompressed record names, as pokeldn.receiver_gift takes it: id pair, version,
+    gender, language and name."""
+    record = bytes(record)
+    if len(record) != RECORD_SIZE:
+        raise ValueError(f"a record is {RECORD_SIZE} bytes, not {len(record)}")
+    player = read_record(record)
+    tid = int.from_bytes(player["player_id"][:2], "little")
+    sid = int.from_bytes(player["player_id"][2:], "little")
+    return {"ot": player["name"], "tid": tid, "sid": sid, "version": record[VERSION_OFFSET],
+            "gender": record[GENDER_OFFSET], "language": record[LANGUAGE_OFFSET]}
+
+
 def build_stream_open(destination_bitmap, sequence_id=SEQUENCE_ID):
     """-> the message a station opens its 0x81 stream with, before any record crosses."""
     flags = (reliable5.FLAG_APPLICATION_DATA | reliable5.FLAG_MESSAGE_START

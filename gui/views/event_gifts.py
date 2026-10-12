@@ -46,8 +46,11 @@ def origin(event: dict) -> str:
 
 
 def problem(event: dict) -> str:
-    """Why a gift's copy is illegal, or "" for a legal one: PKHeX makes none."""
-    return "" if event.get("legal", True) else UNMADE
+    """Why a gift's copy is illegal, or "" for a legal one: PKHeX makes none, or no save in the trainer's
+    language received the card (pokeldn.pokemon.Service.gift_event)."""
+    if event.get("legal", True):
+        return ""
+    return f"Illegal: {event['refused']}" if event.get("refused") else UNMADE
 
 
 def warning(event: dict) -> str:
@@ -171,11 +174,14 @@ class EventGiftPicker:
         def work():
             try:
                 info = builder.SERVICE.gift_event(self.game, key, self.app.settings.trainer(self.game))
+                if info["refused"]:
+                    raise ValueError(f"Your trainer from Settings cannot receive this gift: {info['refused']}.")
                 value, error = {"file": info["file"], "event": key, "title": info["title"],
                                 "species": info["species_id"], "shiny": info["shiny"],
                                 "summary": builder.summary(info), "legal": info["legal"],
                                 "home_tracker": info.get("home_tracker", ""),
-                                "encounter": info["encounter"], "moves": info["moves"], "ot": info["ot"]}, ""
+                                "encounter": info["encounter"], "moves": info["moves"], "ot": info["ot"],
+                                "your_ot": info["your_ot"]}, ""
             except Exception as exc:
                 value, error = None, str(exc) or type(exc).__name__
 
