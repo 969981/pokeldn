@@ -428,6 +428,49 @@ Each pick passes `--raid-partner`, in order. Raising Consoles joining drops the 
 pick the chosen stage lacks (Dylan or Luke below four stars) is dropped. Folding only hides the card
 (`GamesView.show_raid_partners`): the choice still goes to the raid, and the header names it.
 
+## Pop-ups
+
+A run the app started, another of its child processes, or the app's own code can put a pop-up over
+whatever page shows (`pokeldn.popup`, in the plugin API since 1.2). There are two kinds:
+
+| kind | buttons | callback |
+|---|---|---|
+| `acknowledge(title, text)` | one, `label` (OK) | `on_ack`: the button, Esc or a click outside |
+| `confirm(title, text, agree, disagree)` | agree and disagree, the caller's labels, and Dismiss | `on_agree`, `on_disagree` or `on_dismiss`; Esc and a click outside are Dismiss |
+
+Opening one never waits: it returns the pop-up's id, and the answer comes later as its callback. A
+callback runs on the thread that reads the app's answers (a timeout's timer, for one that expired),
+unless `set_dispatcher(dispatch)` hands it to the program's own loop; in the app, it runs on a worker
+thread so no callback stalls the window. A callback that raises prints its traceback.
+
+| option | what it does |
+|---|---|
+| `id` | names the pop-up among the program's own; one opened under the id of a pop-up still open or queued replaces it in place, its callbacks dropped. Without one, a new id is made |
+| `stack=False` | later pop-ups wait in a queue, oldest first, until this one closes |
+| `urgent=True` | shows at once, over a pop-up with `stack=False` too |
+| `timeout` | seconds unanswered after which it closes as if dismissed: a confirmation fires `on_dismiss`, an acknowledgement nothing. The timer is the program's, so it fires with no app too |
+| `tone` | `info`, `warning` or `error`, which pick the icon |
+
+`cancel(id)` closes a pop-up or takes it out of the queue; none of its callbacks fires once `cancel`
+has returned, except one an earlier answer already handed to the dispatcher. A program holding 32
+pop-ups unanswered gets `RuntimeError`. A pop-up's header names the program that opened it: the
+tool, Board installer or Controller service, and nothing for the app's own.
+
+When a program exits, its confirmations close, its acknowledgements stay with no answer to go back,
+and its queued pop-ups are dropped. With no app (`available()` is false, as in a terminal), a pop-up
+is a `[pop-up]` line in the output and no answer comes; only one with a `timeout` counts toward the 32.
+
+`runner.Process(..., popups=app.popups, label=...)` sets `POKELDN_POPUPS=1` in the child. The child
+sends each pop-up as a `[popup]` line and a JSON object on stdout, which the app keeps out of the log
+and finds wherever in a line another thread's print left it; the app answers with
+`[popup] {"id", "n", "answer"}` on the child's stdin, which `pokeldn.app.runner.child` reads. `n`
+tells a pop-up from one opened again under its id, so a late answer to a replaced pop-up fires
+nothing. Code in the app reaches the manager directly (`popup.attach`). `pokeldn.app.popups.Manager`
+picks which pop-ups show and which wait; `gui.popups.Dialogs` draws them. An app dialog's
+`page.pop_dialog()` closes the app's own top dialog, never a pop-up opened above it.
+
+The app raises its own pop-ups for an update that did not install and for a plugin it turned off.
+
 ## Updates
 
 At launch the app asks `api.github.com/repos/Decryptu/pokeldn/releases/latest` for the newest stable

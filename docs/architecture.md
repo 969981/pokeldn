@@ -9,6 +9,7 @@ formats and timing; shared components belong outside a game directory.
 | Location | Responsibility |
 | --- | --- |
 | `pokeldn/app/` | Tool catalog, argument assembly, parser inspection, settings, paths and child processes |
+| `pokeldn/popup.py` | [Pop-ups](gui.md#pop-ups) a program shows in the app; `pokeldn/app/popups.py` decides which show |
 | `pokeldn/pokemon.py` | PKHeX service, imports, final offer validation and received files |
 | `pokeldn/gifts.py` | Shared [Mystery Gift file](gifts.md) envelope, reader, writer and native conversion |
 | `services/pkhex/` | Pinned PKHeX.Core dependency; legal encounter generation and game compatibility checks |

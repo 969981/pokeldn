@@ -872,7 +872,8 @@ class SessionPanel:
         self.app.process_label = tool.name
         self.running_tool = tool
         self.app.process = runner.Process(["--run", tool.script, *args], str(SESSION),
-                                          runner.base_env(s, port, trace), self._line, self._exited)
+                                          runner.base_env(s, port, trace), self._line, self._exited,
+                                          popups=self.app.popups, label=tool.name)
         self.run = (self.app.process, stamp, self.games.game.key)
         threading.Thread(target=self._tick, daemon=True).start()
         self.refresh()

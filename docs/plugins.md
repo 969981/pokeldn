@@ -127,6 +127,28 @@ if __name__ == "__main__":
 | exits with code 0 | ends the session as done |
 | exits with another code or raises | shows the session as failed, with the traceback in the output |
 | receives `KeyboardInterrupt` | the player pressed Stop; leave cleanly within 15 s or the process is ended |
+| opens a pop-up (`pokeldn.popup`, 1.2) | shows it over whatever page the app shows, and sends the player's answer back |
+
+A pop-up never waits for the player: `acknowledge` and `confirm` return its id at once, and the answer
+comes later as a callback, which may fire at any time, on another thread. A script keeps its own state
+and reacts to the answer whenever it comes, instead of stopping until it does:
+
+```python
+import queue
+from pokeldn import popup
+
+answers = queue.Queue()
+popup.set_dispatcher(answers.put)       # callbacks wait for the loop below instead of running on their own thread
+asked = popup.confirm("Trade the shiny?", "Your partner offers a shiny Gholdengo.", "Trade", "Skip",
+                      on_agree=lambda: print("trading"), on_disagree=lambda: print("skipping"),
+                      timeout=60, tone="warning")
+while not finished():                   # the script's own work goes on meanwhile
+    try:
+        answers.get(timeout=0.5)()
+    except queue.Empty:
+        pass
+popup.cancel(asked)                     # no use for the answer any more: the pop-up closes, no callback fires
+```
 
 Give shared modules a name no other package uses (`mylib_common`, not `utils`): the plugin's folder
 is added to Python's search path.
@@ -295,6 +317,7 @@ or a downgrade.
 |---|---|
 | 1.0 | `add_tool`, `add_game`, `add_radio`, `folder`, `version` |
 | 1.1 | `api.data`, `api.level`, `pokeldn.plugins.data_folder(id)` |
+| 1.2 | `pokeldn.popup` |
 
 ## The API, version 1
 
@@ -304,11 +327,14 @@ or a downgrade.
 | `api.add_game(game, icon="")` | adds a game section with its tools |
 | `api.add_radio(scheme, install, label="")` | adds a radio |
 | `api.folder` | the plugin's folder (a `Path`), or None for a Python package |
-| `api.version`, `api.level` | the major and level the app runs, `1` and `1` |
+| `api.version`, `api.level` | the major and level the app runs, `1` and `2` |
 | `api.data` | a folder kept across updates, created on first use (1.1) |
 | `pokeldn.plugins.data_folder(id)` | the same folder from a tool's script (1.1) |
 | `Tool`, `Field`, `Game` | the app's catalog types, imported from `pokeldn.plugins` |
 | `pokeldn.ldn.show_done()` | prints the line that ticks a trade off |
+| `pokeldn.popup.acknowledge(title, text="", *, id, label="OK", on_ack, stack, urgent, timeout, tone)` | a pop-up with one button; -> its id (1.2, [Pop-ups](gui.md#pop-ups)) |
+| `pokeldn.popup.confirm(title, text, agree, disagree, *, id, on_agree, on_disagree, on_dismiss, stack, urgent, timeout, tone)` | a pop-up with the agree and disagree buttons the caller names, and Dismiss; -> its id (1.2) |
+| `pokeldn.popup.cancel(id)`, `available()`, `set_dispatcher(dispatch)` | closes a pop-up, dropping its callbacks; whether an app shows them; where callbacks run (1.2) |
 
 This table is the supported surface. Anything else a plugin imports from pokeldn can change in any
 release.

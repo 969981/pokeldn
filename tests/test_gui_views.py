@@ -473,12 +473,13 @@ def test_start_on_another_tool_stops_the_running_session_then_starts(tmp_path, m
     """One board, one session: the running launcher leaves the network before the next opens the port."""
     from gui.views import games
     from pokeldn.app.settings import Settings
-    events = []
+    events, shown_by = [], []
 
     class Process:
-        def __init__(self, argv, cwd, env, on_line, on_exit):
+        def __init__(self, argv, cwd, env, on_line, on_exit, popups=None, label=""):
             self.script, self.on_exit, self.running = argv[1], on_exit, True
             events.append(("start", self.script))
+            shown_by.append((popups, label))
 
         def stop(self):
             events.append(("stop", self.script))
@@ -487,6 +488,7 @@ def test_start_on_another_tool_stops_the_running_session_then_starts(tmp_path, m
 
     class FakeApp:
         process, process_label = None, ""
+        popups = "the app's pop-ups"
         settings = Settings(keys=str(tmp_path / "prod.keys"), received=str(tmp_path), board_trace=False)
 
         @property
@@ -516,6 +518,65 @@ def test_start_on_another_tool_stops_the_running_session_then_starts(tmp_path, m
     panel._start(None)
     assert events == [("start", first.script), ("stop", first.script), ("start", second.script)]
     assert panel.running_tool is second and panel.app.process.running and not panel.restart
+    assert shown_by == [("the app's pop-ups", first.name), ("the app's pop-ups", second.name)]
+
+
+def popup_page(monkeypatch):
+    """A page whose dialogs open and close as Flet's do, and the app's pop-ups over it (gui.popups)."""
+    from gui.popups import Dialogs
+    from pokeldn.app import popups
+    monkeypatch.setattr(ft.BaseControl, "update", lambda self: None)
+    page = SimpleNamespace(_dialogs=SimpleNamespace(controls=[]))
+    page.show_dialog = lambda d: (setattr(d, "open", True), page._dialogs.controls.append(d))
+    manager, answers = popups.Manager(Dialogs(page)), []
+    return page, manager, manager.program("Trade host", answers.append), answers
+
+
+def labels(dialog):
+    return [button.content for button in dialog.actions]
+
+
+def test_a_pop_up_is_a_dialog_naming_its_program_with_the_callers_buttons(monkeypatch):
+    page, manager, run, answers = popup_page(monkeypatch)
+    run.take({"op": "open", "id": "ask", "n": 1, "kind": "confirm", "title": "Trade the shiny?", "text": "A Gholdengo.",
+              "agree": "Trade", "disagree": "Skip", "stack": True, "urgent": False, "tone": "warning"})
+    run.take({"op": "open", "id": "note", "n": 2, "kind": "ack", "title": "Saved", "text": "", "label": "Close",
+              "stack": True, "urgent": False, "tone": "error"})
+    ask, note = page._dialogs.controls
+    assert ask.open and note.open and not ask.modal
+    header = ask.title.controls[1].controls
+    assert [c.value for c in header] == ["Trade host", "Trade the shiny?"]
+    assert ask.content.content.value == "A Gholdengo." and ask.content.content.selectable
+    assert ask.title.controls[0].src == "icons/warning-diamond.svg" and ask.title.controls[0].color == t.AMBER
+    assert labels(ask) == ["Dismiss", "Skip", "Trade"] and labels(note) == ["Close"] and note.content is None
+    note.actions[0].on_click(None)
+    assert not note.open and answers == [{"id": "note", "n": 2, "answer": "ack"}]
+    note.on_dismiss(None)                       # Flet reports the close the manager made: nothing more
+    ask.on_dismiss(None)                        # Esc, or a click outside
+    assert answers[1:] == [{"id": "ask", "n": 1, "answer": "dismiss"}]
+
+
+def test_a_pop_up_opened_again_under_its_id_redraws_its_dialog(monkeypatch):
+    page, manager, run, answers = popup_page(monkeypatch)
+    message = {"op": "open", "id": "gift", "n": 1, "kind": "ack", "title": "The gift carries the trainer from "
+               "Settings", "text": "The save names no one.", "stack": True, "urgent": False, "tone": "warning"}
+    run.take(message)
+    run.take({**message, "n": 2, "text": "PKHeX refused the card."})
+    (dialog,) = page._dialogs.controls
+    assert dialog.content.content.value == "PKHeX refused the card."
+    dialog.actions[0].on_click(None)
+    assert answers == [{"id": "gift", "n": 2, "answer": "ack"}] and not dialog.open
+
+
+def test_an_app_dialog_closes_itself_never_a_pop_up_above_it(monkeypatch):
+    page, manager, run, answers = popup_page(monkeypatch)
+    welcome = t.dialog(title=t.text("Welcome"))
+    page.show_dialog(welcome)
+    run.take({"op": "open", "id": "note", "n": 1, "kind": "ack", "title": "Note", "text": "", "stack": True,
+              "urgent": False, "tone": "info"})
+    note = page._dialogs.controls[1]
+    assert page.pop_dialog() is welcome and not welcome.open and note.open
+    assert page.pop_dialog() is None and note.open and answers == []
 
 
 def test_the_link_code_slots_fill_in_order_and_give_the_host_its_scene(monkeypatch):

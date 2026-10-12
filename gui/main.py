@@ -32,7 +32,7 @@ import flet as ft  # noqa: E402
 from gui import drop, flet_client, screen, theme as t  # noqa: E402
 from gui.app import App  # noqa: E402
 from gui.views.widgets import page_key  # noqa: E402
-from pokeldn import __version__  # noqa: E402
+from pokeldn import __version__, popup  # noqa: E402
 from pokeldn.app import update  # noqa: E402
 from pokeldn.app.paths import ROOT  # noqa: E402
 
@@ -293,28 +293,18 @@ def updated_notice(app: App, outcome: dict) -> None:
     if not error and version == __version__:
         app.page.show_dialog(ft.SnackBar(ft.Text(f"pokeldn updated to {__version__}"), duration=4000))
         return
-    app.page.show_dialog(t.dialog(
-        semantics_label="Update failed",
-        title=t.text("The update did not install", 17, weight=ft.FontWeight.W_600),
-        content=ft.Container(t.text(f"pokeldn {version} could not replace this app: "
-                                    f"{error or 'it opened the old version'}. This app is unchanged.",
-                                    13, t.MUTED), width=460),
-        actions=[t.button("Close", lambda e: app.page.pop_dialog())]))
+    popup.acknowledge("The update did not install",
+                      f"pokeldn {version} could not replace this app: {error or 'it opened the old version'}. "
+                      "This app is unchanged.", id="update-failed", label="Close", tone="error")
 
 
 def plugin_stopped_notice(app: App) -> None:
     """A plugin froze or closed the app last time while it started; App turned it off."""
-    def open_plugins(e):
-        app.page.pop_dialog()
-        app.navigate("plugins")
-    app.page.show_dialog(t.dialog(
-        semantics_label="A plugin was turned off",
-        title=t.text("A plugin was turned off", 17, weight=ft.FontWeight.W_600),
-        content=ft.Container(t.text(f"pokeldn closed or stopped answering last time while starting the plugin "
-                                    f"{app.plugin_stopped}. It is off now; turn it on again on the Plugins page "
-                                    "once its author has a fix.", 13, t.MUTED), width=460),
-        actions=[t.secondary_button("Close", lambda e: app.page.pop_dialog()),
-                 t.button("Open Plugins", open_plugins, "plug")]))
+    popup.confirm("A plugin was turned off",
+                  f"pokeldn closed or stopped answering last time while starting the plugin {app.plugin_stopped}. "
+                  "It is off now; turn it on again on the Plugins page once its author has a fix.",
+                  "Open Plugins", "Not now", id="plugin-stopped", tone="warning",
+                  on_agree=lambda: app.ui(lambda: app.navigate("plugins")))
 
 
 def welcome(app: App) -> None:
