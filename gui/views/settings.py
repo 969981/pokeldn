@@ -6,7 +6,7 @@ import flet as ft
 
 from gui import theme as t
 from gui.app import keys_found
-from pokeldn import __version__
+from pokeldn import __version__, pokemon
 from pokeldn.app.paths import SESSION
 from pokeldn.app.sprites import CACHE
 from pokeldn.app.settings import LANGUAGES, switch_ids_valid
@@ -113,6 +113,10 @@ class SettingsView:
             switch("board_trace", "Record the board's serial traffic",
                    "Adds the board's counters and every serial message to the session record. Only for radio "
                    "problems someone asked you to report."),
+            t.card("HOME tracker", t.dropdown([("empty", "Leave it empty (default)"), ("made", "Make one")],
+                                              s.home_tracker, on_select=lambda e: self._home_tracker(e.control.value)),
+                   "What the bank and the Pokemon builder put in the HOME tracker of a Pokemon moved to another "
+                   "game or received from a Mystery Gift. PKHeX flags an empty one; HOME refuses a made one."),
             t.card("Pokemon sprites", ft.Row([t.button("Clear the cache", self._clear_sprites, "refresh",
                                                         filled=False), self.sprite_state], spacing=10),
                    "Pixel-art sprites come from PokeAPI and are kept on this computer after the first download. "
@@ -162,6 +166,10 @@ class SettingsView:
             t.card(f"About pokeldn {__version__}", ft.Row([link(label, url) for label, url in LINKS], spacing=4),
                    "pokeldn is AGPLv3. Pokemon are checked with PKHeX.Core (GPLv3)."),
         ]
+
+    def _home_tracker(self, value: str) -> None:
+        self.save("home_tracker", value)
+        pokemon.SERVICE.home_tracker = value
 
     def _toggle_advanced(self, e) -> None:
         self.show_advanced = not self.show_advanced
