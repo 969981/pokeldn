@@ -190,8 +190,8 @@ asks.
 `help=` puts a line under the input, `default=` fills it, and `hidden=True` moves it to the
 Advanced tab. The fields the built-in tools use, and the
 rest of `Field`, are in `pokeldn/app/catalog.py`. A tool's `fixed` arguments may carry `{ot}`,
-`{tid}`, `{sid}` and `{language}` (the trainer in Settings), `{received}` (the Received folder) and
-`{stamp}` (the run's start time).
+`{tid}`, `{sid}`, `{language}` and `{gender}` (the trainer in Settings), `{received}` (the Received
+folder) and `{stamp}` (the run's start time).
 
 ### A game of its own
 

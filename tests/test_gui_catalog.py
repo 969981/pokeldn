@@ -64,6 +64,14 @@ def test_bdsp_reports_the_apps_trainer_language_in_both_roles(key):
     assert parser_of(tool.script).parse_args(args).language == 5
 
 
+@pytest.mark.parametrize("key", ["pla-host", "pla-join"])
+def test_pla_sends_the_apps_trainer_gender_in_its_data_exchange_record(key):
+    """The record's gender and look show the console that player (docs/pla.md)."""
+    tool = next(t for game in GAMES for t in game.tools if t.key == key)
+    args = build(tool, {}, {}, Settings(gender=1))
+    assert parser_of(tool.script).parse_args(args).gender == 1
+
+
 QUEUES = [(tool, f) for tool in TOOLS for f in tool.fields if f.kind == "pokemon" and f.queue > 1]
 
 

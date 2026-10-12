@@ -305,7 +305,7 @@ PLA = Game("pla", "Legends Arceus", "PLA", "pla.md", (
           FRESH_PID,
           host_seconds("900")),
          fixed=("--channel", "6", "--session-update", "--sustain", "--clock", "--data-exchange",
-                "--game-channel", "--trade-box", "--player-name", "{ot}",
+                "--game-channel", "--trade-box", "--player-name", "{ot}", "--gender", "{gender}",
                 "--offer-out", "{received}/pla-{stamp}.pa8"),
          doc="pla.md"),
     Tool("pla-join", "Trade (Join)", "bin/pla_join.py",
@@ -314,7 +314,8 @@ PLA = Game("pla", "Legends Arceus", "PLA", "pla.md", (
          (queued("--offer", required=False, help=PLA_OFFER_HELP),
           Field("--code", "Link code", "code", default="00000000", help=CODE_HELP),
           FRESH_PID),
-         fixed=("--player-name", "{ot}", "--offer-out", "{received}/pla-{stamp}.pa8"),
+         fixed=("--player-name", "{ot}", "--gender", "{gender}",
+                "--offer-out", "{received}/pla-{stamp}.pa8"),
          doc="pla.md"),
 ))
 

@@ -207,6 +207,8 @@ def build_parser():
                          "(default --player-name)")
     ap.add_argument("--data-exchange-id", default=None,
                     help="hex: the four-byte player id in that record")
+    ap.add_argument("--gender", type=int, choices=(0, 1), default=0,
+                    help="0 male, 1 female: the gender in that record, whose look follows it")
     ap.add_argument("--game-channel", action="store_true",
                     help="open the game's own reliable channel (0x7c) once the data exchange is "
                          "done: answer the console's channel message, send the same back, and open "
@@ -328,7 +330,7 @@ def main():
     else:
         exchange_record = data_exchange.build_record(
             player_id=(bytes.fromhex(args.data_exchange_id) if args.data_exchange_id else None),
-            name=args.data_exchange_name or args.player_name)
+            name=args.data_exchange_name or args.player_name, gender=args.gender)
     exchange_sent = set()
     box_edits = {k: v for k, v in dict(
         level=args.trade_box_level, experience=args.trade_box_experience,
