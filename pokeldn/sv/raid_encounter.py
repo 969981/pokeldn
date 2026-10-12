@@ -69,6 +69,12 @@ SHINY_RANDOM, SHINY_NEVER, SHINY_ALWAYS = 0, 1, 2
 # (range, base), 6 the table's own value [PKHeX SizeType9.GetSizeValue].
 SCALE_BANDS = {1: (0x10, 0), 2: (0x20, 0x10), 3: (0xA0, 0x30), 4: (0x20, 0xD0), 5: (0x10, 0xF0)}
 SCALE_RANDOM, SCALE_VALUE = 0, 6
+# A row's `boss_desc` (docs/sv_raid.md, The battle bootstrap): the shield's HP and time triggers at
+# words 1 and 2, six extra actions (action, timing, value, move) from word 10. An extra action's
+# code and its timing's, by name.
+SHIELD_TRIGGERS, EXTRA_ACTIONS = 1, 10
+ACTIONS = {1: "boss_reset", 2: "player_reset", 3: "move", 4: "drain"}
+TIMINGS = {1: "time", 2: "hp"}
 
 
 class Xoroshiro:
@@ -293,6 +299,31 @@ def rewards(seed, row, stars, fixed=None, lottery=None):
 
 
 @dataclass(frozen=True)
+class Action:
+    """A scripted action the boss takes in battle: `shield`, `boss_reset`, `player_reset`, `move` or
+    `drain` (the Tera Orb's charge), a move action's move, and the (`hp` or `time`, percent left)
+    triggers that bring it, either one."""
+    kind: str
+    move: int
+    triggers: tuple
+
+
+def scripted_actions(row):
+    """-> the boss's scripted actions: the shield, then the extra actions in table order. An action
+    at 0% left never comes, the battle being over; a move action that names no move is left out."""
+    desc = row["boss_desc"]
+    shield = tuple((timing, percent) for timing, percent
+                   in zip(("hp", "time"), desc[SHIELD_TRIGGERS:SHIELD_TRIGGERS + 2]) if percent)
+    out = [Action("shield", 0, shield)] if shield else []
+    for at in range(EXTRA_ACTIONS, EXTRA_ACTIONS + 24, 4):
+        action, timing, percent, move = desc[at:at + 4]
+        kind = ACTIONS.get(action)
+        if kind and timing in TIMINGS and percent and (move or kind != "move"):
+            out.append(Action(kind, move if kind == "move" else 0, ((TIMINGS[timing], percent),)))
+    return out
+
+
+@dataclass(frozen=True)
 class Raid:
     seed: int
     version: str
@@ -317,6 +348,10 @@ class Raid:
     def is_shiny(self):
         b = self.boss
         return (b["trainer_id"] ^ b["secret_id"] ^ (b["pid"] >> 16) ^ (b["pid"] & 0xFFFF)) < 16
+
+    @property
+    def actions(self):
+        return scripted_actions(self.row)
 
     @property
     def context(self):

@@ -999,6 +999,48 @@ def test_a_raid_card_tells_a_shiny_jumbo_boss_by_its_title_and_tags():
         assert [c.tooltip for c in card if isinstance(c, ft.Image) and c.tooltip] == ["Shiny", "Jumbo mark"]
 
 
+def test_the_raid_card_lists_its_scripted_actions_after_its_rewards(monkeypatch):
+    """Under the rewards, the boss's scripted actions: the shield, then each action with the HP or time
+    left that brings it, its moves named once the builder answers."""
+    import flet as ft
+    from gui.views import raid_seed
+    from pokeldn import pokemon as builder
+    from pokeldn.sv import raid_event, raid_search
+    app = SimpleNamespace(settings=SimpleNamespace(sprites=False), page=None, ui=lambda fn: fn())
+    monkeypatch.setattr(ft.BaseControl, "update", lambda self: None)
+    naming = []
+    monkeypatch.setattr(raid_seed.threading, "Thread",
+                        lambda target, args, daemon: SimpleNamespace(start=lambda: naming.append((target, args))))
+    monkeypatch.setattr(builder.SERVICE, "names", lambda game, kind: {
+        "bag": [{"id": 1127, "name": "Exp. Candy XL"}], "moves": [{"id": 315, "name": "Overheat"}]}[kind])
+    desc = [2500, 65, 55, 9999, 40, 0, 0, 20, 70, 30, 3, 1, 99, 315, 2, 2, 70, 0] + [0] * 19
+    charizard = dict(species=6, form=0, ability=4, flawless_ivs=0, level=100, capture_level=100,
+                     moves=[406, 0, 0, 0], tera=17, stars=7, rate=1, identifier=1, fixed_rewards="1",
+                     lottery_rewards="1", boss_desc=desc, evs=[0] * 6, rom=0, group=1, capture_rate=1,
+                     ivs=[31] * 6, gender=None, nature=None, shiny=1, scale_type=0, scale=0, held_item=0, time=None)
+    event = raid_event.Event(1, "", (charizard,), {"1": [dict(category=0, item=1127, amount=3, probability=100,
+                                                              subject=0)]}, {"1": []}, (1,) + (0,) * 9)
+    context = raid_search.contexts(event=event)[0]
+    picker = raid_seed.RaidSeedPicker(app, "00000001", lambda _v: None, lambda: context, lambda _c: None)
+    texts = lambda: [c.value for c in raid_controls(picker.preview) if isinstance(c, ft.Text)]
+    shown = texts()
+    assert shown.index("The raid's own rewards") < shown.index("Scripted actions")
+    assert "Naming the moves..." in shown
+    target, args = naming.pop()
+    target(*args)
+    shown = texts()
+    actions = shown[shown.index("Scripted actions") + 1:]
+    assert actions == ["Shield activation", "65%", "HP remaining", "55%", "time remaining",
+                       "Charizard uses Overheat", "99%", "time remaining",
+                       "Players' stats & status reset", "70%", "HP remaining"]
+    assert "Exp. Candy XL" in shown
+    no_actions = dict(charizard, boss_desc=[500] + [0] * 36)
+    picker.context = lambda: raid_search.contexts(event=raid_event.Event(
+        1, "", (no_actions,), event.fixed, event.lottery, event.dens))[0]
+    picker._show("00000001", update=False)
+    assert texts()[-1] == "No scripted actions."
+
+
 def test_find_a_raid_offers_its_default_seeds_from_any_first_seed(monkeypatch):
     """The finder offers its default count of seeds (a hundred million with the compiled scan), and its
     shuffle picks a random first seed."""
