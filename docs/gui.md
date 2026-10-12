@@ -329,8 +329,9 @@ them. An app that finds a service running other code
 
 The sprites are the 96x96 PNGs behind `sprites.front_default` and `sprites.front_shiny` of
 `https://pokeapi.co/api/v2/pokemon/{id}`, read from `raw.githubusercontent.com/PokeAPI/sprites`
-(`sprites/pokemon/{id}.png`, `sprites/pokemon/shiny/{id}.png`). The JSON (300 KB per species) is not fetched; the sprite path is fixed by the id. Twelve National Dex numbers sampled from 1 to 1025
-all have both sprites; 1026 returns 404. When a shiny sprite is missing, the normal one is shown.
+(`sprites/pokemon/{id}.png`, `sprites/pokemon/shiny/{id}.png`). The JSON (300 KB per species) is not
+fetched; the sprite path is fixed by the id. All 1,025 National Dex numbers have both sprites; 1026
+returns 404. When a shiny sprite is missing, the normal one is shown.
 
 | where | size |
 |---|---|
@@ -358,6 +359,7 @@ A sprite downloads on first use and is read from disk afterwards, with no networ
 | no network, nothing cached | the pixelarticons `circle-question` icon; no error; the next attempt waits 60 s |
 | HTTP 404 | a `{id}.none` marker; not asked again for 7 days |
 | reply that is not a PNG, or over 200 KB | not cached |
+| PNG with a colour profile, text or other extra chunks | saved and shown without them: only IHDR, PLTE, tRNS, IDAT and IEND are kept (26 of the 2,050 sprites, most of them Gen 9) |
 | damaged cached file | deleted, downloaded again |
 | data folder not writable | the sprite shows for the session and is not saved |
 | Settings, Pokemon sprites off | the cache is read, nothing is downloaded |
