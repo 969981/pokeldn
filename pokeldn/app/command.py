@@ -238,7 +238,8 @@ def missing_offer(tool: Tool, values: dict) -> str:
             if not path and not field.required and len(entries) == 1:
                 continue
             if not path or not os.path.isfile(path):
-                return f"Build the Pokemon to offer{which} first."
+                return ("Choose the Mystery Gift Pokemon first." if field.events
+                        else f"Build the Pokemon to offer{which} first.")
             if entry.get("legal") is False:
                 return f"The Pokemon{which} is not legal."
     return ""

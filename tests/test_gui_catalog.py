@@ -3,7 +3,7 @@ flag renamed in bin/ fails here instead of in a user's session."""
 import pytest
 
 from pokeldn.app.catalog import GAMES
-from pokeldn.app.command import build
+from pokeldn.app.command import build, missing_offer
 from pokeldn.app.introspect import parser_of
 from pokeldn.app.settings import Settings
 
@@ -64,7 +64,7 @@ def test_bdsp_reports_the_apps_trainer_language_in_both_roles(key):
     assert parser_of(tool.script).parse_args(args).language == 5
 
 
-@pytest.mark.parametrize("key", ["pla-host", "pla-join"])
+@pytest.mark.parametrize("key", ["pla-host", "pla-join", "pla-gift-host"])
 def test_pla_sends_the_apps_trainer_gender_in_its_data_exchange_record(key):
     """The record's gender and look show the console that player (docs/pla.md)."""
     tool = next(t for game in GAMES for t in game.tools if t.key == key)
@@ -181,3 +181,32 @@ def test_an_event_the_gallery_lacks_is_refused_before_the_host_starts(tmp_path, 
     assert problems(tool, values) == ["The chosen event is not in the event gallery any more."]
     (events / "002 Charizard the Unrivaled" / "Files").mkdir(parents=True)
     assert problems(tool, values) == []
+
+
+def test_the_simulated_mystery_gift_trades_its_event_pokemon_as_the_trade_host_does():
+    """Scarlet/Violet's Mystery Gift - Simulated is the trade host offering the event Pokemon picked."""
+    tools = {t.key: t for game in GAMES for t in game.tools}
+    gift, host = tools["sv-gift-host"], tools["sv-host"]
+    assert (gift.script, gift.fixed) == (host.script, host.fixed)
+    args = build(gift, {"--trade-offer": {"file": "/tmp/palafin.pk9", "event": "0503-964-0-10"}}, {}, Settings(),
+                 stamp="fixed")
+    assert args[args.index("--trade-offer") + 1] == "/tmp/palafin.pk9" and "--fresh-pid" in args
+    assert missing_offer(gift, {}) == "Choose the Mystery Gift Pokemon first."
+
+
+@pytest.mark.parametrize("game, offer", [("lgpe", "--offer"), ("bdsp", "--offer"), ("pla", "--trade-box-record"),
+                                         ("za", "--trade-offer")])
+def test_the_other_switch_games_simulate_their_mystery_gifts_through_their_trade_host(game, offer):
+    """Let's Go, Brilliant Diamond/Shining Pearl, Legends Arceus and Legends Z-A take no Mystery Gift over local
+    wireless: their Mystery Gift - Simulated is the trade host offering one event Pokemon, after their trades
+    (docs/gift_simulated.md)."""
+    tools = next(g for g in GAMES if g.key == game).tools
+    gift, host = next(t for t in tools if t.key == f"{game}-gift-host"), tools[0]
+    assert host.key == f"{game}-host" and tools[-1] is gift and gift.name == "Mystery Gift - Simulated"
+    assert (gift.script, gift.fixed, gift.doc) == (host.script, host.fixed, "gift_simulated.md")
+    field = gift.fields[0]
+    assert (field.key, field.events, field.required, field.queue) == (offer, True, True, 1)
+    assert [f.key for f in gift.fields[1:]] == [f.key for f in host.fields if f.kind != "pokemon"]
+    args = build(gift, {offer: {"file": "/tmp/gift.bin", "event": "9028-808-0"}}, {}, Settings(), stamp="fixed")
+    assert args.count(offer) == 1 and args[args.index(offer) + 1] == "/tmp/gift.bin"
+    assert missing_offer(gift, {}) == "Choose the Mystery Gift Pokemon first."

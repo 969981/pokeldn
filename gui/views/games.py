@@ -17,6 +17,7 @@ from pokeldn import plugins
 from pokeldn.app.catalog import Field, Game, Tool
 from pokeldn.app.introspect import flags_of
 from pokeldn.app.paths import SESSION
+from gui.views.event_gifts import EventGiftPicker
 from gui.views.pokemon import NAME_LISTS, LinkCodePicker, NamePicker, OfferQueue, PokemonPicker
 from gui.views.raid_event import FOLDED, RaidEventPicker
 from gui.views.raid_partners import RaidPartnersPicker
@@ -41,7 +42,8 @@ def tool_icon(tool: Tool):
         return "plug"
     if tool.key.endswith("-online"):
         return "globe"
-    return TOOL_ICONS.get(tool.name.split(" (")[0], "arrows-horizontal")
+    # "Trade (Host)" and "Mystery Gift - Simulated" take their kind's icon.
+    return TOOL_ICONS.get(tool.name.split(" (")[0].split(" - ")[0], "arrows-horizontal")
 
 
 def tool_role(tool: Tool) -> str:
@@ -392,6 +394,10 @@ class GamesView:
                     self.sprites[field.key].show(int(v) if str(v).isdigit() else 0, self.shiny())
             return NamePicker(self.app, self.game.key, field.kind, value, picked,
                               optional=not field.default).control
+        if field.kind == "pokemon" and field.events:
+            first = command.offers(value)
+            return EventGiftPicker(self.app, self.game.key, first[0] if first else {},
+                                   lambda v: self.set_value(field, v)).control
         if field.kind == "pokemon" and field.queue > 1:
             return self.offer_queue(field).control
         if field.kind == "pokemon":

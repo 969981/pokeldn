@@ -12,7 +12,8 @@ the console's offline Link Trade search, `bin/sv_join.py` joins the console's ne
 A retail Violet joins a host advertising Scarlet's local communication id, and its own search
 network advertises Scarlet's id too (`0x0100a3d008c5c000`, application version 21, scene 4).
 
-Both launchers also run a local Tera Raid in either role ([Tera Raids](sv_raid.md)).
+Both launchers also run a local Tera Raid in either role ([Tera Raids](sv_raid.md)), and the host
+trades an official gift Pokemon to a console ([Simulated Mystery Gifts](gift_simulated.md)).
 
 Addresses are offsets into the decompressed `main` of update 4.0.0 (`tools/switch/nso_read.py`):
 text `0x0..0x343fc90`, rodata from `0x3440000`, data from `0x4383000`.

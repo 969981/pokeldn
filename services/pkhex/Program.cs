@@ -48,6 +48,8 @@ while (Console.ReadLine() is { } line)
             "gift" => Gift(Convert.FromBase64String((string)request["data"]!)),
             "events" => Events(),
             "event" => Event(game, request),
+            "gift_events" => GiftEventList(game, request),
+            "gift_event" => GiftEvent(game, request),
             "sav_read" => SaveRead(game, request),
             "sav_box" => SaveBox(game, request),
             "sav_edit" => SaveEdit(game, request),
@@ -447,11 +449,24 @@ LegalityAnalysis Refresh(PKM pk, Wish? wish = null)
     {
         AwakeningUtil.SetSuggestedAwakenedValues(pb7, pb7);
         wish?.ApplyEffort(pk);
-        pb7.ResetCalculatedValues();
+        ResetSizes(pb7);
     }
     pk.ResetPartyStats();
     pk.RefreshChecksum();
     return new LegalityAnalysis(pk);
+}
+
+// Let's Go computes a Pokemon's height and weight, except on HOME's Meltan (card 9028), which keeps the ones HOME
+// gave it [MiscVerifierPB7].
+static void ResetSizes(PB7 pb7)
+{
+    pb7.ResetCalculatedValues();
+    if (pb7.Species == (ushort)PKHeX.Core.Species.Meltan
+        && new LegalityAnalysis(pb7).EncounterMatch is WB7 { IsHeightWeightFixed: true } card)
+    {
+        pb7.HeightAbsolute = card.GetHomeHeightAbsolute();
+        pb7.WeightAbsolute = card.GetHomeWeightAbsolute();
+    }
 }
 
 void Refit(PKM pk, Wish wish)
@@ -570,7 +585,7 @@ JsonObject Check(Game game, byte[] data, JsonObject request)
     if (pk is PB7 pb7)
     {
         pb7.ResetPartyStats();
-        pb7.ResetCalculatedValues();
+        ResetSizes(pb7);
     }
     var reply = Describe(game, pk, new LegalityAnalysis(pk));
     if (note is not null)
@@ -990,6 +1005,195 @@ JsonObject Event(Game game, JsonObject request)
         ["summary"] = $"{strings.specieslist[pk.Species]} Lv{pk.CurrentLevel} {strings.natures[(int)pk.Nature]}, "
                       + $"OT {pk.OriginalTrainerName} {pk.TID16:00000}, PID {pk.PID:X8}",
     };
+}
+
+// A game's Mystery Gift Pokemon in PKHeX's own event database, eggs left out, each under a key that names it
+// across PKHeX updates: its card, species, form and Tera type (one Mew card holds eighteen, one per type). Two
+// records under one key differ only in what the Pokemon does not carry, such as the card's revision.
+IEnumerable<(string Key, MysteryGift Gift)> GiftEvents(Game game)
+{
+    MysteryGift[] table = game.Context switch
+    {
+        EntityContext.Gen7b => EncounterEvent.MGDB_G7GG,
+        EntityContext.Gen8 => EncounterEvent.MGDB_G8,
+        EntityContext.Gen8a => EncounterEvent.MGDB_G8A,
+        EntityContext.Gen8b => EncounterEvent.MGDB_G8B,
+        EntityContext.Gen9 => EncounterEvent.MGDB_G9,
+        EntityContext.Gen9a => EncounterEvent.MGDB_G9A,
+        _ => throw new ArgumentException("PKHeX has no Mystery Gift Pokemon for this game."),
+    };
+    var seen = new HashSet<string>();
+    foreach (var gift in table.Where(g => g.IsEntity && !g.IsEgg))
+    {
+        var key = $"{gift.CardID:0000}-{gift.Species}-{gift.Form}"
+                  + (gift is ITeraTypeReadOnly tera ? $"-{(int)tera.TeraType}" : "");
+        if (seen.Add(key))
+            yield return (key, gift);
+    }
+}
+
+// The day a card's distribution opened, where PKHeX holds it.
+static DateOnly? GiftDate(MysteryGift gift)
+{
+    var window = default(DistributionWindow);
+    var known = gift switch
+    {
+        WB7 g => EncounterServerDate.GetDistributionWindow(g, out window),
+        WC8 g => EncounterServerDate.GetDistributionWindow(g, out window),
+        WA8 g => EncounterServerDate.GetDistributionWindow(g, out window),
+        WB8 g => EncounterServerDate.GetDistributionWindow(g, out window),
+        WC9 g => EncounterServerDate.GetDistributionWindow(g, out window),
+        WA9 g => EncounterServerDate.GetDistributionWindow(g, out window),
+        _ => false,
+    };
+    return known && window.Start.Year > 1 ? window.Start : null;
+}
+
+// The game's Mystery Gift Pokemon, newest first, each made as the request's trainer would receive it: its OT and
+// language when the card fixes them, what it holds, knows and is caught in, whether the copy is legal, and its HOME
+// tracker under the app's setting (MendGift).
+JsonObject GiftEventList(Game game, JsonObject request)
+{
+    var (versions, trainer) = Trainer(game, request);
+    var items = strings.GetItemStrings(game.Context, versions[0]);
+    var list = new List<(DateOnly? Date, JsonObject Entry)>();
+    foreach (var (key, gift) in GiftEvents(game))
+    {
+        var (pk, la) = MakeGift(gift, versions, trainer);
+        var moves = new JsonArray();
+        foreach (var move in pk.Moves)
+            if (move != 0)
+                moves.Add(strings.movelist[move]);
+        var date = GiftDate(gift);
+        list.Add((date, new JsonObject
+        {
+            ["key"] = key, ["card_id"] = gift.CardID, ["title"] = gift.CardTitle.Trim(),
+            ["date"] = date?.ToString("yyyy-MM-dd") ?? "",
+            ["species"] = strings.specieslist[gift.Species], ["species_id"] = gift.Species,
+            ["form"] = gift.Form == 0 ? "" : ShowdownParsing.GetStringFromForm(gift.Form, strings, gift.Species, game.Context),
+            ["level"] = pk.CurrentLevel,
+            // Never, may be (rolled like a wild one) or always.
+            ["shiny"] = gift.Shiny switch
+            {
+                Shiny.Never => "never", Shiny.Random => "random",
+                Shiny.FixedValue => pk.IsShiny ? "always" : "never", _ => "always",
+            },
+            ["tera"] = gift is ITeraTypeReadOnly tera ? strings.types[(int)tera.TeraType] : "",
+            ["ot"] = YourOT(pk, trainer) ? "" : pk.OriginalTrainerName,
+            ["language"] = pk.Language == trainer.Language ? 0 : pk.Language,
+            ["ball"] = strings.balllist[pk.Ball],
+            ["held_item"] = pk.HeldItem == 0 ? "" : items[pk.HeldItem],
+            ["moves"] = moves,
+            ["legal"] = Accepted(la),
+            ["home_tracker"] = TrackerState(pk, la),
+        }));
+    }
+    return new JsonObject
+    {
+        ["events"] = new JsonArray(list.OrderByDescending(e => e.Date ?? DateOnly.MinValue)
+            .Select(e => (JsonNode?)e.Entry).ToArray()),
+    };
+}
+
+// A fresh copy of one of the game's Mystery Gift Pokemon, as the request's trainer receives it, for a trade to pass
+// on (docs/gift_simulated.md), legal under the app's HOME tracker setting (MendGift).
+JsonObject GiftEvent(Game game, JsonObject request)
+{
+    var key = (string)request["key"]!;
+    var gift = GiftEvents(game).FirstOrDefault(e => e.Key == key).Gift
+               ?? throw new ArgumentException($"PKHeX has no Mystery Gift Pokemon {key} for this game.");
+    var (versions, trainer) = Trainer(game, request);
+    var (pk, la) = MakeGift(gift, versions, trainer);
+    if (!Accepted(la))
+        throw new InvalidDataException($"PKHeX made an illegal {strings.specieslist[gift.Species]} from card "
+                                       + $"{gift.CardID}: {Plain(la).Replace("\n", " ")}");
+    var reply = Describe(game, pk, la);
+    reply["key"] = key;
+    reply["title"] = gift.CardTitle.Trim();
+    return reply;
+}
+
+// A card that gives the receiver's own trainer, not one of its own: the copy carries the trainer it was made for.
+static bool YourOT(PKM pk, ITrainerInfo trainer) => pk.OriginalTrainerName == trainer.OT && pk.TID16 == trainer.TID16;
+
+// A gift made on each of the game's versions in turn (some cards come to one version only), rolled again where its
+// own check refuses a PID. The first legal copy is kept.
+(PKM Pokemon, LegalityAnalysis Legality) MakeGift(MysteryGift gift, GameVersion[] versions, ITrainerInfo trainer)
+{
+    PKM? pk = null;
+    LegalityAnalysis? la = null;
+    foreach (var version in versions)
+    {
+        var receiver = new SimpleTrainerInfo(version)
+        {
+            OT = trainer.OT, TID16 = trainer.TID16, SID16 = trainer.SID16,
+            Language = trainer.Language, Gender = trainer.Gender,
+        };
+        for (var roll = 0; roll < 8; roll++)
+        {
+            pk = gift.ConvertToPKM(receiver, EncounterCriteria.Unrestricted);
+            SetHomeIVs(gift, pk);
+            la = MendGift(pk, receiver);
+            if (Accepted(la))
+                return (pk, la);
+        }
+    }
+    return (pk!, la!);
+}
+
+// HOME's Legends Z-A starters (cards 9031-9033) have three perfect IVs and 20 in the rest, as PKHeX's check expects
+// [WA9.HomeBaseIV]; PKHeX 26.8.26 makes them with one perfect IV and the rest at 0.
+static void SetHomeIVs(MysteryGift gift, PKM pk)
+{
+    if (gift is not WA9 { IsHOMEGift: true, HomeBaseIV: > 0, FlawlessIVCount: > 0 } card ||
+        pk.FlawlessIVCount == card.FlawlessIVCount)
+        return;
+    var ivs = Enumerable.Repeat(card.HomeBaseIV, 6).ToArray();
+    foreach (var i in Enumerable.Range(0, 6).OrderBy(_ => Random.Shared.Next()).Take(card.FlawlessIVCount))
+        ivs[i] = 31;
+    pk.SetIVs(ivs);
+}
+
+// What the save that received a gift sets on it: a handler for one that arrives already handled, and the HOME
+// tracker of a gift HOME gave, which the "empty" setting leaves unset and "made" fills (docs/gui.md, The bank).
+// Unlike Mend, the event's own moves stay.
+LegalityAnalysis MendGift(PKM pk, ITrainerInfo trainer)
+{
+    var la = Refresh(pk);
+    if (!Accepted(la) && !OnlyTrackerMissing(la) && pk.HandlingTrainerName.Length == 0)
+    {
+        pk.CurrentHandler = 1;
+        pk.HandlingTrainerName = "POKELDN";
+        pk.HandlingTrainerGender = (byte)(1 - trainer.Gender);
+        if (pk is IHandlerLanguage language)
+            language.HandlingTrainerLanguage = (byte)trainer.Language;
+        la = Refresh(pk);
+    }
+    if (!Accepted(la) && OnlyTrackerMissing(la) && pk is IHomeTrack { HasTracker: false } home)
+    {
+        home.Tracker = MadeTracker((ulong)Random.Shared.NextInt64(1, long.MaxValue));
+        HomeSeen(pk);
+        la = Refresh(pk);
+    }
+    return la;
+}
+
+// What HOME changes on a Pokemon it has seen, which PKHeX's check expects of one with a tracker: a Gen 9 Pokemon's
+// height copied from its scale (Legends Z-A's weight too), a Legends Z-A Alpha marked [HomeQuirks,
+// MiscScaleVerifier, MiscVerifierPA9].
+static void HomeSeen(PKM pk)
+{
+    switch (pk)
+    {
+        case PK9 sv:
+            sv.HeightScalar = sv.Scale;
+            break;
+        case PA9 za:
+            za.HeightScalar = za.WeightScalar = za.Scale;
+            if (za.IsAlpha)
+                za.RibbonMarkAlpha = true;
+            break;
+    }
 }
 
 // The items a Sword/Shield gift may give or a gifted Pokemon may hold; the GUI lists the same set.

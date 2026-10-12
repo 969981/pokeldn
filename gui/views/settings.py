@@ -115,8 +115,9 @@ class SettingsView:
                    "problems someone asked you to report."),
             t.card("HOME tracker", t.dropdown([("empty", "Leave it empty (default)"), ("made", "Make one")],
                                               s.home_tracker, on_select=lambda e: self._home_tracker(e.control.value)),
-                   "What the bank and the Pokemon builder put in the HOME tracker of a Pokemon moved to another "
-                   "game or received from a Mystery Gift. PKHeX flags an empty one; HOME refuses a made one."),
+                   "What the bank, the Pokemon builder and Mystery Gift - Simulated put in the HOME tracker of a "
+                   "Pokemon moved to another game or received from a Mystery Gift. PKHeX flags an empty one; HOME "
+                   "refuses a made one."),
             t.card("Pokemon sprites", ft.Row([t.button("Clear the cache", self._clear_sprites, "refresh",
                                                         filled=False), self.sprite_state], spacing=10),
                    "Pixel-art sprites come from PokeAPI and are kept on this computer after the first download. "

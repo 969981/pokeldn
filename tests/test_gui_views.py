@@ -1139,6 +1139,155 @@ def test_the_raid_card_lists_its_scripted_actions_after_its_rewards(monkeypatch)
     assert texts()[-1] == "No scripted actions."
 
 
+GIFT_EVENTS = [
+    {"key": "0503-964-0-10", "card_id": 503, "title": "Gavin’s Palafin Gift", "date": "2023-04-13",
+     "species": "Palafin", "species_id": 964, "form": "", "level": 50, "shiny": "never", "tera": "Water",
+     "ot": "Gavin", "language": 0, "ball": "Cherish Ball", "held_item": "Mystic Water",
+     "moves": ["Jet Punch", "Wave Crash", "Haze", "Protect"], "legal": True, "home_tracker": ""},
+    {"key": "9021-906-0-11", "card_id": 9021, "title": "Pokémon HOME Gift", "date": "2023-05-30",
+     "species": "Sprigatito", "species_id": 906, "form": "", "level": 5, "shiny": "never", "tera": "Grass",
+     "ot": "", "language": 0, "ball": "Poke Ball", "held_item": "", "moves": ["Scratch", "Tail Whip", "Leafage"],
+     "legal": True, "home_tracker": "empty"},
+    {"key": "1501-25-0-2", "card_id": 1501, "title": "Flying Tera Type Pikachu Gift", "date": "2022-11-17",
+     "species": "Pikachu", "species_id": 25, "form": "", "level": 5, "shiny": "never", "tera": "Flying",
+     "ot": "", "language": 0, "ball": "Poke Ball", "held_item": "", "moves": ["Fly", "Tail Whip"],
+     "legal": True, "home_tracker": ""},
+]
+GIFT_COPIES = {
+    "0503-964-0-10": {"file": "palafin.pk9", "title": "Gavin’s Palafin Gift", "species": "Palafin",
+                      "species_id": 964, "form": "", "level": 50, "shiny": False, "nature": "Adamant",
+                      "ability": "Zero to Hero", "ball": "Cherish Ball", "held_item": "Mystic Water", "legal": True,
+                      "home_tracker": "", "encounter": "Event Gift (WC9)",
+                      "moves": ["Jet Punch", "Wave Crash", "Haze", "Protect"], "ot": "Gavin"},
+    "9021-906-0-11": {"file": "sprigatito.pk9", "title": "Pokémon HOME Gift", "species": "Sprigatito",
+                      "species_id": 906, "form": "", "level": 5, "shiny": False, "nature": "Jolly",
+                      "ability": "Protean", "ball": "Poke Ball", "held_item": "", "legal": True,
+                      "home_tracker": "empty", "encounter": "Event Gift (WC9)",
+                      "moves": ["Scratch", "Tail Whip", "Leafage"], "ot": "ASH"},
+}
+GIFT_TRAINER = {"ot": "ASH", "tid": 1, "sid": 2, "language": 2, "gender": 0}
+
+
+def gift_picker(monkeypatch):
+    """The Mystery Gift - Simulated card the Games view draws, its events listed, over a stubbed builder:
+    -> (card, a call that runs the worker it started last, the builder's requests, the values it saved)."""
+    import flet as ft
+    from gui.views import event_gifts
+    from pokeldn import pokemon as builder
+    from pokeldn.app.catalog import GAMES
+    monkeypatch.setattr(ft.BaseControl, "update", lambda self: None)
+
+    async def scrolled(self, **_):
+        return None
+    monkeypatch.setattr(ft.Column, "scroll_to", scrolled)
+    work = []   # the picker's own workers; the sprites' (they take args) never run
+    monkeypatch.setattr(event_gifts.threading, "Thread", lambda target, daemon, args=None: SimpleNamespace(
+        start=lambda: args is None and work.append(target)))
+    asked = []
+    monkeypatch.setattr(builder.SERVICE, "gift_events",
+                        lambda game, who: asked.append((game, who)) or GIFT_EVENTS)
+    monkeypatch.setattr(builder.SERVICE, "gift_event", lambda game, key, who:
+                        asked.append((game, key, who)) or GIFT_COPIES[key])
+    app = SimpleNamespace(settings=SimpleNamespace(sprites=False, trainer=lambda game: GIFT_TRAINER),
+                          page=None, ui=lambda fn: fn())
+    saved = []
+    tool = next(t for game in GAMES for t in game.tools if t.key == "sv-gift-host")
+    view = SimpleNamespace(app=app, game=SimpleNamespace(key="sv"), values={},
+                           set_value=lambda field, value: saved.append(value))
+    control = GamesView.input(view, tool.fields[0])
+    work.pop()()
+    return control, lambda: work.pop()(), asked, saved
+
+
+def gift_texts(control) -> list[str]:
+    import flet as ft
+    return [c.value for c in raid_controls(control) if isinstance(c, ft.Text)]
+
+
+def gift_tile(control, species: str):
+    """The tile of the gift whose Pokemon line starts with `species`."""
+    import flet as ft
+    return next(c for c in raid_controls(control) if isinstance(c, ft.Container) and c.on_click
+                and any(x.value.startswith(f"{species} ·") for x in raid_controls(c) if isinstance(x, ft.Text)))
+
+
+def gift_search(control, typed: str) -> None:
+    import asyncio
+    import flet as ft
+    search = next(c for c in raid_controls(control) if isinstance(c, ft.TextField))
+    search.value = typed
+    asyncio.run(search.on_change(None))
+
+
+def test_the_mystery_gift_card_finds_an_event_pokemon_and_offers_a_fresh_copy(monkeypatch):
+    """Mystery Gift - Simulated: the game's event Pokemon as tiles, found by anything a tile shows; the
+    one picked is made for the app's trainer and becomes the trade's offer."""
+    control, run, asked, saved = gift_picker(monkeypatch)
+    assert asked == [("sv", GIFT_TRAINER)]
+    assert {"Gavin’s Palafin Gift", "Palafin · Lv 50 · Tera Water · Mystic Water",
+            "OT Gavin · 13 Apr 2023", "Your OT · 17 Nov 2022",
+            "3 of 3 event Pokemon, newest first"} <= set(gift_texts(control))
+    for typed, count in (("gavin haze", 1), ("tera flying 2022", 1), ("shiny", 0)):
+        gift_search(control, typed)
+        assert f"{count} of 3 event Pokemon, newest first" in gift_texts(control)
+    gift_search(control, "")
+    gift_tile(control, "Palafin").on_click(None)
+    run()
+    assert asked[-1] == ("sv", "0503-964-0-10", GIFT_TRAINER)
+    assert {k: saved[-1][k] for k in ("file", "event", "species", "legal")} == {
+        "file": "palafin.pk9", "event": "0503-964-0-10", "species": 964, "legal": True}
+    assert {"Legal", "Jet Punch, Wave Crash, Haze, Protect · OT Gavin"} <= set(gift_texts(control))
+    assert gift_tile(control, "Palafin").border.top.color == t.BLUE
+
+
+@pytest.mark.parametrize("mode", ["empty", "made"])
+def test_a_home_gift_shows_what_the_home_tracker_setting_gave_it(monkeypatch, tmp_path, mode):
+    """A gift HOME gave has the tracker the HOME tracker setting gives it (docs/gui.md, The HOME tracker
+    setting): its tile is outlined in amber with the setting's warning, which the chosen copy shows too, and a
+    trade takes it as any legal Pokemon."""
+    import flet as ft
+    from pokeldn import pokemon as builder
+    from pokeldn.app import command
+    from pokeldn.app.catalog import GAMES
+    monkeypatch.setitem(GIFT_EVENTS[1], "home_tracker", mode)
+    monkeypatch.setitem(GIFT_COPIES["9021-906-0-11"], "home_tracker", mode)
+    warning = builder.HOME_TRACKER_WARNINGS[mode]
+    control, run, asked, saved = gift_picker(monkeypatch)
+    sprigatito, palafin = gift_tile(control, "Sprigatito"), gift_tile(control, "Palafin")
+    assert (sprigatito.border.top.color, palafin.border.top.color) == (t.AMBER, t.BORDER)
+    assert [x.value for x in raid_controls(sprigatito) if isinstance(x, ft.Text)][-1] == warning
+    assert gift_texts(control).count(warning) == 1
+    gift_search(control, {"empty": "tracker", "made": "deposited"}[mode])     # a word of the warning alone
+    assert "1 of 3 event Pokemon, newest first" in gift_texts(control)
+    gift_tile(control, "Sprigatito").on_click(None)
+    run()
+    assert (saved[-1]["legal"], saved[-1]["home_tracker"]) == (True, mode)
+    assert {"Legal", warning} <= set(gift_texts(control))
+    copy = tmp_path / "sprigatito.pk9"
+    copy.write_bytes(b"")
+    tools = {t.key: t for game in GAMES for t in game.tools}
+    entry = dict(saved[-1], file=str(copy))
+    assert command.missing_offer(tools["sv-gift-host"], {"--trade-offer": entry}) == ""
+    entry["legal"] = False
+    assert command.missing_offer(tools["sv-host"], {"--trade-offer": [entry]}) == "The Pokemon is not legal."
+
+
+def test_a_short_gift_list_shows_whole_and_a_long_one_scrolls(monkeypatch):
+    """Ten gifts or fewer show whole, as Legends Z-A's eight do; more scroll in a box of their own, until a
+    search narrows them."""
+    from gui.views import event_gifts
+
+    def boxed(control) -> bool:
+        return any(isinstance(c, ft.Container) and c.height == event_gifts.BOX for c in raid_controls(control))
+    assert not boxed(gift_picker(monkeypatch)[0])
+    many = [dict(GIFT_EVENTS[2], key=f"1501-25-0-{n}") for n in range(event_gifts.FIT)]
+    monkeypatch.setitem(globals(), "GIFT_EVENTS", GIFT_EVENTS + many)
+    control = gift_picker(monkeypatch)[0]
+    assert boxed(control)
+    gift_search(control, "gavin")
+    assert not boxed(control)
+
+
 def test_find_a_raid_offers_its_default_seeds_from_any_first_seed(monkeypatch):
     """The finder offers its default count of seeds (a hundred million with the compiled scan), and its
     shuffle picks a random first seed."""

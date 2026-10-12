@@ -25,6 +25,7 @@ those protocols and write parts of the code.
 | Trade | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Online trade | ✓ | ○ | ○ | ○ | ○ | ✓ | ○ |
 | Mystery Gift | ✓ | ∅ | ✓ | ∅ | ∅ | ∅ | ∅ |
+| Event Pokemon by trade | ✗ | ✓ | ✗ | ✓ | ✓ | ✓ | ✓ |
 | Link battle | ✓ | ✗ | ✗ | ✗ | ∅ | ✗ | ✗ |
 | Console code and save read/write | ✓ | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 
@@ -33,7 +34,9 @@ those protocols and write parts of the code.
 FRLG: FireRed/LeafGreen · LGPE: Let's Go Pikachu/Eevee · SwSh: Sword/Shield ·
 BDSP: Brilliant Diamond/Shining Pearl · PLA: Legends Arceus · SV: Scarlet/Violet · PLZA: Legends Z-A
 
-Scarlet/Violet also supports [local Tera Raids](docs/sv_raid.md).
+Scarlet/Violet also supports [local Tera Raids](docs/sv_raid.md). Event Pokemon by trade offers an
+official gift Pokemon as a fresh legal copy through the game's trade host
+([Simulated Mystery Gifts](docs/gift_simulated.md)).
 See each game's docs for setup, features and verification coverage.
 
 ## Get started

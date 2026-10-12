@@ -203,6 +203,24 @@ class Service:
         reply = self._ask({"cmd": "event", "game": "frlg", "name": name, "language": language})
         return base64.b64decode(reply["data"]), reply["summary"]
 
+    def gift_events(self, game: str, trainer: dict) -> list[dict]:
+        """The game's Mystery Gift Pokemon in PKHeX's event database, newest first, as `trainer` would receive
+        each: key, card_id, title, date, species, form, level, shiny (never, random or always), tera, the card's
+        own ot and language where it fixes them, ball, held_item, moves, legal, and home_tracker: a gift HOME
+        gave has the tracker the HOME tracker setting gives it (HOME_TRACKER_WARNINGS)."""
+        key = f"{game}:gift_events:{self.home_tracker}:{sorted(trainer.items())}"
+        if key not in self.species_cache:
+            self.species_cache[key] = self._ask({"cmd": "gift_events", "game": game, "trainer": trainer})["events"]
+        return self.species_cache[key]
+
+    def gift_event(self, game: str, key: str, trainer: dict) -> dict:
+        """A fresh copy of one of `gift_events`, as `trainer`'s save receives it, kept like a built Pokemon:
+        check's reply with its key, its card's title and the file. A gift HOME gave has the tracker the HOME
+        tracker setting gives it."""
+        reply = self._ask({"cmd": "gift_event", "game": game, "key": key, "trainer": trainer})
+        reply["file"] = self.keep(game, reply)
+        return reply
+
     def save_read(self, data: bytes) -> dict:
         """A FireRed/LeafGreen .sav: trainer, party (each with PKHeX's legality verdict) and box contents."""
         return self._ask({"cmd": "sav_read", "game": "frlg", "data": base64.b64encode(data).decode()})

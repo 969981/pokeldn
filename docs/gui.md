@@ -202,6 +202,18 @@ game. The warning shows on a built or loaded offer, a bank entry, a bank destina
 An unset tracker can change other verdicts: PKHeX 26.8.26 refuses the Hidden Ability of the Black 2 Patrat
 in `tests/data/bank_import.json` moved into Legends Z-A without a tracker, and accepts it with one.
 
+Mystery Gift - Simulated follows the setting too ([Mystery Gift - Simulated](#mystery-gift---simulated)).
+Among the gifts, PKHeX wants a tracker only on one HOME gave: under `empty` its copy has none, under
+`made` a made one (`MendGift` in `services/pkhex/Program.cs`). A made tracker comes with what HOME
+changes on a Pokemon it has seen, which PKHeX's check expects of one with a tracker
+([HomeQuirks](https://github.com/kwsch/PKHeX/blob/master/PKHeX.Core/Legality/Restrictions/HomeQuirks.cs)):
+a Scarlet/Violet Pokemon's height is its scale, a Legends Z-A one's height and weight, and a Legends Z-A
+Alpha carries the Alpha mark (`HomeSeen`). PKHeX.Core 26.8.26 holds 16 such gifts for Sword/Shield, 4
+each for Brilliant Diamond/Shining Pearl, Legends Arceus and Legends Z-A, and 5 for Scarlet/Violet, and
+every gift passes the check under either setting. The Sword/Shield Mystery Gift sends its 16 as the
+community's cards (Official events, Pokemon HOME): the console makes the Pokemon, so it never carries a
+tracker, whatever the setting ([Pokemon HOME](swsh_gift.md#pokemon-home)).
+
 ### Importing
 
 The Bank page's plus button, or a file dropped on its grid, imports a Pokemon file or a game save. The
@@ -429,6 +441,26 @@ A click seats a trainer, numbered by the slot it takes; a second click leaves th
 Each pick passes `--raid-partner`, in order. Raising Consoles joining drops the last pick, and a
 pick the chosen stage lacks (Dylan or Luke below four stars) is dropped. Folding only hides the card
 (`GamesView.show_raid_partners`): the choice still goes to the raid, and the header names it.
+
+## Mystery Gift - Simulated
+
+The Mystery Gift - Simulated tool's card, on Let's Go, Brilliant Diamond/Shining Pearl, Legends
+Arceus, Scarlet/Violet and Legends Z-A, lists the game's gift Pokemon from PKHeX's event table
+([Simulated Mystery Gifts](gift_simulated.md#the-gifts); `gui/views/event_gifts.py`). Tiles go two
+to a row, newest first: a sprite, the card's title, then the Pokemon, whose it is and when it was
+given; a hover shows the moves. Twenty-four show at a time, Show more adds as many, and a search
+narrows them by any word a tile shows, the ball, a move or the card number. Ten tiles or fewer show
+whole; more scroll in a box of their own (`event_gifts.FIT`).
+
+A click makes a fresh copy for the trainer in Settings and keeps it with the built Pokemon. It becomes
+the trade's offer, shown under the list with its legality, moves and OT. A copy keeps the trainer it
+was made with: pick the gift again after changing the trainer.
+
+A gift HOME gave, on any game but Let's Go, has the tracker the HOME tracker setting gives it
+([The HOME tracker setting](#the-home-tracker-setting)). Its tile is outlined in amber and, as the
+chosen copy, shows the setting's warning: "PKHeX flags the missing HOME tracker" or "Can't be
+deposited in HOME". The trade offers it like any other
+([The copy a trade offers](gift_simulated.md#the-copy-a-trade-offers)).
 
 ## Pop-ups
 
