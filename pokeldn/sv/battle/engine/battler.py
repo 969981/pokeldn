@@ -8,11 +8,11 @@ def get_50(m, b, *_): return m.u32(b + 0x50)
 
 
 @lifted(0x2D3BC58)
-def get_5a(m, b, *_): return m.u16(b + 0x5A)
+def hp(m, b, *_): return m.u16(b + 0x5A)
 
 
 @lifted(0x2D3BC60)
-def get_58(m, b, *_): return m.u16(b + 0x58)
+def max_hp(m, b, *_): return m.u16(b + 0x58)
 
 
 @lifted(0x2D3BB04)
@@ -301,3 +301,56 @@ def set_last_490(m, b, p2, p3, p4, p5, p6, *_):
 
 @lifted(0x2D3EB00)
 def has_6f2(m, b, *_): return int(m.u16(b + 0x6F2) != 0)
+
+
+MOVE_SLOT, MOVE_SLOTS_COUNT = 0x16, 0x482      # four 0x16-byte move slots from +0x430; count at +0x482
+
+
+@lifted(0x2D3C720)
+def move_byte_437(m, b, i, *_):
+    i &= 0xFF
+    return m.u8(b + 0x437 + MOVE_SLOT * i) if i < m.u8(b + MOVE_SLOTS_COUNT) else 0
+
+
+@lifted(0x2D3C748)
+def set_move_byte_437(m, b, i, v, *_):
+    i &= 0xFF
+    if i < m.u8(b + MOVE_SLOTS_COUNT):
+        s = b + MOVE_SLOT * i
+        m.put(s + 0x437, 1, v)
+        if m.u8(s + 0x43A):
+            m.put(s + 0x42D, 1, v)
+
+
+HP, MAX_HP = 0x5A, 0x58
+
+
+@lifted(0x2D3D7AC)
+def lose_hp(m, b, n, *_):
+    """Take n HP; at or past zero, vf 0x2f0 (0x2d3d7ec) sets HP to 0."""
+    n &= 0xFFFF
+    if n < m.u16(b + HP):
+        m.put(b + HP, 2, m.u16(b + HP) - n)
+        return
+    m.vcall_void(b, 0x2F0, n)
+
+
+@lifted(0x2D3D7D0)
+def gain_hp(m, b, n, *_):
+    m.put(b + HP, 2, min(m.u16(b + MAX_HP), (m.u16(b + HP) + n) & 0xFFFF))
+
+
+@lifted(0x2D3D7EC)
+def zero_hp(m, b, *_):
+    m.put(b + HP, 2, 0)
+
+
+@lifted(0x2D3CB5C)
+def mark_move_used(m, b, i, *_):
+    s = b + MOVE_SLOT * (i & 0xFF)
+    if m.u8(s + 0x436) == 0:
+        m.put(s + 0x436, 1, 1)
+        m.put(b + 0x485, 1, m.u8(b + 0x485) + 1)
+    m.put(s + 0x435, 1, 1)
+    if m.u8(s + 0x43A):
+        m.put(s + 0x42B, 2, 0x101)

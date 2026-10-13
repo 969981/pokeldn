@@ -241,3 +241,20 @@ def same_side(m, o, a, b, *_):
         return 0
     setup = m.u64(o + 8)
     return int(_side_class_of(m, setup, a) == _side_class_of(m, setup, b))
+
+
+@lifted(0x113F5B8)
+def raid_flag_38(m, o, *_):
+    return m.u8(m.u64(o + 0x38) + 0x499) >> 2 & 1
+
+
+@lifted(0x114E528)
+def setup_entry(m, o, i, *_):
+    i &= 0xFF
+    return m.u64(m.u64(m.u64(o + 0x10) + 0x210) + 8 + 8 * i) if i < 5 else 0
+
+
+@lifted(0x1399E68)
+def setup_4a4(m, o, *_):
+    setup = m.u64(o + 0x38)
+    return 0 if m.u32(setup + 0x30) else m.u8(setup + 0x4A4)
