@@ -1,6 +1,6 @@
 """Pointer and field getters of the server's objects, named by offset until their meaning is known."""
 
-from pokeldn.sv.battle.machine import lifted
+from pokeldn.sv.battle.machine import UnliftedCall, lifted
 
 
 def _q(off):

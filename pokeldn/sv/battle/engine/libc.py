@@ -33,7 +33,11 @@ def get_current_thread(m, *_):
 
 @lifted(0x343E5E0)
 def signal_light_event(m, event, *_):
-    """The server signals events that are already signalled: nothing changes."""
-    if m.u8(event) != 1:
-        raise UnliftedCall("signal of an unsignalled event")
+    """nn::os::SignalLightEvent with no waiter: the state word (+4) goes from 0 to 2 and stays 2; state 1
+    (a thread waiting) needs the kernel."""
+    state = m.u32(event + 4)
+    if state == 0:
+        m.put(event + 4, 4, 2)
+    elif state != 2:
+        raise UnliftedCall("light event with a waiter")
     return event
