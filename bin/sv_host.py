@@ -939,8 +939,10 @@ def main(argv=None):
                                hex=pkt.hex(), t=now)
                         print(f"[sv] -> {ip}: Session type 7, the console hosts next")
                     elif action[0] == "migrating":
+                        # Every seated console, ranked as last sent: a rank is who hosts next.
                         pkt = build_net_probe(
-                            keys, transport.our_ip, transport.our_mac, [transport.our_ip, ip],
+                            keys, transport.our_ip, transport.our_mac,
+                            list(net_tables.get(ip, (transport.our_ip, ip))),
                             net_request_seq.get(ip, net_seqid) + 1, os.urandom(8),
                             args.max_participants if args.net_stations is None else args.net_stations,
                             net_flags=(ESTABLISHING_FLAGS if args.net_flags is None
@@ -995,7 +997,9 @@ def main(argv=None):
                     sv.build_advertise_data(num_players=players, game_data=game_data,
                                             code=args.code))
                 print(f"[sv] advertising {players} player(s)")
-            if not args.no_net_probe:
+            # From the raid's start the seats are fixed: a regular Net 0x11 after the handover's
+            # is-migrating one sent a console back to us as its host and out of the battle's session.
+            if not args.no_net_probe and (raid_group is None or raid_group.started_at is None):
                 if raiding:
                     # A Pia host sends every station the new table on each seat change (`0x69c79c`,
                     # docs/sv_raid.md, Several consoles).

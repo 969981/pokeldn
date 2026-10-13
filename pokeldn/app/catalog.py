@@ -399,7 +399,8 @@ SV = Game("sv", "Scarlet & Violet", "SV", "sv.md", (
                 help=f"Leave empty for the raid's own rewards, or list up to {REWARD_ROWS} items."),
           Field("--raid-players", "Consoles joining", "choice", default="1",
                 choices=(("1", "1 console"), ("2", "2 consoles"), ("3", "3 consoles")),
-                help="The raid waits for this many consoles, each one Ready, before it starts."),
+                help="The raid waits for this many consoles, each one Ready, before it starts. "
+                     "Each console then fights its own copy of the battle."),
           Field(("--raid-partner", "--raid-partner-progress"), "Raid NPC partners", "raidpartners",
                 help="The trainers who fill the slots no console holds: two with one console joining, "
                      "one with two, none with three. A slot you leave unpicked gets a trainer the game "
