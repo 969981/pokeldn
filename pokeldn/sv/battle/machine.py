@@ -25,6 +25,12 @@ def lifted(address):
     return register
 
 
+class Pair(tuple):
+    """A result returned in x0 and x1 (a 16-byte struct)."""
+    def __new__(cls, x0, x1):
+        return super().__new__(cls, (x0 & MASK[8], x1 & MASK[8]))
+
+
 class UnliftedCall(Exception):
     """The engine reached a game function it has no version of: the round is refused."""
 

@@ -91,3 +91,36 @@ def client_of_position(m, o, pos, out_slot, out_index, *_):
     m.put(out_slot, 1, slot)
     count = 0 if slot == 5 else sum(slot_of_position(mode, rule, p) == slot for p in range(pos))
     m.put(out_index, 1, count)
+
+
+# Client slot -> side class per battle mode (0x3c6a450, 0x3c6a455, 0x3c6a45a); slot 5 or past: 2.
+SIDE_CLASS = {0: (0, 1, 2, 2, 2), 1: (0, 1, 0, 1, 2), 2: (0, 1, 0, 0, 0)}
+
+
+@lifted(0x113AA70)
+def positions_on_side(m, mode, rule, side, *_):
+    """How many battle positions belong to clients of side class `side`."""
+    mode &= 0xFFFFFFFF; rule &= 0xFF; side &= 0xFF
+    if mode == 0:
+        return int(side in (0, 1))
+    if mode == 1:
+        n = 0
+        for pos in range(10):
+            client = slot_of_position(1, rule, pos)
+            if client != 5 and SIDE_CLASS[1][client] == side:
+                n += 1
+        return n
+    if mode == 2:
+        return _mode2_side_count(rule, side)
+    return 0
+
+
+def _mode2_side_count(rule, side):
+    a = int(side == 0); b = int(side == 1)
+    if rule == 0:
+        return a | b << 1 | b << 2
+    if rule == 1:
+        return (a << 1 | b) + (b | b << 2)
+    if rule == 2:
+        return (a << 1 | a) + (6 if b else 0)
+    return (a | b << 1 | b << 2) + (a << 1 | a)

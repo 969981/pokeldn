@@ -98,3 +98,47 @@ def data_record(m, table, key, *_):
     """The record for a u16 id (a move, ...) from a data table's map at +0x68, else its default (+0xd0)."""
     node = find(m, table + 0x68, key & 0xFFFF, 2)
     return m.u64(node + 0x18) if node else m.u64(table + 0xD0)
+
+
+@lifted(0x20049F4)
+def value_u64_key(m, owner, key_ptr, *_):
+    """The u32 value for the u64 key at key_ptr in the map at owner+0x40 (the key must be present)."""
+    key = m.u64(key_ptr)
+    table = owner + 0x40
+    n = m.u64(table + 8)
+    if n == 0:
+        return 0
+    b = _bucket(key, n)
+    node = m.u64(m.u64(table) + b * 8)
+    node = m.u64(node) if node else 0
+    while node:
+        h = m.u64(node + 8)
+        if h == key:
+            if m.u64(node + 0x10) == key:
+                return m.u32(node + 0x18)
+        elif _bucket(h, n) != b:
+            return 0
+        node = m.u64(node)
+    return 0
+
+
+NONE_KEY = 0xEE
+
+
+def _key_node(m, table, key):
+    return 0 if key == NONE_KEY else find(m, table, key, 2)
+
+
+@lifted(0x127CDF8)
+def unlink(m, e, *_):
+    """Take an element out of its keyed list: elements live in the map at [e+8]+8, link to their
+    neighbours by u16 key (+0x12 previous, +0x14 next; 0xee none) and carry their own key at +0x10."""
+    table = m.u64(e + 8) + 8
+    prev = _key_node(m, table, m.u16(e + 0x12))
+    nxt = _key_node(m, table, m.u16(e + 0x14))
+    if prev:
+        m.put(prev + 0x18 + 0x14, 2, m.u16(nxt + 0x28) if nxt else NONE_KEY)
+    if nxt:
+        prev = _key_node(m, table, m.u16(e + 0x12))
+        m.put(nxt + 0x18 + 0x12, 2, m.u16(prev + 0x28) if prev else NONE_KEY)
+    m.put(e + 0x12, 4, 0xEE00EE)

@@ -297,3 +297,7 @@ def set_last_490(m, b, p2, p3, p4, p5, p6, *_):
         m.put(b + 0x48C, 2, m.u16(b + 0x48C) + 1)
     else:
         m.put(b + 0x48C, 2, p4 & 1)
+
+
+@lifted(0x2D3EB00)
+def has_6f2(m, b, *_): return int(m.u16(b + 0x6F2) != 0)

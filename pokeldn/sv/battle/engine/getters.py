@@ -165,3 +165,23 @@ def is_raid_battler(m, o, ident, *_):
     if m.u8(m.u64(m.u64(p + 8) + 0x38) + 0x499) >> 2 & 1:
         _cached_battler_id(m, p)
     return int(m.u32(p + 0x18) == ident & 0xFFFFFFFF)
+
+
+@lifted(0x1142E68)
+def same_side_class(m, o, pokecon, b, *_):
+    """Whether battler b's client and the client at o+0x95 fall in the same class of the mode's table."""
+    setup = m.u64(m.u64(pokecon + 0x290) + 8)
+    p = m.call(m.main + 0x10E2DD4, m.u64(setup + 0x50), m.vcall(b, 0x98))
+    v = 0 if p == 0 or m.s(p, 4) > 4 else m.u32(p)
+    table = _MODE_TABLES.get(m.u32(setup + 0x36C))
+    if table is None:
+        return 1
+    a = table[v & 0xFF] if v & 0xFF < 5 else 2
+    c = m.u8(o + 0x95)
+    return int(a == (table[c] if c < 5 else 2))
+
+
+@lifted(0x114D824)
+def entry_7c(m, o, i, *_):
+    i &= 0xFF
+    return m.u16(o + 0x7C + 2 * i) if i < 5 else 0

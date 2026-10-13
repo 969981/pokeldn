@@ -62,3 +62,21 @@ def reserve_group(m, que, placeholder, group, size, *_):
     m.put(que + DATA + ((at + 2) & 0xFFFFFFFF), 1, (size - 3) & 0xFF)
     m.put(que + LENGTH, 4, at + (size & 0xFF))
     return start
+
+
+@lifted(0x1579624)
+def write_at(m, que, pos, command, *varargs):
+    """Write one command at an earlier reserved position `pos` (0xffff: nowhere), leaving the queue's
+    length as it was; group 0xcf is never written this way."""
+    command &= 0xFFFF; pos &= 0xFFFF
+    fmt = format_of(command)
+    args = [v & 0xFFFFFFFF for v in varargs[:argument_count(fmt)]]
+    args += [0] * (len(codec.FORMATS[fmt]) - len(args))
+    if pos == 0xFFFF:
+        return
+    m.put(que + 0x6C, 4, m.u16(que + 0x6C))
+    if command != 0xCF:
+        saved = m.u16(que + LENGTH)
+        m.put(que + LENGTH, 4, pos)
+        append(m, que, command, fmt, args)
+        m.put(que + LENGTH, 4, saved)
