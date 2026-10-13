@@ -539,16 +539,16 @@ def labels(dialog):
 def test_a_pop_up_is_a_dialog_naming_its_program_with_the_callers_buttons(monkeypatch):
     page, manager, run, answers = popup_page(monkeypatch)
     run.take({"op": "open", "id": "ask", "n": 1, "kind": "confirm", "title": "Trade the shiny?", "text": "A Gholdengo.",
-              "agree": "Trade", "disagree": "Skip", "stack": True, "urgent": False, "tone": "warning"})
+              "agree": "Trade", "disagree": "Skip", "tone": "warning"})
     run.take({"op": "open", "id": "note", "n": 2, "kind": "ack", "title": "Saved", "text": "", "label": "Close",
-              "stack": True, "urgent": False, "tone": "error"})
+              "tone": "error"})
     ask, note = page._dialogs.controls
     assert ask.open and note.open and not ask.modal
     header = ask.title.controls[1].controls
     assert [c.value for c in header] == ["Trade host", "Trade the shiny?"]
     assert ask.content.content.value == "A Gholdengo." and ask.content.content.selectable
     assert ask.title.controls[0].src == "icons/warning-diamond.svg" and ask.title.controls[0].color == t.AMBER
-    assert labels(ask) == ["Dismiss", "Skip", "Trade"] and labels(note) == ["Close"] and note.content is None
+    assert labels(ask) == ["Skip", "Trade"] and labels(note) == ["Close"] and note.content is None
     note.actions[0].on_click(None)
     assert not note.open and answers == [{"id": "note", "n": 2, "answer": "ack"}]
     note.on_dismiss(None)                       # Flet reports the close the manager made: nothing more
@@ -559,7 +559,7 @@ def test_a_pop_up_is_a_dialog_naming_its_program_with_the_callers_buttons(monkey
 def test_a_pop_up_opened_again_under_its_id_redraws_its_dialog(monkeypatch):
     page, manager, run, answers = popup_page(monkeypatch)
     message = {"op": "open", "id": "gift", "n": 1, "kind": "ack", "title": "The gift carries the trainer from "
-               "Settings", "text": "The save names no one.", "stack": True, "urgent": False, "tone": "warning"}
+               "Settings", "text": "The save names no one.", "tone": "warning"}
     run.take(message)
     run.take({**message, "n": 2, "text": "PKHeX refused the card."})
     (dialog,) = page._dialogs.controls
@@ -572,8 +572,8 @@ def test_an_app_dialog_closes_itself_never_a_pop_up_above_it(monkeypatch):
     page, manager, run, answers = popup_page(monkeypatch)
     welcome = t.dialog(title=t.text("Welcome"))
     page.show_dialog(welcome)
-    run.take({"op": "open", "id": "note", "n": 1, "kind": "ack", "title": "Note", "text": "", "stack": True,
-              "urgent": False, "tone": "info"})
+    run.take({"op": "open", "id": "note", "n": 1, "kind": "ack", "title": "Note", "text": "",
+              "tone": "info"})
     note = page._dialogs.controls[1]
     assert page.pop_dialog() is welcome and not welcome.open and note.open
     assert page.pop_dialog() is None and note.open and answers == []

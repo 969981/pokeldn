@@ -333,7 +333,7 @@ or a downgrade.
 | `Tool`, `Field`, `Game` | the app's catalog types, imported from `pokeldn.plugins` |
 | `pokeldn.ldn.show_done()` | prints the line that ticks a trade off |
 | `pokeldn.popup.acknowledge(title, text="", *, id, label="OK", on_ack, tone)` | a pop-up with one button; -> its id (1.2, [Pop-ups](gui.md#pop-ups)) |
-| `pokeldn.popup.confirm(title, text, agree, disagree, *, id, on_agree, on_disagree, on_dismiss, tone)` | a pop-up with the agree and disagree buttons the caller names, and Dismiss; -> its id (1.2) |
+| `pokeldn.popup.confirm(title, text, agree, disagree, *, id, on_agree, on_disagree, on_dismiss, tone)` | a pop-up with the agree and disagree buttons the caller names, Esc or a click outside dismissing it; -> its id (1.2) |
 | `pokeldn.popup.cancel(id)`, `available()`, `set_dispatcher(dispatch)` | closes a pop-up, dropping its callbacks; whether an app shows them; where callbacks run (1.2) |
 
 This table is the supported surface. Anything else a plugin imports from pokeldn can change in any

@@ -478,7 +478,7 @@ whatever page shows (`pokeldn.popup`, in the plugin API since 1.2). There are tw
 | kind | buttons | callback |
 |---|---|---|
 | `acknowledge(title, text)` | one, `label` (OK) | `on_ack`: the button, Esc or a click outside |
-| `confirm(title, text, agree, disagree)` | agree and disagree, the caller's labels, and Dismiss | `on_agree`, `on_disagree` or `on_dismiss`; Esc and a click outside are Dismiss |
+| `confirm(title, text, agree, disagree)` | agree and disagree, the caller's labels | `on_agree`, `on_disagree` or `on_dismiss`, which Esc and a click outside fire |
 
 Opening one never waits: it returns the pop-up's id, and the answer comes later as its callback. A
 callback runs on the thread that reads the app's answers, unless `set_dispatcher(dispatch)` hands it to the program's own loop; in the app, it runs on a worker

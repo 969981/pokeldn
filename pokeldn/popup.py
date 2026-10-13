@@ -1,5 +1,5 @@
 """Pop-ups a program shows in the app (docs/gui.md, Pop-ups): an acknowledgement, with one button, or a
-confirmation, with agree, disagree and Dismiss.
+confirmation, with agree and disagree, Esc or a click outside dismissing it.
 
 Opening one never waits: `acknowledge` and `confirm` return the pop-up's id at once, and the player's answer comes
 later as a callback, which may fire at any time. Callbacks run on the pop-up thread (the one reading the app's
@@ -49,8 +49,8 @@ def acknowledge(title: str, text: str = "", *, id: str | None = None, label: str
 
 def confirm(title: str, text: str, agree: str, disagree: str, *, id: str | None = None, on_agree=None,
             on_disagree=None, on_dismiss=None, tone: str = "info") -> str:
-    """Asks with three buttons: `agree` and `disagree`, the caller's labels, and Dismiss; -> the pop-up's id. Each
-    fires its callback, if given; Esc and a click outside are Dismiss.
+    """Asks with two buttons, `agree` and `disagree`, the caller's labels; -> the pop-up's id. Each fires its
+    callback, if given; Esc and a click outside fire `on_dismiss`.
 
     `id` names the pop-up; one opened under the id of a pop-up still open replaces it in place, its callbacks
     dropped. `tone` (info, warning or error) picks its icon. A program holding LIMIT pop-ups unanswered gets RuntimeError."""
@@ -155,7 +155,7 @@ def _send(message):
         sys.stdout.write(line(message) + "\n")      # one write: a line another thread prints cannot split it
         sys.stdout.flush()
     elif message["op"] == "open":
-        buttons = (f"{message['agree']} / {message['disagree']} / Dismiss" if message["kind"] == "confirm"
+        buttons = (f"{message['agree']} / {message['disagree']}" if message["kind"] == "confirm"
                    else message["label"])
         print(f"[pop-up] {message['title']}: {message['text']} [{buttons}]", flush=True)
 

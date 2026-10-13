@@ -108,7 +108,7 @@ def test_with_no_app_a_pop_up_is_a_log_line_and_never_answered(capsys):
     assert not popup.available()
     popup.confirm("Trade?", "A shiny.", "Trade", "Skip")
     popup.acknowledge("Saved", "In the session folder.")
-    assert capsys.readouterr().out == ("[pop-up] Trade?: A shiny. [Trade / Skip / Dismiss]\n"
+    assert capsys.readouterr().out == ("[pop-up] Trade?: A shiny. [Trade / Skip]\n"
                                        "[pop-up] Saved: In the session folder. [OK]\n")
     with pytest.raises(ValueError):
         popup.acknowledge("Loud", tone="alarm")

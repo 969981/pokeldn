@@ -65,7 +65,7 @@ class Dialogs:
 
         def press(answer):
             return lambda e: entry.press(answer)
+        # Esc and a click outside answer Dismiss; a button for it would sit beside disagree.
         dialog.actions = ([t.button(entry.label, press("ack"))] if entry.kind == "ack" else
-                          [t.link_button("Dismiss", press("dismiss")),
-                           t.secondary_button(entry.disagree, press("disagree")),
+                          [t.secondary_button(entry.disagree, press("disagree")),
                            t.button(entry.agree, press("agree"))])
