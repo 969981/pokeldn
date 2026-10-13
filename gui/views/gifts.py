@@ -503,6 +503,11 @@ class GiftBuilder:
                             spacing=10),
                      ft.Row([self.text_field("Nickname", "nickname", limit=12),
                              self.text_field("OT", "ot", limit=12)], spacing=10),
+                     t.labeled_control("Nature", t.dropdown(
+                         [("random", "Random")] + [(str(n), name) for n, name in enumerate(pokemon.NATURES)],
+                         "random" if self.state.get("nature") is None else str(self.state["nature"]),
+                         on_select=lambda e: self.edit("nature", None if e.control.value == "random"
+                                                       else int(e.control.value)))),
                      self.switch_row("Shiny", "shiny", "The Pokemon arrives shiny."),
                      self.switch_row("Gigantamax", "gigantamax", "It can Gigantamax: a species with a "
                                      "Gigantamax form, or one that evolves into one.")]

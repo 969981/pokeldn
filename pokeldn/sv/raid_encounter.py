@@ -11,6 +11,8 @@ from functools import cache
 import json
 import os
 
+from pokeldn.pokemon import NATURES
+
 DATA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "raid_base.json")
 SPECIES = os.path.join(os.path.dirname(DATA), "species.json")
 MASK64 = (1 << 64) - 1
@@ -60,9 +62,6 @@ GENDER_CUTOFF = {0x1F: 12, 0x3F: 25, 0x7F: 50, 0xBF: 75, 0xE1: 89}
 TERA_NONE = 19          # a PK9's Tera override when none applies
 TERA_TYPES = ("Normal", "Fighting", "Flying", "Poison", "Ground", "Rock", "Bug", "Ghost", "Steel",
               "Fire", "Water", "Grass", "Electric", "Psychic", "Ice", "Dragon", "Dark", "Fairy")
-NATURES = ("Hardy", "Lonely", "Brave", "Adamant", "Naughty", "Bold", "Docile", "Relaxed", "Impish",
-           "Lax", "Timid", "Hasty", "Serious", "Jolly", "Naive", "Modest", "Mild", "Quiet", "Bashful",
-           "Rash", "Calm", "Gentle", "Sassy", "Careful", "Quirky")
 # A raid table's shiny rule (RareType): drawn, never, always.
 SHINY_RANDOM, SHINY_NEVER, SHINY_ALWAYS = 0, 1, 2
 # A raid table's scale rule (SizeType): 0 two draws as height and weight, 1 to 5 one draw in a band

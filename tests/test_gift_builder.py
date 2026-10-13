@@ -129,16 +129,19 @@ def test_form_errors_name_the_field_to_fix():
     state["steps"][0]["level"] = 101
     with pytest.raises(ValueError, match="^Step 1"):
         frlg.compile(state)
+    with pytest.raises(ValueError, match="^The nature"):
+        swsh.compile(swsh.blank(nature=25))
 
 
-def test_the_sword_pikachu_preset_is_the_record_the_launcher_builds(monkeypatch):
+@pytest.mark.parametrize("changes,extra", [({}, []), ({"nature": 10}, ["--set", "nature=10"])])
+def test_the_sword_pikachu_preset_is_the_record_the_launcher_builds(changes, extra, monkeypatch):
     # The timestamp also affects the checksum, so both builds need the same clock.
     monkeypatch.setattr(wc8.time, "time", lambda: 1700000000)
     args = swsh_gift_host.build_parser().parse_args(
         ["--species", "25", "--level", "25", "--move1", "84", "--move2", "45", "--move3", "86",
-         "--move4", "98", "--nickname", "POKELDN", "--ot", "POKELDN"])
+         "--move4", "98", "--nickname", "POKELDN", "--ot", "POKELDN", *extra])
     random.seed(7)
-    built = swsh.record(swsh.PRESET["pikachu"].state)
+    built = swsh.record(dict(swsh.PRESET["pikachu"].state, **changes))
     random.seed(7)
     assert built == swsh_gift_host.build_record(args)
 

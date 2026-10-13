@@ -23,6 +23,9 @@ EXTENSIONS = {"frlg": "pk3", "lgpe": "pb7", "bdsp": "pb8", "swsh": "pk8", "pla":
 ZA_OFFER_HEADER = bytes.fromhex("0101b90300bc815801")   # SelectPokemon, round 0 (docs/za.md)
 RECORD_SIZES = {"frlg": (80, 100), "lgpe": (232, 260), "bdsp": (328, 344),
                 "swsh": (328, 344), "pla": (360, 376), "sv": (328, 344), "za": (328, 344)}
+NATURES = ("Hardy", "Lonely", "Brave", "Adamant", "Naughty", "Bold", "Docile", "Relaxed", "Impish",
+           "Lax", "Timid", "Hasty", "Serious", "Jolly", "Naive", "Modest", "Mild", "Quiet", "Bashful",
+           "Rash", "Calm", "Gentle", "Sassy", "Careful", "Quirky")   # the index every record stores
 CHECK_TIMEOUT = 10.0
 RECORD_LIMIT = 768
 
