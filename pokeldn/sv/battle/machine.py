@@ -1,0 +1,81 @@
+"""The memory and call model the house engine runs on: the server state laid out as Scarlet 4.0.0 lays
+it out, addressed by u64, and the engine's functions keyed by the address of the game function each one
+reproduces (docs/sv_raid.md, The house engine). Every load and store truncates to its width.
+"""
+
+import struct
+
+PAGE = 0x1000
+MASK = {1: 0xFF, 2: 0xFFFF, 4: 0xFFFFFFFF, 8: 0xFFFFFFFFFFFFFFFF}
+FORMAT = {1: "<B", 2: "<H", 4: "<I", 8: "<Q"}
+SIGNED = {1: "<b", 2: "<h", 4: "<i", 8: "<q"}
+
+FUNCTIONS = {}          # game address -> Python function(machine, *args) -> int
+
+
+def lifted(address):
+    """Register a function as the engine's version of the game function at `address`."""
+    def register(fn):
+        if address in FUNCTIONS:
+            raise ValueError(f"0x{address:x} lifted twice")
+        FUNCTIONS[address] = fn
+        fn.address = address
+        return fn
+    return register
+
+
+class UnliftedCall(Exception):
+    """The engine reached a game function it has no version of: the round is refused."""
+
+
+class Machine:
+    """State as pages of bytes, plus the call interface the lifted functions use."""
+
+    def __init__(self, pages=None, main=0):
+        self.pages = pages if pages is not None else {}
+        self.main = main            # where the game's main image sits in this state's address space
+
+    def page(self, address):
+        p = self.pages.get(address & ~(PAGE - 1))
+        if p is None:
+            raise MemoryError(f"no state at 0x{address:x}")
+        return p
+
+    def read(self, address, n):
+        out = bytearray()
+        while n:
+            p = self.page(address); o = address & (PAGE - 1); k = min(n, PAGE - o)
+            out += p[o:o + k]; address += k; n -= k
+        return bytes(out)
+
+    def write(self, address, data):
+        i = 0
+        while i < len(data):
+            p = self.page(address); o = address & (PAGE - 1); k = min(len(data) - i, PAGE - o)
+            p[o:o + k] = data[i:i + k]; address += k; i += k
+
+    def u(self, address, size):
+        return struct.unpack(FORMAT[size], self.read(address, size))[0]
+
+    def s(self, address, size):
+        return struct.unpack(SIGNED[size], self.read(address, size))[0]
+
+    def put(self, address, size, value):
+        self.write(address, struct.pack(FORMAT[size], value & MASK[size]))
+
+    def u8(self, a): return self.u(a, 1)
+    def u16(self, a): return self.u(a, 2)
+    def u32(self, a): return self.u(a, 4)
+    def u64(self, a): return self.u(a, 8)
+
+    def call(self, address, *args):
+        """Call the engine's version of the game function at `address` (an absolute address in this
+        state's address space, as a vtable or a pointer holds it)."""
+        fn = FUNCTIONS.get(address - self.main)
+        if fn is None:
+            raise UnliftedCall(f"main+0x{address - self.main:x}")
+        return fn(self, *args)
+
+    def vcall(self, obj, slot, *args):
+        """A virtual call: the function at byte offset `slot` of `obj`'s vtable."""
+        return self.call(self.u64(self.u64(obj) + slot), obj, *args)
