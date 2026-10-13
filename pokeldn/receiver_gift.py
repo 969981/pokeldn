@@ -252,7 +252,7 @@ class ReceiverGift:
     host's loop never waits; one without goes up as `body` is, and so does one whose save names no one or
     whose card cannot be made for it. A record goes up only after the console has offered in that round, and
     once up it stays: a host's cancel is unmeasured (docs/online.md).
-    `read(body)` gives a Pokemon's owner fields (`owner_reader`). `notify(title, text)` asks for the app's
+    `read(body)` gives a Pokemon's owner fields (`owner_reader`), on a worker thread too. `notify(title, text)` asks for the app's
     pop-up (`pop_up`). The host passes on what the console's session data says of its trainer with `hear`."""
 
     def __init__(self, game, rounds, make, read=None, log=print, shown=None, notify=None):
@@ -270,6 +270,7 @@ class ReceiverGift:
         self.heard = None           # the trainer fields the console's session data gave (`hear`)
         self.made = {}              # round -> the record made for that save
         self.building = None        # the round a build runs for
+        self.reading = False        # a worker reads the console's offer
         self.asked = False          # the console has offered in this round and not backed out
         self.told = ""              # the last pop-up's text: the same again stays closed
         self.current = Offer()
@@ -285,16 +286,39 @@ class ReceiverGift:
                 self.log("[gift] every gift has been traded: nothing more is offered")
                 return
             self.asked = True
-            if self.current.offer is not None:
+            if self.current.offer is not None or self.reading:
                 return
             key, record = self.rounds[self.round]
-            if not key or (self.named_by != "pokemon" and not self._learn(body)):
+            if not key:
                 self._release(record)
+            elif self.named_by == "pokemon":
+                self._use(self.round)
+            else:       # the service reads the Pokemon: never on the host's loop
+                self.reading = True
+                threading.Thread(target=self._read_offer, args=(self.round, body), daemon=True).start()
+
+    def _use(self, n):
+        if n in self.made:
+            self._release(self.made[n])
+        else:
+            self._build(n)
+
+    def _read_offer(self, n, body):
+        try:
+            f = self.read(body)
+            why = unknown(self.game, f)
+        except Exception as exc:    # not a record, or the service is missing
+            f, why = None, f"it does not read as a Pokemon ({exc})"
+        given = self._given(n)
+        with self.lock:
+            self.reading = False
+            if n != self.round:
                 return
-            if self.round in self.made:
-                self._release(self.made[self.round])
-            else:
-                self._build(self.round)
+            named = self._learn(f, why, given)
+            if self.asked and self.current.offer is None:
+                self._use(n) if named else self._release(self.rounds[n][1])
+            elif named and n not in self.made:      # backed out meanwhile: ready for its next offer
+                self._build(n)
 
     def hear(self, fields):
         """The console's session data names its trainer: `fields` as `from_session` takes them, the id pair and
@@ -304,22 +328,17 @@ class ReceiverGift:
                 self.heard = dict(fields)
                 self.log(f"[gift] the session names the console's trainer {fields['ot']}, ID {shown_id(fields)}")
 
-    def _learn(self, body):
-        """Whether the console's save is named, kept for the next rounds: by the Pokemon in `body`, when the save
-        caught it, and otherwise by the session (`hear`). A Pokemon the save caught replaces what the session
-        named. When neither names it, this round's gift goes with the trainer from Settings, and the next round
-        asks again."""
-        try:
-            f = self.read(body)
-            why = unknown(self.game, f)
-        except ValueError as exc:
-            f, why = None, f"it does not read as a Pokemon ({exc})"
+    def _learn(self, f, why, given):
+        """Whether the console's save is named, kept for the next rounds: by the offered Pokemon's owner fields
+        `f`, when the save caught it (`why` empty), and otherwise by the session (`hear`), `given` filling what
+        it lacks. A Pokemon the save caught replaces what the session named. When neither names it, this round's
+        gift goes with the trainer from Settings, and the next round asks again."""
         if not why:
             self._named(own_trainer(self.game, f), "pokemon")
             return True
         if self.named_by:
             return True
-        found = from_session(self.game, self.heard, f, self._given()) if self.heard else None
+        found = from_session(self.game, self.heard, f, given) if self.heard else None
         if found is None:
             self.log(unnamed(f, why))
             self._tell(unnamed_text(why))
@@ -330,11 +349,11 @@ class ReceiverGift:
         self._named(save, "session")
         return True
 
-    def _given(self):
-        """-> the owner fields of this round's record, made under the trainer from Settings; {} unread."""
+    def _given(self, n):
+        """-> the owner fields of round `n`'s record, made under the trainer from Settings; {} unread."""
         try:
-            return self.read(self.rounds[self.round][1])
-        except ValueError:
+            return self.read(self.rounds[n][1])
+        except Exception:
             return {}
 
     def _named(self, save, by):
@@ -351,7 +370,10 @@ class ReceiverGift:
         """The app's pop-up saying the gift carries the trainer from Settings, once for each reason."""
         if text != self.told:
             self.told = text
-            self.notify(FALLBACK_TITLE, text)
+            try:
+                self.notify(FALLBACK_TITLE, text)
+            except RuntimeError as exc:     # pokeldn.popup's LIMIT: the log line says it already
+                self.log(f"[gift] no pop-up: {exc}")
 
     def withdraw(self):
         """The console backed out of the wait."""

@@ -216,6 +216,7 @@ def test_a_pokemon_that_names_no_one_gets_the_gift_under_the_trainer_from_settin
     rounds = [("1501-25-0-2", given(808)), ("1502-25-0-2", given(809)), ("2001-25-0-2", given(151))]
     stage, gift, made, said, send = sv_host(rounds)
     send(trade.KIND_OFFER, TRADED)
+    builds()
     assert our_offers(ticked(stage)) == [given(808)] and made == []
     why = "it came from another trainer, Arven"
     assert said == [receiver_gift.unnamed(receiver_gift.sv_owner(TRADED), why)]
@@ -226,6 +227,7 @@ def test_a_pokemon_that_names_no_one_gets_the_gift_under_the_trainer_from_settin
     builds()
     assert made == []                                # the save is still unknown
     send(trade.KIND_OFFER, TRADED)
+    builds()
     assert our_offers(ticked(stage)) == [given(809)] and len(gift.popups) == 1
     traded(stage, send)
     send(trade.KIND_OFFER, CAUGHT)
@@ -238,9 +240,9 @@ def test_a_pokemon_that_names_no_one_gets_the_gift_under_the_trainer_from_settin
 def test_the_gift_is_made_for_the_save_when_it_offers_a_pokemon_it_caught(builds):
     stage, gift, made, said, send = sv_host([("1501-25-0-2", PREVIEW)])
     assert send(trade.KIND_OFFER, CAUGHT) == []
-    assert ticked(stage) == []                       # nothing goes up while the copy is made
-    assert said == [f"[gift] making the gift for Nemona, ID {receiver_gift.shown_id(SAVE)}, Scarlet"]
+    assert ticked(stage) == [] and said == []        # nothing goes up while it is read and the copy made
     builds()
+    assert said[0] == f"[gift] making the gift for Nemona, ID {receiver_gift.shown_id(SAVE)}, Scarlet"
     assert made == [("1501-25-0-2", SAVE, "SL")] and said[-1] == "[gift] made for Nemona: the made copy"
     assert our_offers(ticked(stage)) == [MADE] and ticked(stage) == []
     assert confirms(ticked(stage)) == []             # ours waits for the console's confirm
@@ -304,6 +306,17 @@ def test_a_copy_not_made_for_the_save_says_where_it_stopped(monkeypatch, stage, 
     with pytest.raises(ValueError) as caught:
         receiver_gift.maker("lgpe", load)("1502-809-0", SAVE, "GE")
     assert str(caught.value) == why
+
+
+def test_the_host_loop_never_waits_on_the_service(builds):
+    """Brilliant Diamond's, Let's Go's, Legends Arceus's and Legends Z-A's hosts call `offer` on their frame-timed
+    loop; the service reads the console's Pokemon and this round's record on a worker, never there."""
+    read, made = [], []
+    gift = gift_for("bdsp", [("9015-387-0", b"given")], made, read=lambda body: read.append(body) or owner(48))
+    gift.offer(b"caught")
+    assert read == [] and gift.theirs().offer is None
+    builds()
+    assert read == [b"caught", b"given"] and gift.theirs().offer == MADE and made == [("9015-387-0", SAVE, "BD")]
 
 
 def test_a_card_with_its_own_trainer_goes_up_as_made_once_the_console_offers(builds):
@@ -478,6 +491,7 @@ def test_a_pokemon_that_names_no_one_has_the_gift_made_for_the_save_the_session_
 def test_the_session_heard_after_a_round_names_the_save_for_the_next(builds):
     stage, gift, made, said, send = sv_host([("1501-25-0-2", given(808)), ("1502-25-0-2", given(809))])
     send(trade.KIND_OFFER, TRADED)
+    builds()
     assert our_offers(ticked(stage)) == [given(808)] and len(gift.popups) == 1
     gift.hear(HEARD)
     traded(stage, send)

@@ -162,9 +162,8 @@ trades with ([In a launcher](online.md#in-a-launcher)).
 The trainer comes from the Pokemon the console offers, when its save caught it: still with its
 original trainer (handler 0), from one of the game's versions, and not an egg. That record gives the
 OT name, the 16-bit TID and SID, the OT gender, the language and the version
-(`receiver_gift.own_trainer`). The service reads it from the offer as the host receives it
-(`Service.owner`). Scarlet/Violet's is read in Python (`receiver_gift.sv_owner`): that host serves
-several consoles in one loop, which never waits on the service.
+(`receiver_gift.own_trainer`). The service reads it from the offer on a worker thread, never on the
+host's loop (`Service.owner`); Scarlet/Violet's is read in Python (`receiver_gift.sv_owner`).
 
 | game | Your OT cards | the console's offer | versions |
 |---|---|---|---|
