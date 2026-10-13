@@ -201,6 +201,17 @@ def test_the_simulated_mystery_gift_trades_its_event_pokemon_as_the_trade_host_d
     assert missing_offer(gift, {}) == "Choose the Mystery Gift Pokemon first."
 
 
+def test_the_simulated_mystery_gift_queue_passes_six_cards_and_offers_in_the_same_order():
+    gift = next(t for game in GAMES for t in game.tools if t.key == "sv-gift-host")
+    chosen = [{"file": f"/tmp/gift-{n}.pk9", "event": f"event-{n}", "your_ot": True}
+              for n in range(1, 8)]
+    args = build(gift, {"--trade-offer": chosen}, {}, Settings(), stamp="fixed")
+    offers = [args[n + 1] for n, arg in enumerate(args[:-1]) if arg == "--trade-offer"]
+    events = [args[n + 1] for n, arg in enumerate(args[:-1]) if arg == "--gift-event"]
+    assert offers == [f"/tmp/gift-{n}.pk9" for n in range(1, 7)]
+    assert events == [f"event-{n}" for n in range(1, 7)]
+
+
 def test_a_gift_with_its_own_trainer_holds_made_for_the_receiving_player_off():
     """A card that fixes its trainer goes as made: Made for the receiving player is held off and says why. A
     gift that names its receiver, or one picked before the app kept which it is, leaves it as set."""
@@ -223,14 +234,14 @@ def test_a_gift_with_its_own_trainer_holds_made_for_the_receiving_player_off():
                                          ("za", "--trade-offer")])
 def test_the_other_switch_games_simulate_their_mystery_gifts_through_their_trade_host(game, offer):
     """Let's Go, Brilliant Diamond/Shining Pearl, Legends Arceus and Legends Z-A take no Mystery Gift over local
-    wireless: their Mystery Gift - Simulated is the trade host offering one event Pokemon, after their trades,
+    wireless: their Mystery Gift - Simulated is the trade host offering up to six event Pokemon in order,
     made for the receiving player as Scarlet/Violet's (docs/gift_simulated.md)."""
     tools = next(g for g in GAMES if g.key == game).tools
     gift, host = next(t for t in tools if t.key == f"{game}-gift-host"), tools[0]
     assert host.key == f"{game}-host" and tools[-1] is gift and gift.name == "Mystery Gift - Simulated"
     assert (gift.script, gift.fixed, gift.doc) == (host.script, host.fixed, "gift_simulated.md")
     field, receiver = gift.fields[:2]
-    assert (field.key, field.events, field.required, field.queue) == (offer, True, True, 1)
+    assert (field.key, field.events, field.required, field.queue) == (offer, True, True, 6)
     assert (receiver.key, receiver.kind, receiver.default) == ("--for-receiver", "switch", True)
     assert [f.key for f in gift.fields[2:]] == [f.key for f in host.fields if f.kind != "pokemon"]
     args = build(gift, {offer: {"file": "/tmp/gift.bin", "event": "9028-808-0"}}, {}, Settings(), stamp="fixed")
