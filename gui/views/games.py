@@ -350,8 +350,8 @@ class GamesView:
                 out.append(t.card(item.label, note, trailing=control))
             elif kind == "field" and item.kind == "switch":
                 out.append(t.card(item.label, None, item.help, trailing=self.input(item)))
-            elif kind == "field" and item.kind == "pokemon" and item.queue > 1:
-                # "Add a trade" sits under the card, outside it.
+            elif kind == "field" and item.kind == "pokemon" and item.queue > 1 and not item.events:
+                # "Add a trade" sits under the card, outside it. Event gifts use their own shared browser queue.
                 queue = self.offer_queue(item)
                 queue.card = t.card(item.label, queue.control, self.description(item))
                 out.append(queue.card)
@@ -433,9 +433,8 @@ class GamesView:
             return NamePicker(self.app, self.game.key, field.kind, value, picked,
                               optional=not field.default).control
         if field.kind == "pokemon" and field.events:
-            first = command.offers(value)
-            return EventGiftPicker(self.app, self.game.key, first[0] if first else {},
-                                   lambda v: self.set_value(field, v)).control
+            return EventGiftPicker(self.app, self.game.key, value, lambda v: self.set_value(field, v),
+                                   limit=field.queue).control
         if field.kind == "pokemon" and field.queue > 1:
             return self.offer_queue(field).control
         if field.kind == "pokemon":
