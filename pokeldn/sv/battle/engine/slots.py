@@ -59,3 +59,35 @@ def positions_of_slot(m, mode, rule, slot, *_):
     """How many of the battle's ten positions belong to client slot `slot` (5 = none)."""
     slot &= 0xFFFFFFFF
     return _slot_counts(mode & 0xFFFFFFFF, rule & 0xFF)[slot] if slot <= 5 else 0
+
+
+# Position -> client slot (5 = none), positions 0..10 (0x3c6a348 .. 0x3c6a424, 0x44ee590).
+_POS_MODE0 = (0, 1) + (5,) * 9
+_POS_MODE1 = {1: (0, 1, 2, 3), 2: (0, 1, 2, 3), 3: (0, 1, 2, 3), 4: (0, 1, 0, 3), 5: (0, 1, 2)}
+_POS_MODE1_OTHER = (0, 1, 0, 1)
+_POS_MODE2 = (0, 2, 3, 4, 1, 1, 1, 1, 1, 1, 5)
+
+
+def slot_of_position(mode, rule, pos):
+    if pos > 10:
+        return 5
+    if mode == 0:
+        return _POS_MODE0[pos]
+    if mode == 1:
+        row = _POS_MODE1.get(rule, _POS_MODE1_OTHER)
+        return row[pos] if pos < len(row) else 5
+    if mode == 2:
+        empty = {0: (1, 2, 3), 1: (2, 3), 2: (3,)}.get(rule, ())
+        return 5 if pos in empty else _POS_MODE2[pos]
+    return 5
+
+
+@lifted(0x1153868)
+def client_of_position(m, o, pos, out_slot, out_index, *_):
+    """The client slot holding battle position `pos`, and how many earlier positions it holds."""
+    setup = m.u64(o + 8)
+    mode, rule, pos = m.u32(setup + 0x36C), m.u8(setup + 0x370), pos & 0xFF
+    slot = slot_of_position(mode, rule, pos)
+    m.put(out_slot, 1, slot)
+    count = 0 if slot == 5 else sum(slot_of_position(mode, rule, p) == slot for p in range(pos))
+    m.put(out_index, 1, count)

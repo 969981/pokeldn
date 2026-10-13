@@ -74,7 +74,20 @@ class Machine:
         fn = FUNCTIONS.get(address - self.main)
         if fn is None:
             raise UnliftedCall(f"main+0x{address - self.main:x}")
-        return fn(self, *args)
+        r = fn(self, *args)
+        if r is None:
+            raise TypeError(f"main+0x{address - self.main:x} returned nothing to a caller that reads it")
+        return r
+
+    def call_void(self, address, *args):
+        """Call a function whose result the caller ignores."""
+        fn = FUNCTIONS.get(address - self.main)
+        if fn is None:
+            raise UnliftedCall(f"main+0x{address - self.main:x}")
+        fn(self, *args)
+
+    def vcall_void(self, obj, slot, *args):
+        self.call_void(self.u64(self.u64(obj) + slot), obj, *args)
 
     def vcall(self, obj, slot, *args):
         """A virtual call: the function at byte offset `slot` of `obj`'s vtable."""

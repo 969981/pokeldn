@@ -68,7 +68,7 @@ def clear_6f8(m, b, *_):
 
 @lifted(0x2D3EE2C)
 def call_520_3(m, b, *_):
-    m.vcall(b, 0x520, 3)
+    return m.vcall(b, 0x520, 3)
 
 
 # Stat stages -6..+6 as (numerator, denominator), 0x3c69d73.
@@ -172,3 +172,63 @@ def step_condition(m, b, cond, out_pair, out_ended, *_):
             if out_ended:
                 m.put(out_ended, 1, 1)
     return 1
+
+
+@lifted(0x2D3BB6C)
+def get_47e(m, b, *_): return m.u16(b + 0x47E)
+
+
+@lifted(0x2D3B7D8)
+def set_487(m, b, v, *_): m.put(b + 0x487, 1, v)
+
+
+@lifted(0x2D3D18C)
+def major_status(m, b, *_):
+    """The first condition of 3, 5, 4, 6, 0x1a the battler holds (vf 0x4d0), else 0x20."""
+    for cond in (3, 5, 4, 6, 0x1A):
+        if m.vcall(b, 0x4D0, cond) & 1:
+            return cond
+    return 0x20
+
+
+NO_TYPE = 0x12
+
+
+@lifted(0x2D1F300)
+def types(m, b, out1, out2, *_):
+    """The battler's two types: its Tera type twice once terastallized (+0x714, type +0x715; 0x63
+    and 0x12 read the base types, any other value past 0x11 gives none), else +0x40a and +0x40b, where
+    condition 0x19 turns a Flying (2) type into none and condition 0x17 keeps a lone none."""
+    tera = m.u8(b + 0x715)
+    if m.u8(b + 0x714) and tera != 0x12 and tera != 0x63:
+        t = tera if tera < 0x12 else NO_TYPE
+        m.put(out1, 1, t); m.put(out2, 1, t)
+        return
+    roost = m.vcall(b, 0x220, 0x19) & 1
+    t1, t2 = m.u8(b + 0x40A), m.u8(b + 0x40B)
+    if roost:
+        t1 = NO_TYPE if t1 == 2 else t1
+        t2 = NO_TYPE if t2 == 2 else t2
+    m.put(out1, 1, t1); m.put(out2, 1, t2)
+    if m.vcall(b, 0x4D0, 0x17) & 1 == 0:
+        if t1 == NO_TYPE:
+            if t2 == NO_TYPE:
+                t2 = 0
+                m.put(out2, 1, 0)
+            m.put(out1, 1, t2)
+            return
+    elif t1 == NO_TYPE:
+        if t2 != NO_TYPE:
+            m.put(out1, 1, t2)
+        return
+    if t2 == NO_TYPE:
+        m.put(out2, 1, t1)
+
+
+@lifted(0x2D3BFE4)
+def can_act(m, b, *_):
+    if m.vcall(m.u64(b + 0x48), 0x158, 2) & 1:
+        return 0
+    if m.vcall(b, 0x200) & 1 or m.vcall(b, 0x7B8) & 1:
+        return 0
+    return (m.vcall(b, 0x520, 7) ^ 1) & 1

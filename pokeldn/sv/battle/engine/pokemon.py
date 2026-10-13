@@ -85,3 +85,19 @@ def access(m, acc, read):
 def is_egg(m, acc, *_):
     """Bit 30 of the IV word (block B +0x34)."""
     return access(m, acc, lambda core: m.u32(block(m, core, 1) + 0x34) >> 30 & 1)
+
+
+@lifted(0x287A948)
+def egg_test(m, o, mode, *_):
+    """mode 0: an egg and not a bad record; 1: a bad record; 2: either."""
+    acc = m.u64(m.u64(o + 0x48) + 0x70)
+    egg = is_egg(m, acc)
+    bad = m.u16(m.u64(acc + 0x10) + 4) >> 2 & 1
+    mode &= 0xFF
+    if mode == 0:
+        return egg & (bad ^ 1)
+    if mode == 1:
+        return bad
+    if mode == 2:
+        return egg | bad
+    return 0

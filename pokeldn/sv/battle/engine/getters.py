@@ -49,3 +49,37 @@ def static_46d3f08(m, *_):
     if m.u8(m.u64(m.main + 0x46D3F00)) & 1 == 0:
         raise UnliftedCall("static 0x46d3f08 not built")
     return m.u64(m.main + 0x46D3F08)
+
+
+@lifted(0x1149340)
+def get_48(m, o, *_): return m.u64(o + 0x48)
+
+
+@lifted(0x1146154)
+def clear_0x24(m, p, *_):
+    m.put(p + 0x20, 4, 0); m.put(p + 0x10, 8, 0); m.put(p + 0x18, 8, 0); m.put(p, 8, 0); m.put(p + 8, 8, 0)
+
+
+@lifted(0x10E2DA8)
+def rule_value(m, o, key, *_):
+    """The u32 value for `key` in the setup's map ([[o+8]+0x50]); 0 when absent or above 4."""
+    p = m.call(m.main + 0x10E2DD4, m.u64(m.u64(o + 8) + 0x50), key)
+    if p == 0:
+        return 0
+    v = m.s(p, 4)
+    return v & 0xFFFFFFFF if v < 5 else 0
+
+
+# Battle mode 0, 1, 2 -> five-entry tables (0x3c6a450, 0x3c6a455, 0x3c6a45a).
+_MODE_TABLES = {0: (0, 1, 2, 2, 2), 1: (0, 1, 0, 1, 2), 2: (0, 1, 0, 0, 0)}
+
+
+@lifted(0x144E790)
+def mode_class(m, o, key, *_):
+    setup = m.u64(o + 8)
+    mode = m.u32(setup + 0x36C)
+    p = m.call(m.main + 0x10E2DD4, m.u64(setup + 0x50), key)
+    v = 0 if p == 0 or m.s(p, 4) > 4 else m.u32(p) & 0xFF
+    if mode not in _MODE_TABLES or v > 4:
+        return 2
+    return _MODE_TABLES[mode][v]

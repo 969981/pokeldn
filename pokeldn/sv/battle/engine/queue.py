@@ -42,3 +42,23 @@ def push(m, que, command, *varargs):
     args = [v & 0xFFFFFFFF for v in varargs[:argument_count(fmt)]]
     args += [0] * (len(codec.FORMATS[fmt]) - len(args))
     append(m, que, command, fmt, args)
+
+
+@lifted(0x10AFCB8)
+def reserve_group(m, que, placeholder, group, size, *_):
+    """Reserve a group at the queue's end and return where it starts. With no size, the room is a
+    zero-argument `placeholder` command; its first three bytes become the group id and length."""
+    start = m.u32(que + LENGTH)
+    size &= 0xFFFFFFFF
+    if size & 0xFF:
+        size = (size + 3) & 0xFFFFFFFF
+    else:
+        fmt = format_of(placeholder & 0xFFFF)
+        append(m, que, placeholder, fmt, [0] * len(codec.FORMATS[fmt]))
+        size = (m.u32(que + LENGTH) - start) & 0xFFFFFFFF
+    at = start & 0xFFFF
+    m.put(que + DATA + at, 1, (group >> 8) & 0xFF)
+    m.put(que + DATA + ((at + 1) & 0xFFFFFFFF), 1, group & 0xFF)
+    m.put(que + DATA + ((at + 2) & 0xFFFFFFFF), 1, (size - 3) & 0xFF)
+    m.put(que + LENGTH, 4, at + (size & 0xFF))
+    return start
