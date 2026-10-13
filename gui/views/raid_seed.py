@@ -119,7 +119,41 @@ def reward_chips(names: dict[int, str] | None, rewards) -> ft.Control:
         for item, quantity in totals.items()], spacing=6, run_spacing=6, wrap=True)
 
 
-def boss_card(app, seed, stars, boss, context, *, compact=False, rewards=None, on_use=None):
+ACTION_ICONS = {"shield": "shield", "move": "sword", "boss_reset": "refresh", "player_reset": "refresh",
+                "drain": "diamond-gem"}
+# The scripted actions stand as wide as the sprite and IV tiles above them, so a full-screen card keeps
+# each trigger beside its action; a narrower card narrows them.
+ACTIONS_WIDTH = 520
+
+
+def action_label(action, boss: str, moves: dict[int, str]) -> str:
+    return {"shield": "Shield activation", "boss_reset": f"{boss} stats & status reset",
+            "player_reset": "Players' stats & status reset", "drain": "Tera Orb charge drained",
+            "move": f"{boss} uses {moves.get(action.move, f'Move {action.move}')}"}[action.kind]
+
+
+def action_rows(moves: dict[int, str] | None, boss: str, actions) -> ft.Control:
+    """The boss's scripted actions, one row each: what it does, and the HP or time left that brings it."""
+    if moves is None and any(a.kind == "move" for a in actions):
+        return ft.Row([PixelActivity("Naming the moves"), t.text("Naming the moves...", 12, t.MUTED)],
+                      spacing=8)
+    if not actions:
+        return t.text("No scripted actions.", 12, t.MUTED)
+    # Each trigger on a line of its own, so the label wraps before the row overflows a narrow card.
+    return ft.Column([ft.Container(ft.Row([
+        t.pixel_icon(ACTION_ICONS[action.kind], size=12, color=t.MUTED),
+        ft.Container(t.text(action_label(action, boss, moves or {}), 12, t.SOFT), expand=True),
+        ft.Column([ft.Row([t.text(f"{percent}%", 12, t.BLUE, weight=ft.FontWeight.W_700),
+                           t.text("HP remaining" if timing == "hp" else "time remaining", 12, t.MUTED)],
+                          spacing=4, tight=True)
+                   for timing, percent in action.triggers], spacing=2, tight=True,
+                  horizontal_alignment=ft.CrossAxisAlignment.END)],
+        spacing=10, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+        padding=ft.Padding(10, 6, 10, 6), border_radius=8, bgcolor=ft.Colors.with_opacity(0.04, "#FFFFFF"))
+        for action in actions], spacing=4, tight=True, width=ACTIONS_WIDTH)
+
+
+def boss_card(app, seed, stars, boss, context, *, compact=False, rewards=None, actions=None, on_use=None):
     """The boss a seed gives: sprite, stars, level, Tera type, IVs over stats, nature, context."""
     shiny = (boss["trainer_id"] ^ boss["secret_id"] ^ (boss["pid"] >> 16) ^ (boss["pid"] & 0xFFFF)) < 16
     name = raid_encounter.tables()["species_names"][str(boss["species"])]
@@ -157,11 +191,15 @@ def boss_card(app, seed, stars, boss, context, *, compact=False, rewards=None, o
     if on_use:
         row.append(t.secondary_button("Use", lambda _e: on_use(seed, context), "check"))
     body = ft.Row(row, spacing=14 if compact else 18, vertical_alignment=ft.CrossAxisAlignment.START)
-    if rewards is not None:
-        body = ft.Column([body, ft.Container(height=1, bgcolor=t.DIVIDER),
-                          ft.Row([t.pixel_icon("gift", size=12, color=t.MUTED),
-                                  t.text("The raid's own rewards", 12, t.MUTED, weight=ft.FontWeight.W_600)], spacing=6),
-                          rewards], spacing=10, tight=True)
+    parts = [body]
+    for icon, title, control in (("gift", "The raid's own rewards", rewards), ("zap", "Scripted actions", actions)):
+        if control is not None:
+            parts += [ft.Container(height=1, bgcolor=t.DIVIDER),
+                      ft.Row([t.pixel_icon(icon, size=12, color=t.MUTED),
+                              t.text(title, 12, t.MUTED, weight=ft.FontWeight.W_600)], spacing=6),
+                      control]
+    if len(parts) > 1:
+        body = ft.Column(parts, spacing=10, tight=True)
     return ft.Container(body, padding=12 if compact else 16, border_radius=14,
                         border=ft.Border.all(1, ft.Colors.with_opacity(0.08, "#FFFFFF")),
                         gradient=ft.LinearGradient(begin=ft.Alignment.TOP_LEFT, end=ft.Alignment.BOTTOM_RIGHT,
@@ -193,20 +231,25 @@ class RaidSeedPicker:
             except ValueError as exc:       # an event this context cannot spawn
                 self.seed.error, raid = str(exc), None
             if raid is not None:
+                boss = raid_encounter.tables()["species_names"][str(raid.species)]
                 rewards = ft.Container(reward_chips(None, raid.rewards))
+                actions = ft.Container(action_rows(None, boss, raid.actions))
                 self.preview.content = boss_card(self.app, seed, raid.stars, raid.boss,
-                                                 {**context, **raid.context}, rewards=rewards)
-                threading.Thread(target=self._name_rewards, args=(rewards, raid.rewards), daemon=True).start()
+                                                 {**context, **raid.context}, rewards=rewards, actions=actions)
+                threading.Thread(target=self._name, args=(raid, boss, rewards, actions), daemon=True).start()
         if update:
             self.control.update()
 
-    def _name_rewards(self, holder, rewards) -> None:
-        try:
-            names = {n["id"]: n["name"] for n in builder.SERVICE.names("sv", "bag")}
-        except Exception:
-            names = {}
-        holder.content = reward_chips(names, rewards)
-        self.app.ui(lambda: self._update(holder))
+    def _name(self, raid, boss, rewards, actions) -> None:
+        """Names the rewards and the moves of the scripted actions."""
+        def names(kind):
+            try:
+                return {n["id"]: n["name"] for n in builder.SERVICE.names("sv", kind)}
+            except Exception:
+                return {}
+        rewards.content = reward_chips(names("bag"), raid.rewards)
+        actions.content = action_rows(names("moves"), boss, raid.actions)
+        self.app.ui(lambda: (self._update(rewards), self._update(actions)))
 
     @staticmethod
     def _update(control) -> None:

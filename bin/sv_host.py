@@ -21,7 +21,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from pokeldn.host_support import open_output
 from pokeldn import pokemon as pokemon_service
-from pokeldn import config
+from pokeldn import config, receiver_gift
 from pokeldn import sv
 from pokeldn.ldn import pia6, pia_connect, reliable5
 from pokeldn.sv import (pokemon, port2, raid, raid_encounter, raid_event, raid_partners, reference,
@@ -72,6 +72,14 @@ RTT_REQUEST = 0
 RTT_RESPONSE = 1
 # A retail bulk ack: four entries, entry k for station k's stream (docs/sv.md).
 ACK_ENTRIES = 4
+
+
+def identity_chunk(protocol, port, flags, seat):
+    """Whether a console's message may be record 1 of its identity block, which names its save: a compressed
+    record on 0x81 at the port of its station index `seat` (docs/sv.md, The records). Its sequence number is no
+    guide: a console that opened its stream twice sent record 1 at 47."""
+    return (protocol == PROTO_STREAM_BROADCAST_RELIABLE and port == seat
+            and bool(flags & reliable5.FLAG_ZLIB))
 
 
 def _describe(msg):
@@ -341,6 +349,7 @@ def build_parser():
                          "console through the commit and the four exchange steps the way a pair's "
                          "host does (pokeldn.sv.trade). Repeatable: the second and later records "
                          "are offered in the same seat, one per trade, as each trade closes")
+    receiver_gift.add_arguments(ap, "--trade-offer")
     ap.add_argument("--offer-set", action="append", metavar="FIELD=VALUE", default=[],
                     help="a field written into the offered record before it is sealed, by its "
                          "pokeldn.sv.pokemon name: nickname=SHINY, species=906, level=50, "
@@ -491,9 +500,11 @@ def main(argv=None):
     args = ap.parse_args(argv)
     raiding = args.raid_seed is not None
     raid_group = prepare_raid(ap, args) if raiding else None
+    offer_check = {}            # a gift made for the receiving player takes it too (pokeldn.receiver_gift)
     if args.trade_offer:
-        args.trade_offer = [pokemon_service.prepare_file("sv", p, fresh=args.fresh_pid,
-            transform=lambda raw: trade.load_offer(raw, args.offer_set)) for p in args.trade_offer]
+        settings = args.offer_set
+        offer_check = dict(fresh=args.fresh_pid, transform=lambda raw: trade.load_offer(raw, settings))
+        args.trade_offer = [pokemon_service.prepare_file("sv", p, **offer_check) for p in args.trade_offer]
         args.offer_set = []
         args.fresh_pid = False
     reference.fill_identity(args)
@@ -557,6 +568,37 @@ def main(argv=None):
     elif args.offer_set or args.offer_dump:
         ap.error("--offer-set and --offer-dump need --trade-offer")
     trading = bool(trade_offers) or partner is not None
+    receiving = (receiver_gift.setup("sv", args, trade_offers, trade.load_offer, **offer_check)
+                 if partner is None else None)
+
+    identities = {}             # ip -> the trainer its console's identity names, for a gift made for it
+
+    def new_stage(ip):
+        """One console's trade. A gift made for the receiving player is made for each console's own
+        save, so each has its own ReceiverGift."""
+        helper = partner
+        if receiving is not None:
+            helper = receiver_gift.ReceiverGift("sv", *receiving, log=print,
+                                                shown=lambda body: screen.offer("sv", body),
+                                                notify=receiver_gift.pop_up(f"gift-{ip}"))
+            if ip in identities:
+                helper.hear(identities[ip])
+        return trade.TradeStage(trade_offers, confirm_delay=args.confirm_delay, partner=helper)
+
+    def hear_identity(ip, payload):
+        """Record 1 of a console's identity block names its save (docs/sv.md, The records), for the gift made
+        for it (pokeldn.receiver_gift)."""
+        try:
+            fields = reference.identity_trainer(streams.decompress(payload))
+        except zlib.error:          # another record's chunk
+            return
+        except ValueError as exc:
+            print(f"[sv] {ip}: identity record 1 does not read: {exc}")
+            return
+        if fields:
+            identities[ip] = fields
+            if ip in stages:
+                stages[ip].partner.hear(fields)
 
     def report_offer(ip, body, n):
         try:
@@ -1232,6 +1274,7 @@ def main(argv=None):
                             pending_late = {k: v for k, v in pending_late.items() if k[0] != src_ip}
                             sent_once = {s for s in sent_once if s[0] != src_ip}
                             stages.pop(src_ip, None)
+                            identities.pop(src_ip, None)     # the next console at this address is another save
                             pending_trade[:] = [e for e in pending_trade if e[1] != src_ip]
                             net_answered.discard(src_ip)
                             host_const, host_var = j["destination_constant_id"], j["destination_var"]
@@ -1312,8 +1355,7 @@ def main(argv=None):
                                 delay, rest = spec.split(":", 1)
                                 pending_late[(src_ip, index)] = (time.time() + float(delay), rest)
                             if trading and args.offer_at is not None:
-                                stages[src_ip] = trade.TradeStage(
-                                    trade_offers, confirm_delay=args.confirm_delay, partner=partner)
+                                stages[src_ip] = new_stage(src_ip)
                                 for delay, out_port, payload in stages[src_ip].offer_first():
                                     schedule_trade(args.offer_at + delay,
                                                    src_ip, out_port, payload)
@@ -1367,6 +1409,9 @@ def main(argv=None):
                                        seq=rm["sequence_id"], flags=rm["flags"],
                                        payload=rm["payload"].hex(), t=time.time())
                                 stream_high[key] = max(stream_high.get(key, 0), rm["sequence_id"])
+                                if receiving is not None and identity_chunk(
+                                        msg.protocol, msg.port, rm["flags"], seat_of(src_ip)):
+                                    hear_identity(src_ip, rm["payload"])
                                 if (src_ip in raid_hosts and msg.protocol == PROTO_BROADCAST_RELIABLE
                                         and msg.port == 0):
                                     plain = (streams.decompress(rm["payload"])
@@ -1379,9 +1424,7 @@ def main(argv=None):
                                 if (trading and msg.protocol == PROTO_RELIABLE
                                         and src_ip in station_ids):
                                     if src_ip not in stages:
-                                        stages[src_ip] = trade.TradeStage(
-                                            trade_offers, confirm_delay=args.confirm_delay,
-                                            partner=partner)
+                                        stages[src_ip] = new_stage(src_ip)
                                     st = stages[src_ip]
                                     for delay, out_port, payload in st.on_message(
                                             msg.port, rm["payload"]):
@@ -1397,7 +1440,11 @@ def main(argv=None):
                                         if st.done:
                                             print(f"[sv] {src_ip}: TRADE {st.trades} COMPLETE; "
                                                   f"no record left to offer")
-                                        elif partner is None:
+                                        elif st.partner is not None:
+                                            if partner is None:
+                                                print(f"[sv] {src_ip}: TRADE {st.trades} COMPLETE; the "
+                                                      f"next record goes up once the console offers")
+                                        else:
                                             screen.offer("sv", st.offer)
                                             print(f"[sv] {src_ip}: TRADE {st.trades} COMPLETE; "
                                                   f"offering the next record")
@@ -1423,9 +1470,8 @@ def main(argv=None):
                                         pending_late[(src_ip, f"open{index}")] = (
                                             time.time() + float(delay), rest)
                                     if trading and args.offer_after_open is not None:
-                                        stages.setdefault(src_ip, trade.TradeStage(
-                                            trade_offers, confirm_delay=args.confirm_delay,
-                                            partner=partner))
+                                        if src_ip not in stages:
+                                            stages[src_ip] = new_stage(src_ip)
                                         for delay, out_port, payload in stages[src_ip].offer_first():
                                             schedule_trade(args.offer_after_open + delay,
                                                            src_ip, out_port, payload)

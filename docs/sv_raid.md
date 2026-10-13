@@ -308,8 +308,11 @@ Bytes 0x3b5..0x3b7, 0x3d4..0x3d7 and 0x3e4..0x3e7 held stale bytes in both retai
 
 The action profile is the record's `bossDesc` in the game's raid tables, in that order; the
 actions are 0 none, 1 reset the boss's stat changes, 2 reset the players', 3 a move, 4 drain the
-Tera orb, and the timings 0 none, 1 time, 2 HP. HP coefficients run 500, 500, 800, 1200, 2000 and
-2500 for one to six stars.
+Tera orb, and the timings 0 none, 1 time, 2 HP. An action's value is the share of the boss's HP or
+of the time left that brings it, and the shield's first two values are the HP and time shares that
+raise it, either one; Serebii's scripted actions for the seven-star Kingambit of August 2026 read
+the same from its record. HP coefficients run 500, 500, 800, 1200, 2000 and 2500 for one to six
+stars.
 
 A retail point's reward rows are the seed's fixed rows, then its lottery draws, then the host's
 bonus rows: three under subject 4 and one under subject 5. A fixed row's subject is the reward
