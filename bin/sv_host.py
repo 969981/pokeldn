@@ -265,6 +265,8 @@ def build_parser():
     ap.add_argument("--host-player-id", default="00000000000000020000000000000000")
     ap.add_argument("--no-rtt", action="store_true", help="do not answer RTT requests")
     ap.add_argument("--no-ack", action="store_true", help="do not acknowledge reliable streams")
+    ap.add_argument("--print-packets", action="store_true",
+                    help="print every packet in and out; the --capture file keeps them either way")
     ap.add_argument("--ack-period", type=float, default=1.0,
                     help="seconds between the periodic bulk acks on every port the console used")
     ap.add_argument("--clock", action="store_true", help="answer clone clock requests, if any")
@@ -815,7 +817,8 @@ def main(argv=None):
         last_ack[(src_ip, protocol, port)] = time.time()
         record(rec="out", dst=src_ip, kind="reliable ack", protocol=protocol, port=port,
                ack_id=high + 1, hex=pkt.hex(), t=time.time())
-        print(f"[sv] -> {src_ip}: ack 0x{protocol:02x}:{port} ack_id {high + 1} ({why})")
+        if args.print_packets:
+            print(f"[sv] -> {src_ip}: ack 0x{protocol:02x}:{port} ack_id {high + 1} ({why})")
 
     def send_raid(ip, seq, flags, payload, lowest, retry=False):
         """One of the raid's messages on 0x80 port 0, kept until the console acknowledges it."""
@@ -1167,8 +1170,9 @@ def main(argv=None):
                     continue                    # one console's traffic to another
                 for msg in msgs:
                     counts[msg.protocol] = counts.get(msg.protocol, 0) + 1
-                    print(f"[sv] <- {src_ip} {header!r} footer={ids}")
-                    print(f"       {_describe(msg)}  {msg.payload.hex()}")
+                    if args.print_packets:
+                        print(f"[sv] <- {src_ip} {header!r} footer={ids}")
+                        print(f"       {_describe(msg)}  {msg.payload.hex()}")
                     record(rec="msg", src=src_ip, protocol=msg.protocol, port=msg.port,
                            flags=msg.message_flags, src_var=header.src_var, dst_var=header.dst_var,
                            payload=msg.payload.hex(), t=time.time())
@@ -1400,11 +1404,12 @@ def main(argv=None):
                                     and not rm["bitmap"][0] & 1 << HOST_STATION_INDEX):
                                 continue                # addressed to another console only
                             if rm and (rm["flags"] & reliable5.FLAG_APPLICATION_DATA):
-                                print(f"[sv] <- {src_ip}: DATA 0x{msg.protocol:02x}:{msg.port} "
-                                      f"stream {rm['stream_id']} seq {rm['sequence_id']} "
-                                      f"{reliable5.flag_names(rm['flags'])} bits={rm['destination_bits']} "
-                                      f"map={rm['bitmap']} {len(rm['payload'])}B "
-                                      f"{rm['payload'].hex()}")
+                                if args.print_packets:
+                                    print(f"[sv] <- {src_ip}: DATA 0x{msg.protocol:02x}:{msg.port} "
+                                          f"stream {rm['stream_id']} seq {rm['sequence_id']} "
+                                          f"{reliable5.flag_names(rm['flags'])} bits={rm['destination_bits']} "
+                                          f"map={rm['bitmap']} {len(rm['payload'])}B "
+                                          f"{rm['payload'].hex()}")
                                 record(rec="data", src=src_ip, protocol=msg.protocol, port=msg.port,
                                        seq=rm["sequence_id"], flags=rm["flags"],
                                        payload=rm["payload"].hex(), t=time.time())
@@ -1533,11 +1538,12 @@ def main(argv=None):
                                     window = (raid_window if (msg.protocol, msg.port)
                                               == (PROTO_BROADCAST_RELIABLE, 0) else channel_window)
                                     window.acked(key, entry["ack_id"], entry["mask"])
-                                print(f"[sv] <- {src_ip}: ACK 0x{msg.protocol:02x}:{msg.port} "
-                                      f"low={rm['lowest_pending']} bits={rm['destination_bits']} "
-                                      f"map={rm['bitmap']} u0={a['unknown0']} "
-                                      + " ".join(f"[s{e['stream_id']} ack={e['ack_id']} f={e['field_0x50']}]"
-                                                 for e in a["entries"]))
+                                if args.print_packets:
+                                    print(f"[sv] <- {src_ip}: ACK 0x{msg.protocol:02x}:{msg.port} "
+                                          f"low={rm['lowest_pending']} bits={rm['destination_bits']} "
+                                          f"map={rm['bitmap']} u0={a['unknown0']} "
+                                          + " ".join(f"[s{e['stream_id']} ack={e['ack_id']} f={e['field_0x50']}]"
+                                                     for e in a["entries"]))
                                 if (not args.no_ack and src_ip in station_ids
                                         and key not in last_ack):
                                     send_ack(src_ip, msg.protocol, msg.port,

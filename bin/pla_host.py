@@ -142,6 +142,8 @@ def build_bundle(keys, our_ip, messages, dst_var, nonce8, *, protocol, flags=EST
 def build_parser():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--print-packets", action="store_true",
+                    help="print every packet in and out; the --capture file keeps them either way")
     ap.add_argument("--code", default="00000000", help="the eight digits the player types")
     ap.add_argument("--seconds", type=float, default=240.0, help="how long to hold the network up")
     online.add_arguments(ap)
@@ -554,7 +556,8 @@ def main():
                 transport.send(pkt, ip)
                 record(rec="out", dst=ip, kind="game channel resend", port=port, seq=seq,
                        hex=pkt.hex(), t=now)
-                print(f"[pla] -> {ip}: game channel resend (port {port}, seq {seq})")
+                if args.print_packets:
+                    print(f"[pla] -> {ip}: game channel resend (port {port}, seq {seq})")
             for ip, box in list(online_boxes.items()):
                 if ip in left or ip not in station_ids:
                     continue
@@ -585,13 +588,15 @@ def main():
                     print(f"[pla] {src_ip}: {header!r} DID NOT AUTHENTICATE")
                     continue
                 authed += 1
-                print(f"[pla] {src_ip}: {header!r} footer={ids}")
+                if args.print_packets:
+                    print(f"[pla] {src_ip}: {header!r} footer={ids}")
                 # A fault in one message is reported and the session kept.
                 try:
                     for msg in pia6.parse_messages(plain):
                         if src_ip in left:
                             break
-                        print(f"       {_describe(msg)}  {msg.payload.hex()}")
+                        if args.print_packets:
+                            print(f"       {_describe(msg)}  {msg.payload.hex()}")
                         record(rec="msg", src=src_ip, protocol=msg.protocol, port=msg.port,
                                flags=msg.message_flags, payload=msg.payload.hex())
                         if msg.protocol == PROTO_NET and len(msg.payload) > 1:
@@ -720,20 +725,22 @@ def main():
                                 record(rec="out", dst=src_ip, kind="game channel ack",
                                        ack_id=window.next, hex=pkt.hex(), t=time.time())
                                 if not ready:
-                                    print(f"[pla] -> {src_ip}: game channel ack (port {msg.port}, "
-                                          f"seq {cm['sequence_id']}, "
-                                          + ("a repeat)" if cm["sequence_id"] < window.next
-                                             else f"held behind {window.next})"))
+                                    if args.print_packets:
+                                        print(f"[pla] -> {src_ip}: game channel ack (port {msg.port}, "
+                                              f"seq {cm['sequence_id']}, "
+                                              + ("a repeat)" if cm["sequence_id"] < window.next
+                                                 else f"held behind {window.next})"))
                             for cm in ready:
                                 key, payload_body = game_channel.split_message(cm["payload"])
                                 announced = (msg.port == game_channel.JOINER_PORT
                                              and channel_table.is_announcement(cm["payload"]))
-                                print(f"[pla] -> {src_ip}: game channel ack (port {msg.port}, "
-                                      f"seq {cm['sequence_id']}, "
-                                      + ("channel table)" if announced else
-                                         f"key {key.hex()}, body {payload_body[:16].hex()}"
-                                         f"{'...' if len(payload_body) > 16 else ''} "
-                                         f"{len(payload_body)}B)"))
+                                if args.print_packets:
+                                    print(f"[pla] -> {src_ip}: game channel ack (port {msg.port}, "
+                                          f"seq {cm['sequence_id']}, "
+                                          + ("channel table)" if announced else
+                                             f"key {key.hex()}, body {payload_body[:16].hex()}"
+                                             f"{'...' if len(payload_body) > 16 else ''} "
+                                             f"{len(payload_body)}B)"))
                                 offered = trade_box.read_payload(cm["payload"])
                                 if offered is not None:
                                     # Its first after a trade: back on its box (docs/pla.md).
@@ -962,8 +969,9 @@ def main():
                                 transport.send(pkt, src_ip)
                                 record(rec="out", dst=src_ip, kind="reliable ack",
                                        ack_id=high + 1, hex=pkt.hex(), t=time.time())
-                                print(f"[pla] -> {src_ip}: reliable ack (stream {rm['stream_id']}, "
-                                      f"seq {high}, ack_id {high + 1}, port {msg.port})")
+                                if args.print_packets:
+                                    print(f"[pla] -> {src_ip}: reliable ack (stream {rm['stream_id']}, "
+                                          f"seq {high}, ack_id {high + 1}, port {msg.port})")
                                 # The console sends its record only after the host's; the ten-second
                                 # leave waits on it (docs/pla.md).
                                 if args.data_exchange and src_ip not in exchange_sent:
