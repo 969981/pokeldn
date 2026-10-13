@@ -352,6 +352,8 @@ returns 404. When a shiny sprite is missing, the normal one is shown.
 |---|---|
 | the trade picker, beside Species, shiny when Shiny is on | 96 px, the whole canvas |
 | the card of a Species field (Sword/Shield Mystery Gift), shiny when the tool's Shiny switch is on | 46 px tile |
+| FireRed/LeafGreen and Sword/Shield Mystery Gift presets with a fixed Pokemon species | 46 px tile |
+| Sword/Shield official event Pokemon cards, shiny when the card guarantees it | 46 px tile |
 | Session panel, Offering: each queued offer in trade order, its summary as a tooltip | 46 px tile |
 | Session panel, Received: each Pokemon file the run saved, read by PKHeX, with its summary | 46 px tile |
 

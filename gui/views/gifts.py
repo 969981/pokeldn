@@ -11,12 +11,13 @@ import flet as ft
 from gui import drop, theme as t
 from gui.views.pokemon import NamePicker
 from gui.views.saves import SavePanel
+from gui.views.sprites import MINI, Sprite
 from gui.views.widgets import PathField
 from pokeldn import gifts, pokemon
 from pokeldn.app import command, gift_builder, gift_files, saves
 from pokeldn.frlg.gift import builder as frlg
 from pokeldn.frlg.rom import custom_code
-from pokeldn.swsh import gift_builder as swsh
+from pokeldn.swsh import gift_builder as swsh, wc8
 
 SPECIES_FRLG = [{"id": n, "name": name} for n, name in frlg.species_names()]
 
@@ -124,7 +125,8 @@ class GiftBuilder:
             for preset in items:
                 if not hasattr(preset, "members"):
                     tiles.append(self._tile(preset.label, preset.summary, preset is selected,
-                                            lambda e, k=preset.key: self._pick(k)))
+                                            lambda e, k=preset.key: self._pick(k),
+                                            species_id=preset.species_id, shiny=getattr(preset, "shiny", False)))
                     continue
                 on = preset.settings(self.value["options"].get(preset.key))["on"] if preset is selected else []
                 tiles += [self._tile(b.label, b.summary, b.key in on, lambda e, p=preset, k=b.key: self._toggle(p, k),
@@ -138,7 +140,8 @@ class GiftBuilder:
             sections.append(t.section(group, ft.Column(body, spacing=10)))
         return ft.Column(sections, spacing=14)
 
-    def _tile(self, label, summary, active, on_click, settings=False, warning="") -> ft.Control:
+    def _tile(self, label, summary, active, on_click, settings=False, warning="", species_id=0,
+              shiny=False) -> ft.Control:
         """The preset's name and full description, including any steps needed to use it. A `warning`
         tile has an amber outline, chosen or not, and says why."""
         head = [t.text(label, 13, weight=ft.FontWeight.W_600, expand=True)]
@@ -151,6 +154,7 @@ class GiftBuilder:
                                  t.text(warning, 12, t.AMBER, expand=True)], spacing=6))
         return ft.Container(ft.Row([
             t.pixel_icon("checkbox-on" if active else "checkbox", color=t.BLUE if active else t.FAINT),
+            *([Sprite(self.app, species_id, shiny, size=MINI).control] if species_id else []),
             ft.Column(lines, spacing=1, expand=True),
         ], spacing=10), padding=ft.Padding(10, 8, 10, 8), border_radius=10,
             tooltip=summary, border=ft.Border.all(1, t.AMBER if warning else t.BLUE if active else t.BORDER),
@@ -228,11 +232,7 @@ class GiftBuilder:
             words = search.value.casefold().split()
             shown = [c for c in cards if (not group["value"] or c["group"] == group["value"])
                      and all(w in f"{c['label']} {c['group']} {c['summary']}".casefold() for w in words)]
-            tiles.controls = t.grid_rows([self._tile(c["label"], c["summary"], c["key"] == self.value["event"],
-                                                     lambda e, k=c["key"]: self._event(k),
-                                                     warning=pokemon.HOME_TRACKER_WARNINGS["empty"]
-                                                     if official.from_home(c["record"]) else "")
-                                          for c in shown])
+            tiles.controls = t.grid_rows([self._event_tile(c) for c in shown])
             count.value = f"{len(shown)} of {len(cards)} cards"
             if update:
                 tiles.update()
@@ -254,6 +254,15 @@ class GiftBuilder:
                        "check.", 12, t.MUTED)
         listing = ft.Container(ft.Column([tiles], scroll=ft.ScrollMode.AUTO), height=440)
         return ft.Column([intro, search, groups, count, listing], spacing=10)
+
+    def _event_tile(self, card) -> ft.Control:
+        raw = card["record"]
+        mon = wc8.read(raw) if raw[wc8.GIFT_KIND_AT] == wc8.GIFT_KIND_POKEMON else {}
+        return self._tile(card["label"], card["summary"], card["key"] == self.value["event"],
+                          lambda e: self._event(card["key"]),
+                          warning=pokemon.HOME_TRACKER_WARNINGS["empty"]
+                          if self.module.OFFICIAL.from_home(raw) else "",
+                          species_id=mon.get("species", 0), shiny=mon.get("shiny_type") in (2, 3))
 
     def _event(self, key) -> None:
         self.value["event"] = key

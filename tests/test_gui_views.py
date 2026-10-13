@@ -720,6 +720,59 @@ def test_the_boost_settings_leave_with_the_last_unticked_boost(monkeypatch):
     assert frlg_builder.KEEP.label not in texts(builder.presets())
 
 
+@pytest.mark.parametrize("game,key,species", [
+    ("frlg", "event-wishmkr-jirachi", 385),
+    ("frlg", "event-doel-deoxys", 386),
+    ("frlg", "event-rocks-metang", 375),
+    ("frlg", "celebi", 251),
+    ("frlg", "mattle-ho-oh", 250),
+    ("frlg", "master-ball", 0),
+    ("swsh", "pikachu", 25),
+    ("swsh", "egg", 25),
+    ("swsh", "pikachu-uniform", 0),
+])
+def test_gift_presets_show_the_pokemon_species_and_still_select_it(monkeypatch, game, key, species):
+    """Hoenn's National Dex ids differ from FR/LG's internal ids; a named outfit isn't a Pokemon."""
+    from gui.views import gifts as view_module
+    from pokeldn.app import gift_builder
+
+    monkeypatch.setattr(view_module, "Sprite", lambda app, n, shiny, size:
+                        SimpleNamespace(control=ft.Container(data=(n, shiny), width=size)))
+    builder = view_module.GiftBuilder.__new__(view_module.GiftBuilder)
+    builder.app = None
+    builder.module = gift_builder.module(game)
+    builder.value = gift_builder.normalized(game, {})
+    builder.commit = lambda rebuild=False: None
+    preset = builder.module.PRESET[key]
+    tile = next(c for c in raid_controls(builder.presets())
+                if isinstance(c, ft.Container) and c.on_click and preset.label in gift_texts(c))
+    sprites = [c.data for c in tile.content.controls if isinstance(c.data, tuple)]
+    assert sprites == ([(species, False)] if species else [])
+    tile.on_click(None)
+    assert builder.value["preset"] == key
+
+
+@pytest.mark.parametrize("species,shiny_type", [(25, 0), (25, 1), (25, 2), (25, 3), (0, 0)])
+def test_official_gift_icons_follow_the_record_and_keep_selection(monkeypatch, species, shiny_type):
+    from gui.views import gifts as view_module
+    from pokeldn.swsh import gift_builder, wc8
+
+    monkeypatch.setattr(view_module, "Sprite", lambda app, n, shiny, size:
+                        SimpleNamespace(control=ft.Container(data=(n, shiny), width=size)))
+    builder = view_module.GiftBuilder.__new__(view_module.GiftBuilder)
+    builder.app, builder.module = None, gift_builder
+    builder.value = {"event": "other"}
+    builder.commit = lambda rebuild=False: None
+    raw = (wc8.pokemon_card(species, shiny_type=shiny_type) if species else
+           gift_builder.record(gift_builder.blank(kind="items")))
+    card = {"key": "test", "label": "Test gift", "summary": "A gift", "record": raw}
+    tile = builder._event_tile(card)
+    sprites = [c.data for c in tile.content.controls if isinstance(c.data, tuple)]
+    assert sprites == ([(species, shiny_type in (2, 3))] if species else [])
+    tile.on_click(None)
+    assert builder.value["event"] == "test"
+
+
 def test_a_pokemon_home_card_is_outlined_in_amber_and_says_why(monkeypatch):
     """The Pokemon a HOME card gives carries no HOME tracker, whatever the HOME tracker setting: its tile and
     summary give the "empty" warning [docs/swsh_gift.md, Official event cards]."""
