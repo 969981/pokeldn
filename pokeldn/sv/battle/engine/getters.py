@@ -258,3 +258,18 @@ def setup_entry(m, o, i, *_):
 def setup_4a4(m, o, *_):
     setup = m.u64(o + 0x38)
     return 0 if m.u32(setup + 0x30) else m.u8(setup + 0x4A4)
+
+
+@lifted(0x1399E20)
+def within_setup_limit(m, o, *_):
+    limit = setup_4a4(m, m.u64(o + 8))
+    return int(limit != 0 and limit <= (setup_entry(m, o, 0) + 1) & 0xFFFFFFFF)
+
+
+@lifted(0x158003C)
+def next_listed(m, lst, *_):
+    i = m.u8(lst + 0xA8)
+    if i < m.u8(lst + 0xA6):
+        m.put(lst + 0xA8, 1, i + 1)
+        return m.u64(lst + 8 * i)
+    return 0

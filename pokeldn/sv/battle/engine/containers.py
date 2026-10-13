@@ -147,3 +147,13 @@ def unlink(m, e, *_):
 @lifted(0x13813F4)
 def battler_of(m, o, ident, *_):
     return battler(m, m.u64(m.u64(o + 0x10) + 0x30), ident)
+
+
+@lifted(0x113FEE0)
+def head_entry(m, owner, *_):
+    """The value (node+0x18) of the entry keyed by the u16 at owner+0x70 in the map at owner+8."""
+    key = m.u16(owner + 0x70)
+    if key == NONE_KEY:
+        return 0
+    node = find(m, owner + 8, key, 2)
+    return node + 0x18 if node else 0

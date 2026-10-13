@@ -354,3 +354,41 @@ def mark_move_used(m, b, i, *_):
     m.put(s + 0x435, 1, 1)
     if m.u8(s + 0x43A):
         m.put(s + 0x42B, 2, 0x101)
+
+
+@lifted(0x2D3D6C0)
+def critical_stage(m, b, *_):
+    """The battler's critical-hit stage: vf 0x298's, +2 under condition 9, +3 under condition 0x29, at most 3."""
+    stage = m.vcall(b, 0x298) & 0xFFFFFFFF
+    if m.vcall(b, 0x4D0, 9) & 1:
+        stage += 2
+    if m.vcall(b, 0x220, 0x29) & 1:
+        stage += 3
+    return 3 if stage & 0xFF > 2 else stage & 0xFFFFFFFF
+
+
+@lifted(0x2D3E4BC)
+def remember_action(m, b, record, *_):
+    """Append a 13-byte record to the battler's current turn history (six 0x10-byte rows per turn at
+    +0x5cc + 0x60 * turn, count at +0x6ec + turn); a full history drops its oldest row."""
+    turn = m.u8(b + 0x6EF)
+    count_at = b + 0x6EC + turn
+    n = m.u8(count_at)
+    rows = b + 0x5CC + 0x60 * turn
+    if n == 6:
+        for i in range(5):
+            m.put(rows + 0x10 * i, 8, m.u64(rows + 0x10 * (i + 1)))
+            m.put(rows + 0x10 * i + 5, 8, m.u64(rows + 0x10 * (i + 1) + 5))
+        n = 5
+    row = rows + 0x10 * n
+    first = m.u64(record)
+    m.put(row + 5, 8, m.u64(record + 5)); m.put(row, 8, first)
+    if m.u8(count_at) < 6:
+        m.put(count_at, 1, m.u8(count_at) + 1)
+
+
+@lifted(0x2D3B720)
+def set_out_reason(m, b, a, c, *_):
+    """For a battler out of the battle (vf 0x200): +0x7c and the u32 at +0x78."""
+    if m.vcall(b, 0x200) & 1:
+        m.put(b + 0x7C, 1, a); m.put(b + 0x78, 4, c)

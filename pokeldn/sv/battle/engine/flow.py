@@ -120,3 +120,24 @@ def id_at_position(m, o, pos, *_):
         if b:
             return m.vcall(b, 0x98)
     return 0
+
+
+@lifted(0x13FCED4)
+def set_action_state(m, o, ident, state, p4, p5, *_):
+    """Give battler `ident` its action state (vf 0x2e0); a battler out of the battle gets vf 0x480 instead
+    of the rest; one under condition 6 whose ... gets condition 7 cleared (vf 0x528)."""
+    from pokeldn.sv.battle.engine.containers import battler
+    from pokeldn.sv.battle.engine.getters import same_side_class
+    b = battler(m, m.u64(m.u64(o + 0x10) + 0x30), ident)
+    m.vcall_void(b, 0x2E0, state)
+    if m.vcall(b, 0x200) & 1:
+        m.vcall_void(b, 0x480, p4, p5)
+        return
+    if m.vcall(b, 0x560, 6) & 0xFFFFFFFF == 0:
+        return
+    if m.call(m.main + 0xFA9B4C, m.u64(o + 8), 0x1000) & 1 == 0:
+        return
+    if same_side_class(m, m.u64(o + 8), m.u64(o + 0x10), b) & 1:
+        return
+    if m.vcall(b, 0x510, 0x19) & 1:
+        m.vcall_void(b, 0x528, 7)
