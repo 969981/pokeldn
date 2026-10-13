@@ -1,6 +1,7 @@
 """The Mystery Gift - Simulated card: every Pokemon gift the game gave, from PKHeX's event database
-(pokeldn.pokemon.Service.gift_events), searched by anything a tile shows. The one picked is made fresh
-and legal for the app's trainer, and the trade offers it like a built Pokemon (docs/gift_simulated.md)."""
+(pokeldn.pokemon.Service.gift_events), searched by anything a tile shows. Up to the field's queue limit are
+picked in order, each made fresh and legal for the app's trainer, then offered by the trade host
+(docs/gift_simulated.md)."""
 
 import threading
 from datetime import date
@@ -66,9 +67,11 @@ def haystack(event: dict) -> str:
 class EventGiftPicker:
     """`value` is what the trade field holds: a built Pokemon's entry with the event's key and title."""
 
-    def __init__(self, app, game: str, value: dict | None, on_change):
+    def __init__(self, app, game: str, value, on_change, limit: int = 1):
         self.app, self.game, self.on_change = app, game, on_change
-        self.value = dict(value or {})
+        self.limit = max(1, int(limit))
+        raw = value if isinstance(value, list) else [value] if isinstance(value, dict) else []
+        self.values = [dict(v) for v in raw[:self.limit] if isinstance(v, dict) and v]
         self.events: list[dict] | None = None
         self.shown = PAGE
         self.busy = False
@@ -77,11 +80,12 @@ class EventGiftPicker:
         self.count = t.text("", 12, t.MUTED)
         self.tiles = ft.Column(spacing=6, tight=True)
         self.more = t.secondary_button("Show more", self._more, "chevron-down", visible=False)
+        self.status = ft.Container()
         self.result = ft.Container()
         self.scroller = ft.Column([self.tiles, ft.Row([self.more], alignment=ft.MainAxisAlignment.CENTER)],
                                   spacing=10)
         self.box = ft.Container(self.scroller)
-        self.control = ft.Column([ft.Row([self.search]), self.count, self.box, self.result], spacing=10)
+        self.control = ft.Column([ft.Row([self.search]), self.count, self.box, self.status, self.result], spacing=10)
         self.tiles.controls = [ft.Row([PixelActivity("Reading the events"),
                                        t.text("Reading PKHeX's event database...", 12, t.MUTED)], spacing=8)]
         self._show_result()
@@ -120,7 +124,7 @@ class EventGiftPicker:
     def _tile(self, event: dict) -> ft.Control:
         """An illegal copy's tile has a red outline, chosen or not, and says why; one with a HOME tracker
         warning, an amber one."""
-        chosen = event["key"] == self.value.get("event")
+        chosen = any(event["key"] == value.get("event") for value in self.values)
         shiny = event["shiny"] == "always"
         why, warned = problem(event), warning(event)
         head = [t.text(event["title"], 13, weight=ft.FontWeight.W_600, max_lines=1,
@@ -160,14 +164,19 @@ class EventGiftPicker:
         except RuntimeError:    # the card was redrawn away
             pass
 
-    # The one picked
+    # The gifts picked
 
     def _pick(self, key: str) -> None:
-        """Makes a fresh copy: a new PID and IVs where the card rolls them, under the app's trainer as it is now."""
+        """Makes a fresh copy and adds it to the queue. A one-slot picker keeps the old single-value shape."""
         if self.busy:
             return
+        if self.limit > 1 and len(self.values) >= self.limit:
+            self.status.content = t.text(f"The queue is full: one session carries at most {self.limit} gifts.",
+                                         12, t.AMBER)
+            self._refresh()
+            return
         self.busy = True
-        self.result.content = ft.Row([PixelActivity("Making the Pokemon"),
+        self.status.content = ft.Row([PixelActivity("Making the Pokemon"),
                                       t.text("Making a fresh copy...", 12, t.MUTED)], spacing=8)
         self._refresh()
 
@@ -188,32 +197,69 @@ class EventGiftPicker:
             def done():
                 self.busy = False
                 if value is None:
-                    self.result.content = t.text(error, 12, t.RED, selectable=True)
+                    self.status.content = t.text(error, 12, t.RED, selectable=True)
                 else:
-                    self.value = value
-                    self.on_change(dict(value))
+                    self.status.content = None
+                    if self.limit == 1:
+                        self.values = [value]
+                        self.on_change(dict(value))
+                    else:
+                        self.values.append(value)
+                        self.on_change([dict(v) for v in self.values])
                     self._render()
                     self._show_result()
                 self._refresh()
             self.app.ui(done)
         threading.Thread(target=work, daemon=True).start()
 
-    def _show_result(self) -> None:
-        if not self.value.get("file"):
-            self.result.content = None
+    def _remove(self, index: int) -> None:
+        """Removes one queued gift without rebuilding the others."""
+        if not 0 <= index < len(self.values):
             return
-        legal = self.value.get("legal", False)
-        detail = " · ".join(p for p in (", ".join(self.value.get("moves", ())), f"OT {self.value.get('ot', '')}") if p)
-        lines = [ft.Row([t.text(self.value.get("title", ""), 13, weight=ft.FontWeight.W_600, expand=True),
+        self.values.pop(index)
+        self.status.content = None
+        self.on_change([dict(v) for v in self.values] if self.limit > 1 else
+                       (dict(self.values[0]) if self.values else {}))
+        self._render()
+        self._show_result()
+        self._refresh()
+
+    def _result_card(self, value: dict, number: int | None = None) -> ft.Control:
+        legal = value.get("legal", False)
+        title = value.get("title", "")
+        if number is not None:
+            title = f"{number}. {title}"
+        detail = " · ".join(p for p in (", ".join(value.get("moves", ())), f"OT {value.get('ot', '')}") if p)
+        lines = [ft.Row([t.text(title, 13, weight=ft.FontWeight.W_600, expand=True),
                          t.badge("Legal" if legal else "Not legal", t.GREEN if legal else t.RED,
                                  "check" if legal else "warning-diamond")], spacing=8),
-                 t.text(self.value.get("summary", ""), 12, t.SOFT),
+                 t.text(value.get("summary", ""), 12, t.SOFT),
                  t.text(detail, 12, t.MUTED)]
-        if warned := builder.HOME_TRACKER_WARNINGS.get(self.value.get("home_tracker", "")):
+        if warned := builder.HOME_TRACKER_WARNINGS.get(value.get("home_tracker", "")):
             lines.append(ft.Row([t.badge(warned, t.AMBER, "warning-diamond")]))
-        self.result.content = ft.Container(ft.Row([
-            Sprite(self.app, int(self.value.get("species") or 0), bool(self.value.get("shiny")), size=MINI).control,
+        trailing = ([t.icon_button("close", lambda e, n=number - 1: self._remove(n), "Remove this gift")]
+                    if number is not None else [])
+        return ft.Container(ft.Row([
+            Sprite(self.app, int(value.get("species") or 0), bool(value.get("shiny")), size=MINI).control,
             ft.Column(lines, spacing=2, expand=True),
+            *trailing,
         ], spacing=10, vertical_alignment=ft.CrossAxisAlignment.CENTER),
             padding=ft.Padding(10, 8, 10, 8), border_radius=10, bgcolor=ft.Colors.with_opacity(0.04, "#FFFFFF"),
             border=None if legal else ft.Border.all(1, t.RED))
+
+    def _show_result(self) -> None:
+        if not self.values:
+            self.result.content = (t.text(f"Choose up to {self.limit} gifts; they trade in this order.", 12, t.MUTED)
+                                   if self.limit > 1 else None)
+            return
+        if self.limit == 1:
+            self.result.content = self._result_card(self.values[0])
+            return
+        full = len(self.values) >= self.limit
+        note = (f"{len(self.values)} of {self.limit} gifts queued, traded in this order"
+                + (" · queue full" if full else ""))
+        self.result.content = ft.Column([
+            t.text(note, 12, t.MUTED),
+            *[self._result_card(value, n) for n, value in enumerate(self.values, start=1)],
+        ], spacing=6)
+
