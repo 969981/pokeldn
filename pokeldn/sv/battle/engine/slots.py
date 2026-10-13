@@ -124,3 +124,22 @@ def _mode2_side_count(rule, side):
     if rule == 2:
         return (a << 1 | a) + (6 if b else 0)
     return (a | b << 1 | b << 2) + (a << 1 | a)
+
+
+@lifted(0x157C76C)
+def within_side(m, ids, pokecon, ident, *_):
+    """Whether the battler `ident` stands at an index its side has room for."""
+    from pokeldn.sv.battle.engine.getters import slot_of_id
+    pos = slot_of_id(m, ids, ident) & 0xFF
+    if pos >= 10:
+        return 0
+    owner = m.u64(pokecon + 0x290)
+    with m.frame(8) as out:
+        client_of_position(m, owner, pos, out, out + 4)
+        client, idx = m.u8(out), m.u8(out + 4)
+    if client == 5:
+        return 0
+    setup = m.u64(owner + 8)
+    mode = m.u32(setup + 0x36C)
+    side = SIDE_CLASS[mode][client] if mode in SIDE_CLASS and client <= 4 else 2
+    return int(idx < positions_on_side(m, mode, m.u8(setup + 0x370), side))

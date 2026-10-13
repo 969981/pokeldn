@@ -185,3 +185,41 @@ def same_side_class(m, o, pokecon, b, *_):
 def entry_7c(m, o, i, *_):
     i &= 0xFF
     return m.u16(o + 0x7C + 2 * i) if i < 5 else 0
+
+
+@lifted(0x114D34C)
+def raid_flag(m, o, *_):
+    return m.u8(m.u64(m.u64(o + 8) + 0x38) + 0x499) >> 2 & 1
+
+
+@lifted(0x1578AB4)
+def init_target(m, out, user, info, ids, *_):
+    flag = m.u8(info + 0xA7)
+    m.put(out + 3, 1, 10)
+    m.put(out + 2, 1, slot_of_id(m, ids, m.vcall(user, 0x98)))
+    m.put(out + 0x15, 8, 0x7000007000007); m.put(out + 0xD, 8, 0x70000070000)
+    m.put(out + 0x25, 8, 0x70000070000); m.put(out + 7, 2, 0); m.put(out + 9, 1, 0)
+    m.put(out + 0xC, 1, 0); m.put(out + 0x40, 8, 0); m.put(out + 0x1D, 8, 0x700000700000700)
+    m.put(out + 0x2D, 1, 7); m.put(out + 0x30, 8, 0); m.put(out + 0x38, 8, 0)
+    if flag == 1 and m.u8(info + 0xA6) and m.u64(info):
+        m.put(out + 3, 1, slot_of_id(m, ids, m.vcall(m.u64(info), 0x98)))
+
+
+@lifted(0xF6DE7C)
+def boss_hp_threshold(m, o, arg, *_):
+    """With no argument and the latch at +0x8c clear: when the raid boss's HP share (vf 0x108 / vf 0x110,
+    in percent) is at or below +0x54, queue event (5, 0) in the four-entry list at +0x5c; 1 then."""
+    if arg != 0:
+        return 0
+    holder = m.u64(m.u64(o + 8) + 0x310)
+    if m.u8(holder + 0x8C) or raid_battler(m, holder) == 0:
+        return 0
+    hp = m.vcall(raid_battler(m, holder), 0x108) & 0xFFFF
+    top = m.vcall(raid_battler(m, holder), 0x110) & 0xFFFF
+    share = hp * 100 // top if top else 0
+    if m.u16(o + 0x54) < share:
+        return 0
+    n = m.u32(o + 0x7C)
+    if n < 4:
+        m.put(o + 0x5C + 8 * n, 1, 5); m.put(o + 0x60 + 8 * n, 4, 0); m.put(o + 0x7C, 4, n + 1)
+    return 1

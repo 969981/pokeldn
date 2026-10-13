@@ -69,3 +69,54 @@ def first_standing(m, it, *_):
                 if b and m.vcall(b, 0x200) & 1 == 0:
                     m.put(it + 0x18, 1, client); m.put(it + 0x19, 1, i); m.put(it + 0x1A, 1, 0)
                     return
+
+
+def _party_list(m, it, client):
+    return m.u64(m.u64(it + 0x10) + 0x30) + 0x28 + 0x38 * client if client < 5 else 0
+
+
+@lifted(0x1360DBC)
+def next_standing(m, it, out, *_):
+    """Hand out the iterator's current party member, then move it to the next one still in the battle."""
+    from pokeldn.sv.battle.engine.slots import positions_of_slot
+    if m.u8(it + 0x1A):
+        return 0
+    plist, idx = _party_list(m, it, m.u8(it + 0x18)), m.u8(it + 0x19)
+    m.put(out, 8, m.u64(plist + 8 * idx) if idx < m.u8(plist + 0x30) else 0)
+    m.put(it + 0x19, 1, idx + 1)
+    client = m.u8(it + 0x18)
+    while client < 5:
+        setup = m.u64(m.u64(m.u64(it + 0x10) + 0x290) + 8)
+        n = positions_of_slot(m, m.u32(setup + 0x36C), m.u8(setup + 0x370), client)
+        i = m.u8(it + 0x19)
+        while i < n:
+            plist = _party_list(m, it, m.u8(it + 0x18))
+            if i < m.u8(plist + 0x30):
+                b = m.u64(plist + 8 * i)
+                if b:
+                    if m.vcall(b, 0x200) & 1 == 0:
+                        return 1
+                    i = m.u8(it + 0x19)
+            i = (i + 1) & 0xFF
+            m.put(it + 0x19, 1, i)
+        client = (m.u8(it + 0x18) + 1) & 0xFF
+        m.put(it + 0x18, 1, client); m.put(it + 0x19, 1, 0)
+    m.put(it + 0x1A, 1, 1)
+    return 1
+
+
+@lifted(0x11464B0)
+def id_at_position(m, o, pos, *_):
+    """The id (vf 0x98) of the battler at battle position `pos`, 0 if none."""
+    from pokeldn.sv.battle.engine.slots import client_of_position
+    if pos & 0xFF == 10:
+        return 0
+    parties = m.u64(m.u64(o + 0x10) + 0x30)
+    with m.frame(8) as out:
+        client_of_position(m, m.u64(m.u64(parties + 0x18) + 0x290), pos, out, out + 4)
+        client, idx = m.u8(out), m.u8(out + 4)
+    if client != 5 and idx < m.u8(parties + 0x38 * client + 0x58):
+        b = m.u64(parties + 0x38 * client + 0x28 + 8 * idx)
+        if b:
+            return m.vcall(b, 0x98)
+    return 0

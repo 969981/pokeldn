@@ -80,3 +80,62 @@ def write_at(m, que, pos, command, *varargs):
         m.put(que + LENGTH, 4, pos)
         append(m, que, command, fmt, args)
         m.put(que + LENGTH, 4, saved)
+
+
+CURSOR = 0x6C
+
+
+@lifted(0x13048D0)
+def read_args(m, que, fmt, out, *_):
+    """Decode one command's arguments of format `fmt` at the read cursor into the u32 array `out`."""
+    fmt &= 0xFF
+    widths = codec.FORMATS.get(fmt)
+    if widths is None:
+        return
+    nbytes = (sum(widths) + 7) // 8
+    at = m.u32(que + CURSOR)
+    acc, shift = int.from_bytes(m.read(que + DATA + at, nbytes), "big"), sum(widths)
+    for i, w in enumerate(widths):
+        shift -= w
+        m.put(out + 4 * i, 4, acc >> shift & ((1 << w) - 1))
+    m.put(que + CURSOR, 4, at + nbytes)
+
+
+@lifted(0xE515EC)
+def read_command(m, que, out, room, where, *_):
+    """The next command at the read cursor (groups 0xcf and 0xd2 are skipped), its arguments into `out`;
+    0xce at the end. `where` receives the command's position."""
+    at = m.u32(que + CURSOR)
+    if m.u32(que + LENGTH) <= at:
+        return 0xCE
+    while True:
+        command = m.u8(que + DATA + at) << 8 | m.u8(que + DATA + ((at + 1) & 0xFFFFFFFF))
+        m.put(que + CURSOR, 4, at + 2)
+        if command not in codec.GROUPS:
+            break
+        at = (at + m.u8(que + DATA + ((at + 2) & 0xFFFFFFFF)) + 3) & 0xFFFFFFFF
+        m.put(que + CURSOR, 4, at)
+        if m.u32(que + LENGTH) <= at:
+            return 0xCE
+    if where:
+        m.put(where, 4, at)
+    if command == 0xCE or command == 0xD4:
+        return command
+    if command == 0xD0:
+        c = m.u32(que + CURSOR); m.put(que + CURSOR, 4, c + 1)
+        n = m.u8(que + DATA + c)
+        if n < (room - 1) & 0xFFFFFFFF:
+            m.put(out, 4, n)
+            for i in range(n):
+                c = m.u32(que + CURSOR); m.put(que + CURSOR, 4, c + 1)
+                m.put(out + 4 + 4 * i, 4, m.u8(que + DATA + c))
+        return 0xD0
+    if command == 0xD1:
+        m.put(que + CURSOR, 4, m.u32(que + CURSOR) + 2)
+        return 0xD1
+    if command == 0xD3:
+        c = m.u32(que + CURSOR); m.put(que + CURSOR, 4, c + 1)
+        m.put(out, 4, m.u8(que + DATA + c))
+        return 0xD3
+    read_args(m, que, format_of(command), out)
+    return command
