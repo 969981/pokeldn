@@ -49,13 +49,13 @@ def tool_icon(tool: Tool):
 def tool_role(tool: Tool) -> str:
     """Who looks for whom, said from the console's side; a plugin's tool names its plugin."""
     if owner := plugins.owner(tool.key):
-        return f"From the plugin {owner.name}"
+        return f"Plugin: {owner.name}"
     if tool.key.endswith("-host"):
         return "Your console joins pokeldn"
     if tool.key.endswith("-join"):
         return "pokeldn joins your console"
     if tool.key.endswith("-online"):
-        return "Your console joins pokeldn, which meets your partner online"
+        return "Your console joins pokeldn, which reaches your partner"
     return ""
 
 
@@ -291,7 +291,8 @@ class GamesView:
                     role = tool_role(tool)
                     rows.append(ft.Container(ft.Row([
                         t.pixel_icon(tool_icon(tool), color=t.BLUE if active else t.FAINT),
-                        ft.Column([name, t.text(role, 11, t.FAINT)], spacing=0, expand=True) if role else
+                        ft.Column([name, t.text(role, 11, t.FAINT, max_lines=2, overflow=ft.TextOverflow.ELLIPSIS)],
+                                  spacing=0, expand=True) if role else
                         ft.Container(name, expand=True),
                         t.badge("Soon", t.FAINT) if tool.unavailable else ft.Container(),
                     ], spacing=10), padding=ft.Padding(24, 7, 8, 7), border_radius=12, tooltip=tool.summary,

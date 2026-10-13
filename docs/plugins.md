@@ -19,7 +19,7 @@ two files; `examples/plugins/test_kit` uses every part of the API.
 2. Drop the `.pokeplugin` file on the page, or press **Add a plugin** and choose it.
 3. Read what the plugin is and the risks, tick the acknowledgement, and press **Install**.
 
-The plugin's tools appear on the Games page at once, marked with a plug and "From the plugin ...".
+The plugin's tools appear on the Games page at once, marked with a plug and "Plugin: ...".
 Each plugin's card has a switch to turn it off and on, and a menu to open its tools, update it from a
 newer file, show its folder, visit its page and remove it. Every install and update shows the risk
 screen again. A plugin copied into the plugins folder by hand shows "Added by hand" and asks for the
