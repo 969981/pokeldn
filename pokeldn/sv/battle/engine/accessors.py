@@ -400,3 +400,160 @@ def f_f7bb74(m, o, *_): return m.u(o + 0x30, 2)
 @lifted(0xFA01F0)
 def f_fa01f0(m, o, *_): return m.u(o + 0x1b0, 8)
 
+
+
+@lifted(0x801224)
+def f_801224(m, *_): return 0x3b886bc
+
+
+@lifted(0x801230)
+def f_801230(m, *_): return 0
+
+
+@lifted(0x801238)
+def f_801238(m, *_): return 0x3b886bc
+
+
+@lifted(0x801244)
+def f_801244(m, *_): return 0
+
+
+@lifted(0x2A10928)
+def f_2a10928(m, o, *_): return m.u(o + 0x483, 1)
+
+
+@lifted(0x2A10970)
+def f_2a10970(m, o, *_): return m.u(o + 0x70, 1)
+
+
+@lifted(0x2A10978)
+def f_2a10978(m, o, *_): return m.u(o + 0x71, 1)
+
+
+@lifted(0x2D1F2F0)
+def f_2d1f2f0(m, *_): return 0x6bb
+
+
+@lifted(0x2D3B700)
+def f_2d3b700(m, o, *_): return m.u(o + 0x65, 1)
+
+
+@lifted(0x2D3B778)
+def f_2d3b778(m, o, v, *_): m.put(o + 0x7d, 1, v)
+
+
+@lifted(0x2D3B7E0)
+def f_2d3b7e0(m, o, *_): return m.u(o + 0x48, 8)
+
+
+@lifted(0x2D3B7E8)
+def f_2d3b7e8(m, o, *_): return m.u(o + 0x48, 8)
+
+
+@lifted(0x2D3B86C)
+def f_2d3b86c(m, o, *_): return m.u(o + 0x3c1, 1)
+
+
+@lifted(0x2D3BC50)
+def f_2d3bc50(m, o, *_): return m.u(o + 0x54, 4)
+
+
+@lifted(0x2D3BC70)
+def f_2d3bc70(m, o, *_): return m.u(o + 0x40d, 1)
+
+
+@lifted(0x2D3BC78)
+def f_2d3bc78(m, o, *_): return m.u(o + 99, 1)
+
+
+@lifted(0x2D3BC80)
+def f_2d3bc80(m, o, *_): return m.u(o + 100, 1)
+
+
+@lifted(0x2D3C4C4)
+def f_2d3c4c4(m, o, *_): return m.u(o + 0x482, 1)
+
+
+@lifted(0x2D3C57C)
+def f_2d3c57c(m, o, *_): return m.u(o + 0x485, 1)
+
+
+@lifted(0x2D3CF5C)
+def f_2d3cf5c(m, o, v, *_): m.put(o + 0x5c, 2, v)
+
+
+@lifted(0x2D3D0EC)
+def f_2d3d0ec(m, o, *_): return m.u(o + 0x72, 2)
+
+
+@lifted(0x2D3D104)
+def f_2d3d104(m, o, *_): return m.u(o + 0x488, 2)
+
+
+@lifted(0x2D3D10C)
+def f_2d3d10c(m, o, *_): return m.u(o + 0x48a, 2)
+
+
+@lifted(0x2D3E3C8)
+def f_2d3e3c8(m, o, *_): return m.u(o + 0x40c, 1)
+
+
+@lifted(0x2D3E3F8)
+def f_2d3e3f8(m, o, *_): return m.u(o + 0x410, 4)
+
+
+@lifted(0x2D3E400)
+def f_2d3e400(m, o, v, *_): m.put(o + 0x47e, 2, v)
+
+
+@lifted(0x2D3E424)
+def f_2d3e424(m, o, *_): m.put(o + 0x5e, 2, 0)
+
+
+@lifted(0x2D3E42C)
+def f_2d3e42c(m, o, *_): return m.u(o + 0x5e, 2)
+
+
+@lifted(0x2D3E474)
+def f_2d3e474(m, o, *_): return m.u(o + 0x48c, 2)
+
+
+@lifted(0x2D3E47C)
+def f_2d3e47c(m, o, *_): return m.u(o + 0x490, 2)
+
+
+@lifted(0x2D3E484)
+def f_2d3e484(m, o, *_): return m.u(o + 0x486, 1)
+
+
+@lifted(0x2D3E48C)
+def f_2d3e48c(m, o, *_): return m.u(o + 0x492, 2)
+
+
+@lifted(0x2D3E494)
+def f_2d3e494(m, o, *_): return m.u(o + 0x48e, 1)
+
+
+@lifted(0x2D3E49C)
+def f_2d3e49c(m, o, *_): return m.u(o + 0x6e, 1)
+
+
+@lifted(0x2D3E4B4)
+def f_2d3e4b4(m, o, *_): return m.u(o + 0x480, 2)
+
+
+@lifted(0x2D3E6F4)
+def f_2d3e6f4(m, o, *_): return m.u(o + 0x6d, 1)
+
+
+@lifted(0x2D3E708)
+def f_2d3e708(m, o, *_): return m.u(o + 0x74, 4)
+
+
+@lifted(0x2D3EB10)
+def f_2d3eb10(m, o, *_): return m.u(o + 0x6f2, 2)
+
+
+@lifted(0x2D3EB98)
+def f_2d3eb98(m, o, *_): return m.u(o + 0x3c1, 1)
+
