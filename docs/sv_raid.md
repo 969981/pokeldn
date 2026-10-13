@@ -316,7 +316,7 @@ The RaidPoint, offsets from its start:
 | 0x0e4 | 45 x 16 | reward rows: item, quantity, a rare-item flag, subject |
 | 0x3b4 | u8 | 0 in a retail standard point, 1 in a retail black one |
 | 0x3b8 | 7 x u32 | stars, species (DevID), form, gender, level, 0, Tera type |
-| 0x3d8 | u64 | `randSeed`, the partner seed ([Partners](#partners)): nonzero in retail points; `raid_point` writes the one it is given, 0 by default |
+| 0x3d8 | u64 | `randSeed`, the partner seed ([Partners](#partners)) and the battle's random seed ([The battle's random numbers](#the-battles-random-numbers)): nonzero in retail points; `raid_point` writes the one it is given, 0 by default |
 | 0x3e0 | u32 | `raidNpcGroupID`, the host's raid unlock stage, which picks the partner pool ([Partners](#partners)): 4 in every retail point seen; `raid_point` writes the stage of the raid's progress unless given one |
 
 In the raid tables every six-star record's `raidTimeData` is active with `gameLimit` 450 and
@@ -836,6 +836,97 @@ other battler by its own AI: the per-slot readers are built only for a console t
 at battle start (`0xfa52b0`, `0xfa5314`). Its own code is the code of the first vector entry with
 its own station (`0xd5f3b4`), and the Lua's slot loop (`0.4455` @1206..@1248) has no break, so the
 last matching entry sets the console's slot.
+
+### The battle's random numbers
+
+Every random draw of a round comes from one xoroshiro128+ object of 0x28 bytes (vtable `0x4500bd0`):
+
+| offset | size | what |
+|---|---|---|
+| 0x00 | 8 | vtable |
+| 0x08 | 2 x u64 | the state |
+| 0x18 | u64 | the seed |
+| 0x20 | u64 | the number of draws made |
+
+The server's main module (0x378 bytes, constructor `0x12742d0`) holds it at `+0x10`; round code
+reaches it as `[[x+0x10]+0x10]` (`0x11440e8`). The module's initialiser `0x127d824` sets the state
+to the seed and `0x82A2B175229D6A5B`, the count to 0 (`0x127d9a8`), taking the seed from `+0x20` of
+its parameter block. A guest's checker fills that word from the battle setup's `+0x718`
+(`0x2891748`); the raid start `0.4455` (@1152..@1157) sets `+0x718` through the Lua binding
+`fAF4A81E0` (setter `0x7faf1c`) to the RaidPoint's `randSeed`. The partner seed is also the battle
+seed, and the station that writes the bootstrap chooses it. The per-slot modules a server builds
+(`0x126ba88`, from `0xfa9f90`) are initialised with seed 0.
+
+On an emulated Scarlet 4.0.0 fighting a raid hosted with `randSeed` `D64EB3974D89705E`, the
+server's random held that seed and a state equal to it advanced seven steps, with a count of 7, at
+a later round; that round drew four times.
+
+A draw adds `s0 + s1` and steps the state; the count rises by one per call, not per redraw:
+
+| function | draw |
+|---|---|
+| `0x11440f0(rand, n)` | a u64 below n: `s0 + s1` masked to the bits of n − 1, redrawn while n or more; n below 2 returns 0 and draws nothing |
+| `0x114da8c(rand, p)` | `(s0 + s1) & 0x7f` redrawn while 100 or more; true when below p |
+
+Many round functions inline the step instead of calling these.
+
+### The server command queue
+
+A type-0x15 record's queue (+0x23c of the body, its length at +0x238) is a run of commands. A
+command is a big-endian u16 id, then its arguments packed by the id's format as one big-endian bit
+stream, padded at the front to whole bytes (writer `0x119bf58`, jump table `0x3c6aa7c`). The id to
+format map is built from 208 rows of (u16 id, u8 format, u8 0) at `0x3c6abe4`, a later row for the
+same id winning; ids run 0 to 205. Ids 0xce to 0xd4 are read by the reader `0xe515f0` itself (jump
+table `0x3c6a90c`):
+
+| id | body |
+|---|---|
+| 0xce | none: the end of the queue |
+| 0xcf, 0xd2 | a group: a u8 byte count, then that many bytes |
+| 0xd0 | a u8 count, at most 4, then that many bytes |
+| 0xd1 | two bytes |
+| 0xd3 | one byte |
+| 0xd4 | none |
+
+Format bytes and their argument widths in bits (`pokeldn.sv.battle.queue.FORMATS`):
+
+| format | widths | format | widths |
+|---|---|---|---|
+| 0x00 | none | 0x57 | 32, 8, 8, 8, 8, 8, 8 |
+| 0x01 | 8 | 0x62 | 32, 16 |
+| 0x02 | 8, 8 | 0x63 | 8, 8, 32 |
+| 0x04 | 5, 3, 8, 16 | 0x65 | 32, 16, 16, 16, 16 |
+| 0x10, 0x20 | 32, 16, then eight of 32 | 0x66 | 8, then five of 32 |
+| 0x11 | 16 | 0x67 | 32, then six of 16 |
+| 0x12 | 8, 16 | 0x72 | 32, 32 |
+| 0x14 | 5, 3, 5, 3 | 0x75 | 32, 8, 32, 32, 32 |
+| 0x17 | seven of 16 | 0x83 | 32, 32, 32 |
+| 0x1a | ten of 16 | 0x84 | 8, 32, 32, 32 |
+| 0x21 | 32 | 0x85 | 8, 8, 32, 32, 32 |
+| 0x22 | 8, 32 | 0x86 | six of 8 |
+| 0x23 | 5, 5, 5, after one pad bit | 0x93 | 32, 8, 8 |
+| 0x28 | eight of 32 | 0x96 | six of 32 |
+| 0x29 | 32, then eight of 8 | 0xa3 | 32, 8, 16 |
+| 0x42 | 5, 3 | 0xa4 | 32, 8, 8, 8 |
+| 0x43 | 8, 8, 8 | 0xb3 | 32, 8, 32 |
+| 0x45 | 16, 16, 16, 32, 16 | 0xc3 | 32, 32, 16 |
+| 0x52 | 32, 8 | 0xc4 | 32, 32, 16, 16 |
+| 0x53 | 8, 8, 16 | 0xd3 | 32, 16, 16 |
+| | | 0xd4 | 32, 32, 16, 8 |
+
+Every queue starts with command 0xb5. A round in which slot 2 used Hex (move 506) on the boss
+carried `0x5a (3, 506, 212)`, `0x5b (3, 506)` and `0xc9 (3, 0, 506, 4, 0)`. Every queue recorded
+from emulated Scarlet 4.0.0 servers and the type-0x15 records between two emulated consoles, 20 in
+all, decodes to its last byte and encodes back to the same bytes (`tests/test_sv_battle_queue.py`).
+The 0xcf groups seen so far are zero-filled.
+
+### Reproducing a round
+
+A round is replayed exactly under unicorn from an emulated console halted at the builder
+`0x113c8a0` with type 0x15: memory comes from the GDB stub one page at a time as the replay first
+touches it, the thread-local page behind `tpidrro_el0` is a stand-in whose `+0x1f8` names a fake
+thread, and SVCs 0x10, 0x11, 0x12, 0x1a, 0x1b, 0x1d and 0x1e return 0. Eleven replayed rounds
+equalled, byte for byte, the bodies the console then built itself; a round touched 159 to 353 pages.
 
 ## Joining
 
