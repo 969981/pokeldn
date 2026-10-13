@@ -142,3 +142,8 @@ def unlink(m, e, *_):
         prev = _key_node(m, table, m.u16(e + 0x12))
         m.put(nxt + 0x18 + 0x12, 2, m.u16(prev + 0x28) if prev else NONE_KEY)
     m.put(e + 0x12, 4, 0xEE00EE)
+
+
+@lifted(0x13813F4)
+def battler_of(m, o, ident, *_):
+    return battler(m, m.u64(m.u64(o + 0x10) + 0x30), ident)

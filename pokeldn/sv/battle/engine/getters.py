@@ -223,3 +223,21 @@ def boss_hp_threshold(m, o, arg, *_):
     if n < 4:
         m.put(o + 0x5C + 8 * n, 1, 5); m.put(o + 0x60 + 8 * n, 4, 0); m.put(o + 0x7C, 4, n + 1)
     return 1
+
+
+def _side_class_of(m, setup, ident):
+    from pokeldn.sv.battle.engine.slots import SIDE_CLASS
+    p = m.call(m.main + 0x10E2DD4, m.u64(setup + 0x50), ident)
+    v = 0 if p == 0 or m.s(p, 4) > 4 else m.u32(p) & 0xFF
+    table = SIDE_CLASS.get(m.u32(setup + 0x36C))
+    return table[v] if table is not None and v < 5 else 2
+
+
+@lifted(0x118AB58)
+def same_side(m, o, a, b, *_):
+    """Whether two battlers (by id; 0 never) stand on the same side."""
+    a &= 0xFFFFFFFF; b &= 0xFFFFFFFF
+    if a == 0 or b == 0:
+        return 0
+    setup = m.u64(o + 8)
+    return int(_side_class_of(m, setup, a) == _side_class_of(m, setup, b))
