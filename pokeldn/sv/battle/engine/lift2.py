@@ -2465,3 +2465,14 @@ def copy_ref_190(m, src, *_):
     if v:
         m.put(v + 0x28, 4, m.u32(v + 0x28) + 1)
     return src
+
+
+@lifted(0x2899DE0)
+def set_stat_multiplier(m, b, which, value, *_):
+    """Battler vf 0x1c8: store vf 0x1d0 - value as multiplier `which` of the block at +0x3f4 (0x171cac8),
+    then recompute that stat (0x171cb20)."""
+    _need(m, m.main + 0x171CAC8)
+    _need(m, m.main + 0x171CB20)
+    v = m.vcall(b, 0x1D0)
+    m.call_void(m.main + 0x171CAC8, b + 0x3F4, which & 0xFFFFFFFF, (v - value) & 0xFFFFFFFF)
+    return _tail(m, m.main + 0x171CB20, b, which & 0xFFFFFFFF)

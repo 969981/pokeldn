@@ -2815,3 +2815,129 @@ def refresh_form_hp(m, b, *_):
         m.vcall_void(b, 0x2E0, (hp - top) & 0xFFFFFFFF)
     fn = m.u64(m.u64(b) + 0x810)
     return _tail(m, fn, b, fn)
+
+
+def _tls_stack_built(m):
+    """The thread's object stack (lift0._tls_stack), refused before any write while its static is
+    not built."""
+    from pokeldn.sv.battle.engine.lift0 import _tls_stack
+    if m.u8(m.main + 0x4765A38) & 1 == 0:
+        raise UnliftedCall("static 0x4765a30 not built")
+    return _tls_stack(m)
+
+
+@lifted(0x17E5EBC)
+def copy12_scoped(m, o, dst, src, *_):
+    """With [o] pushed on the thread's object stack: copy 12 bytes src -> dst. Returns the stack."""
+    top = m.u64(o)
+    t = _tls_stack_built(m)
+    if t:
+        n = m.u64(t + 0x80)
+        if n >= 0x10:
+            raise UnliftedCall("abort: object stack full")
+        m.put(t + 8 * n, 8, top)
+        m.put(t + 0x80, 8, n + 1)
+    x = m.u64(src); w = m.u32(src + 8)
+    m.put(dst + 8, 4, w); m.put(dst, 8, x)
+    if t:
+        m.put(t + 0x80, 8, m.u64(t + 0x80) - 1)
+    return t
+
+
+@lifted(0xFA97BC)
+def construct_fa97bc(m, o, *_):
+    """Constructor: vtables 0x44ff200 / 0x44ff238, +8 the object on top of the thread's stack (or 0),
+    three empty 0x28-byte lists at +0x30, +0x58, +0x80 (0xfa98a4, the last a tail call)."""
+    t = _tls_stack_built(m)
+    m.put(o + 0x10, 8, 0); m.put(o + 0x18, 4, 0)
+    m.put(o, 8, m.u64(m.main + 0x46D66F8) + 0x10)
+    top = 0
+    if t:
+        n = m.u64(t + 0x80)
+        if n:
+            top = m.u64(t + 8 * n - 8)
+    m.put(o + 0x28, 4, 0)
+    m.put(o, 8, m.main + 0x44FF200); m.put(o + 8, 8, top)
+    m.put(o + 0x20, 8, m.main + 0x44FF238)
+    m.call_void(m.main + 0xFA98A4, o + 0x30)
+    m.call_void(m.main + 0xFA98A4, o + 0x58)
+    m.call_void(m.main + 0xFA98A4, o + 0x80)
+    return (o + 0x80) & 0xFFFFFFFFFFFFFFFF      # the leaf 0xfa98a4 leaves x0 as it got it
+
+
+@lifted(0xB44204)
+def handle_lookup(m, o, handle, *_):
+    """Handle table at o (slot table +0x8040, reader lock +0x8110, light event +0x8120): writes to x8
+    the live entry for `handle` (32-byte entries, 0x400 per block at [o + 0x30 + 32 * (handle >> 10)])
+    with its u16 count (+0x18) raised, or 0 when the handle is freed or stale."""
+    out = m.x8
+    base, lock = o + 0x8040, o + 0x8110
+    cur = m.call(m.main + 0x343C290)
+    owner = m.u64(lock)
+    if owner and owner != cur:
+        raise UnliftedCall("handle table held by another thread")
+    m.put(lock + 8, 8, m.u64(lock + 8) + 1)
+    d = (handle - m.u32(base)) & 0xFFFFFFFF
+    word = m.u64(m.u64(base + 0x88) + ((d >> 3) & 0x1FFFFFF8))
+    m.put(lock + 8, 8, m.u64(lock + 8) - 1)
+    r = m.call(m.main + 0x343E5E0, o + 0x8120)
+    if (word >> (d & 63)) & 1 == 0:
+        m.put(out, 8, 0)
+        return r
+    blk = m.u64(o + 0x30 + 32 * ((handle >> 10) & 0x3FFFFF))
+    j = handle & 0x3FF
+    if m.u64(blk + 0x8000) <= j:
+        raise UnliftedCall("abort: handle past its block")
+    e = blk + 32 * j
+    if m.u64(e) != handle:
+        m.put(out, 8, 0)
+        return r
+    m.put(out, 8, e)
+    n = m.u16(e + 0x18)
+    if n == 0xFFFF:
+        raise UnliftedCall("abort: handle count overflow")
+    m.put(e + 0x18, 2, n + 1)
+    return r
+
+
+@lifted(0xB44438)
+def handle_free(m, o, p, *_):
+    """Free the handle u32 *p of the table at o (writer lock +0xd0, light event +0xe0): when its bit in
+    the live bitmap ([o + 0x88], index *p - *o) is set, push it on the free deque (map +0x18/+0x20,
+    start +0x50, size +0x58, 0x400 u32 per block) under the allocator [o + 0x60] on the thread's object
+    stack, clear the bit and lower the live count (+8). Tail-calls SignalLightEvent."""
+    if m.u32(p) < m.u32(o):
+        return o
+    lock = o + 0xD0
+    cur = m.call(m.main + 0x343C290)
+    if m.u64(lock) or m.u64(lock + 8):
+        raise UnliftedCall("handle table locked")
+    d = (m.u32(p) - m.u32(o)) & 0xFFFFFFFF
+    live = (m.u64(m.u64(o + 0x88) + ((d >> 3) & 0x1FFFFFF8)) >> (d & 63)) & 1
+    if live:
+        mp, me = m.u64(o + 0x18), m.u64(o + 0x20)
+        cap = 0 if me == mp else ((me - mp) * 128 - 1) & 0xFFFFFFFFFFFFFFFF
+        back = (m.u64(o + 0x50) + m.u64(o + 0x58)) & 0xFFFFFFFFFFFFFFFF
+        if cap == back:
+            raise UnliftedCall("free deque grows (0xb44724)")
+        t = _tls_stack_built(m)
+    m.put(lock, 8, cur); m.put(lock + 8, 8, 0)
+    if live:
+        slot = 0 if me == mp else m.u64(mp + 8 * (back >> 10)) + 4 * (back & 0x3FF)
+        alloc = m.u64(o + 0x60)
+        if t:
+            n = m.u64(t + 0x80)
+            if n >= 0x10:
+                raise UnliftedCall("abort: object stack full")
+            m.put(t + 8 * n, 8, alloc)
+            m.put(t + 0x80, 8, n + 1)
+        m.put(slot, 4, m.u32(p))
+        if t:
+            m.put(t + 0x80, 8, m.u64(t + 0x80) - 1)
+        m.put(o + 0x58, 8, m.u64(o + 0x58) + 1)
+        d = (m.u32(p) - m.u32(o)) & 0xFFFFFFFF
+        w = m.u64(o + 0x88) + ((d >> 3) & 0x1FFFFFF8)
+        m.put(w, 8, m.u64(w) & ~(1 << (d & 63)))
+        m.put(o + 8, 4, m.u32(o + 8) - 1)
+    m.put(lock, 8, 0)
+    return m.call(m.main + 0x343E5E0, o + 0xE0)

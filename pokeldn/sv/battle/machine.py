@@ -31,6 +31,10 @@ class Pair(tuple):
         return super().__new__(cls, (x0 & MASK[8], x1 & MASK[8]))
 
 
+class Float32(float):
+    """A result returned in s0 (a single-precision float)."""
+
+
 class UnliftedCall(Exception):
     """The engine reached a game function it has no version of: the round is refused."""
 
