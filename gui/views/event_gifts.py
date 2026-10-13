@@ -181,7 +181,7 @@ class EventGiftPicker:
                                 "summary": builder.summary(info), "legal": info["legal"],
                                 "home_tracker": info.get("home_tracker", ""),
                                 "encounter": info["encounter"], "moves": info["moves"], "ot": info["ot"],
-                                "your_ot": info["your_ot"]}, ""
+                                "your_ot": info["your_ot"], "handled": info.get("handled", False)}, ""
             except Exception as exc:
                 value, error = None, str(exc) or type(exc).__name__
 

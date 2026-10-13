@@ -73,12 +73,15 @@ GIFT_EVENT = "--gift-event"     # pokeldn.receiver_gift
 
 def locked(field: Field, tool: Tool, values: dict) -> str:
     """Why a switch is held off and cannot be turned on, or "": Made for the receiving player while every
-    Mystery Gift Pokemon chosen has its card's own trainer, which no save replaces (docs/gift_simulated.md)."""
+    Mystery Gift Pokemon chosen has its card's own trainer, which no save replaces, or is legal only with a
+    handler, which its own trainer's save clears (docs/gift_simulated.md)."""
     if not field.your_ot:
         return ""
     chosen = [v for f in tool.fields if f.events for v in offers(value_of(f, values)) if v.get("file")]
     if not chosen or any(v.get("your_ot") is not False for v in chosen):
         return ""
+    if any(v.get("handled") for v in chosen):
+        return "This gift is legal only with a handler, which its own trainer's save clears: it goes with your trainer."
     owners = ", ".join(dict.fromkeys(v["ot"] for v in chosen if v.get("ot")))
     return f"This gift has its card's own trainer{f', OT {owners},' if owners else ''} and goes as made."
 

@@ -89,7 +89,8 @@ names each "Simulated" and the trainer it gives:
 | OT | gallery | cards | made for the receiving player |
 |---|---|---|---|
 | HOME | "Simulated HOME" | Let's Go's Meltan (9028), Manaphy (9026), Enamorus (9027), Meloetta (9024), Volcanion (9034) | no: goes as made |
-| the receiving trainer's | "Simulated (Trainer)" | Turtwig, Chimchar, Piplup (9015 to 9017); Rowlet, Cyndaquil, Oshawott (9018 to 9020); Sprigatito, Fuecoco, Quaxly (9021 to 9023); Chikorita, Tepig, Totodile (9031 to 9033) | yes |
+| the receiving trainer's | "Simulated (Trainer)" | Turtwig, Chimchar, Piplup (9015 to 9017); Rowlet, Cyndaquil, Oshawott (9018 to 9020) | yes |
+| the receiving trainer's, with a handler | "Simulated (Trainer)" | Sprigatito, Fuecoco, Quaxly (9021 to 9023); Chikorita, Tepig, Totodile (9031 to 9033) | no: goes with the trainer from Settings |
 | PJCS26, in Japanese | "Simulated PJCS26" | Scarlet/Violet's Garchomp (9035) | no: goes as made |
 
 A gift HOME gave carries the tracker HOME sets as it delivers it. Let's Go has no HOME tracker, so its
@@ -141,7 +142,12 @@ The console receives a traded event Pokemon:
 Made for the receiving player (`--for-receiver`, on by default in the app) makes the gift during the
 trade for the console's own save, so the Pokemon is the player's as if their save had received the
 card. It applies to a gift that names its receiver (Your OT in the list); one with its own trainer
-goes as made, and the app holds the switch off for it
+goes as made, and the app holds the switch off for it. So does a gift legal only with a handler: a
+save that receives a Pokemon whose OT is its own clears the handler
+([What a trade rewrites](sv.md#what-a-trade-rewrites)), and PKHeX then refuses HOME's Sprigatito,
+Fuecoco, Quaxly, Chikorita, Tepig and Totodile ("Current handler cannot be the OT"). `gift_event`
+marks such a card `handled`, and it goes with the trainer from Settings, whose copy the console's
+player handles
 ([Mystery Gift - Simulated](gui.md#mystery-gift---simulated)). The app passes each offer's card as
 `--gift-event KEY` (`command._args`).
 
@@ -165,8 +171,8 @@ several consoles in one loop, which never waits on the service.
 | Let's Go | Meltan (1501), Melmetal (1502), both for Simplified Chinese saves alone; Mew (2001) | kind 2 + 2r in trade r, an encrypted 232-byte PB7 | 42 Pikachu, 43 Eevee |
 | Brilliant Diamond/Shining Pearl | HOME's Turtwig, Chimchar, Piplup (9015 to 9017) | 0x13, an encrypted 328-byte PB8 | 48 Brilliant Diamond, 49 Shining Pearl |
 | Legends Arceus | HOME's Rowlet, Cyndaquil, Oshawott (9018 to 9020) | selector 4, an encrypted 376-byte PA8 | 47 |
-| Scarlet/Violet | 12 cards, among them HOME's Sprigatito, Fuecoco, Quaxly (9021 to 9023) | the 348-byte body of `80 00 02 00` ([The record a trade message carries](sv.md#the-record-a-trade-message-carries)) | 50 Scarlet, 51 Violet |
-| Legends Z-A | HOME's Chikorita, Tepig, Totodile (9031 to 9033), Charizard (1607), Ralts (1601) | the 354-byte pick | 52 |
+| Scarlet/Violet | 9 cards, Mew (1521) and Pikachu (1501) among them | the 348-byte body of `80 00 02 00` ([The record a trade message carries](sv.md#the-record-a-trade-message-carries)) | 50 Scarlet, 51 Violet |
+| Legends Z-A | Charizard (1607), Ralts (1601) | the 354-byte pick | 52 |
 
 When the offer names no one, the console's own session data does. Each game sends its save's trainer
 before any Pokemon, and the host passes it on (`receiver_gift.hear`):
@@ -204,7 +210,7 @@ names the save, and a copy made for the session's trainer is made again.
 `gift_event` makes the card for the save on its version alone (`"only_version"`), and refuses a card
 no save like it received ([Saves a card reached](#saves-a-card-reached)): Let's Go's Meltan and
 Melmetal (1501, 1502) for any save not in Simplified Chinese. HOME's Turtwig, Chimchar and Piplup
-are Brilliant Diamond's and HOME's Sprigatito, Fuecoco and Quaxly Scarlet's, whatever the save.
+are Brilliant Diamond's, whatever the save.
 
 ### The trade
 

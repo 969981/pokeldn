@@ -384,7 +384,7 @@ LegalityAnalysis Mend(PKM pk, bool evolved, IEncounterTemplate encounter, ITrain
             // A trade evolution has been through a trade, and some gifts (Z-A's Magearna) arrive already handled.
             pk.CurrentHandler = 1;
             pk.HandlingTrainerName = "POKELDN";
-            pk.HandlingTrainerGender = (byte)(1 - trainer.Gender);
+            pk.HandlingTrainerGender = 0;
             if (pk is IHandlerLanguage language)
                 language.HandlingTrainerLanguage = (byte)trainer.Language;
             Refit(pk, wish);
@@ -1155,7 +1155,10 @@ JsonObject GiftEvent(Game game, JsonObject request)
     var reply = Describe(game, pk, la);
     reply["key"] = key;
     reply["title"] = gift.CardTitle.Trim();
-    reply["your_ot"] = YourOT(pk, trainer);
+    // A copy legal only with a handler cannot go to its own trainer: that save clears the handler as it receives
+    // it (docs/sv.md, What a trade rewrites), and PKHeX then refuses it (HOME's starters on Scarlet/Violet, Z-A).
+    reply["handled"] = YourOT(pk, trainer) && pk.CurrentHandler == 1;
+    reply["your_ot"] = YourOT(pk, trainer) && pk.CurrentHandler == 0;
     reply["refused"] = refused;
     return reply;
 }
@@ -1264,7 +1267,7 @@ LegalityAnalysis MendGift(PKM pk, ITrainerInfo trainer)
     {
         pk.CurrentHandler = 1;
         pk.HandlingTrainerName = "POKELDN";
-        pk.HandlingTrainerGender = (byte)(1 - trainer.Gender);
+        pk.HandlingTrainerGender = 0;
         if (pk is IHandlerLanguage language)
             language.HandlingTrainerLanguage = (byte)trainer.Language;
         la = Refresh(pk);

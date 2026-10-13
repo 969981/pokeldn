@@ -398,7 +398,7 @@ def test_a_card_no_save_in_the_trainers_language_received_is_refused(service):
 # Turtwig names Brilliant Diamond whichever the save is, as HOME's Sprigatito names Scarlet.
 RECEIVER_GIFTS = {"lgpe": ("2001-151-0", "0002-150-0", "GE", 43), "bdsp": ("9015-387-0", "9026-490-0", "SP", 48),
                   "pla": ("9018-722-0", "9027-905-0", "PLA", 47), "sv": ("1501-25-0-2", "0503-964-0-10", "VL", 51),
-                  "za": ("9031-152-0", "0101-531-0", "ZA", 52)}
+                  "za": ("1601-280-0", "0101-531-0", "ZA", 52)}
 
 
 @pytest.mark.parametrize("game", RECEIVER_GIFTS)
@@ -431,6 +431,23 @@ def test_a_host_makes_again_only_the_gifts_that_name_their_receiver(service, gam
         assert receiver_gift.unknown(game, read(bytes(len(body))))
     except ValueError:
         pass
+
+
+@pytest.mark.parametrize("game", RECEIVER_GIFTS)
+def test_a_gift_made_for_its_own_trainer_needs_no_handler(service, game):
+    """A save that receives a Pokemon whose OT is its own clears the handler (docs/sv.md, What a trade rewrites):
+    a card made for the receiving player must be legal without one. HOME's starters on Scarlet/Violet and
+    Legends Z-A are legal only with a handler, so they go with the trainer from Settings."""
+    save = {"ot": "Nemona", "tid": 4660, "sid": 66, "language": 2, "gender": 1}
+    handled = []
+    for event in service.gift_events(game, save):
+        info = service.gift_event(game, event["key"], save, keep=False)
+        if info["your_ot"] and not info["refused"]:
+            assert service.owner(game, base64.b64decode(info["data"]))["handler"] == 0, event["key"]
+        if info["handled"]:
+            assert not info["your_ot"]
+            handled.append(event["key"].split("-")[0])
+    assert sorted(handled) == {"sv": ["9021", "9022", "9023"], "za": ["9031", "9032", "9033"]}.get(game, [])
 
 
 def test_a_fixed_event_trainer_cannot_be_overwritten(service):

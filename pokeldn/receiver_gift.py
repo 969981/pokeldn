@@ -180,6 +180,10 @@ def rounds(game, keys, offers, log=print):
             if info["your_ot"]:
                 log(f"[gift] offer {n + 1}: {info['title']} is made for the console's save when its offer or "
                     "session names it, and goes with your trainer from Settings otherwise")
+            elif info.get("handled"):
+                log(f"[gift] offer {n + 1}: {info['title']} is legal only with a handler, which its own trainer's "
+                    "save clears, so it goes with your trainer from Settings")
+                key = ""
             else:
                 log(f"[gift] offer {n + 1}: {info['title']} gives its own trainer and goes as made")
                 key = ""
