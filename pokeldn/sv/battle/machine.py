@@ -38,10 +38,12 @@ class UnliftedCall(Exception):
 class Machine:
     """State as pages of bytes, plus the call interface the lifted functions use."""
 
-    def __init__(self, pages=None, main=0, stack=None):
+    def __init__(self, pages=None, main=0, stack=None, tls=0):
         self.pages = pages if pages is not None else {}
         self.main = main            # where the game's main image sits in this state's address space
         self.sp = stack             # top of the engine's own scratch stack (locals of lifted functions)
+        self.tls = tls              # tpidrro_el0: the thread's TLS block, +0x1f8 its nn::os ThreadType
+        self.x8 = 0                 # the result address of a call returning a struct through x8
 
     def page(self, address):
         p = self.pages.get(address & ~(PAGE - 1))
@@ -103,6 +105,11 @@ class Machine:
         if fn is None:
             raise UnliftedCall(f"main+0x{address - self.main:x}")
         fn(self, *args)
+
+    def call_sret(self, address, result, *args):
+        """Call a function that writes its struct result to `result` (passed in x8)."""
+        self.x8 = result
+        return self.call(address, *args)
 
     def vcall_void(self, obj, slot, *args):
         self.call_void(self.u64(self.u64(obj) + slot), obj, *args)

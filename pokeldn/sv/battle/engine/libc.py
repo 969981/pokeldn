@@ -41,3 +41,18 @@ def signal_light_event(m, event, *_):
     elif state != 2:
         raise UnliftedCall("light event with a waiter")
     return event
+
+
+def _tls_slot(m, slot):
+    return m.u64(m.tls + 0x1F8) + 0x80 + 8 * (slot & 0xFFFFFFFF)
+
+
+@lifted(0x343DA20)
+def get_tls_value(m, slot, *_):
+    """nn::os::GetTlsValue: the slot's word in the thread's ThreadType (+0x80)."""
+    return m.u64(_tls_slot(m, slot))
+
+
+@lifted(0x343DA30)
+def set_tls_value(m, slot, value, *_):
+    m.put(_tls_slot(m, slot), 8, value)

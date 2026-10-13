@@ -1427,3 +1427,1041 @@ def side_of_c9c750(m, a, b, c, d, *_):
     k = (1, 0)[r] if r <= 1 else 2
     s = m.call(m.main + 0x113AF40, a & 0xFFFFFFFF, b & 0xFFFFFFFF, k, 0)
     return _tail(m, m.main + 0x113A588, a & 0xFFFFFFFF, b & 0xFFFFFFFF, s & 0xFFFFFFFF, d & 0xFFFFFFFF)
+
+
+# Batch 2, second pass: the battle-state build (0x2892ac0 and its callees).
+from pokeldn.sv.battle.engine import pokemon as _pk  # noqa: E402
+from pokeldn.sv.battle.engine.data import static_table  # noqa: E402
+
+# Record accessors in the layout of pokemon._GETTERS / _SETTERS.
+for _a, *_spec in ((0xC1EB6C, 3, 0x2E, 1, 0, 0x4742380, False), (0xD8FAE8, 0, 0x1E, 1, 0, 0x4742290, False),
+                   (0xD904B4, 0, 0x22, 1, 0, 0x4742290, False)):
+    lifted(_a)(_pk._getter(*_spec))
+for _a, *_spec in ((0xE16488, "party", 2, 2, 0, 0x47423D0, True), (0xE15AEC, "party", 8, 2, 0, 0x47423D0, True),
+                   (0xE15150, "party", 0, 1, 0, 0x47423D0, True)):
+    lifted(_a)(_pk._setter(*_spec))
+
+
+def _encrypt(m, acc):
+    core = m.u64(acc + 0x10)
+    if core:
+        m.put(core + 6, 2, _pk._checksum(m, core))
+        _pk._xor_words(m, core + _pk.BLOCKS, (_pk.CORE - _pk.BLOCKS) // 2, m.u32(core))
+    party = m.u64(acc + 8)
+    if party and m.u64(acc + 0x10):
+        _pk._xor_words(m, party, 8, m.u32(m.u64(acc + 0x10)))
+    m.put(acc + 0x18, 1, 1)
+
+
+def _decrypt(m, acc):
+    _pk._crypt(m, acc)
+    m.put(acc + 0x18, 1, 0)
+    core = m.u64(acc + 0x10)
+    if m.u16(core + 6) != _pk._checksum(m, core):
+        m.put(core + 4, 2, m.u16(core + 4) | 4)
+
+
+@lifted(0xFCA6E8)
+def unlocked_block1_3d(m, acc, *_):
+    """Byte 0x3d of block B, decrypting and re-encrypting the record without taking its lock."""
+    if m.u8(acc + 0x18):
+        _decrypt(m, acc)
+    core = m.u64(acc + 0x10)
+    v = m.u8(_pk._target(m, acc, core, 1, 0x47422E0) + 0x3D)
+    if m.u8(acc + 0x18) == 0 and m.u8(acc + 0x19) == 0:
+        _encrypt(m, acc)
+    return v
+
+
+@lifted(0xE32A60)
+def copy_encrypted(m, acc, core_out, party_out, *_):
+    """Copy the encrypted core record (0x148 bytes) and party record (16) out, encrypting a record kept
+    plain (+0x19) for the copy and restoring it after."""
+    plain = m.u8(acc + 0x19)
+    if plain:
+        m.put(acc + 0x19, 1, 0)
+        if m.u8(acc + 0x18) == 0:
+            _encrypt(m, acc)
+    if core_out:
+        m.write(core_out, m.read(m.u64(acc + 0x10), _pk.CORE))
+    if party_out:
+        m.write(party_out, m.read(m.u64(acc + 8), 16))
+    if plain:
+        if m.u8(acc + 0x18):
+            _decrypt(m, acc)
+        m.put(acc + 0x19, 1, 1)
+    return core_out if core_out else acc
+
+
+def _personal_table(m, key_holder):
+    """The personal record for (u16 +8) * 10000 + (u16 +0xa) (static map 0x46d7438), else its default."""
+    from pokeldn.sv.battle.engine.containers import find
+    table = static_table(m, 0x46D7430, 0x46D7438, 0x46D7440)
+    key = m.u16(key_holder + 8) * 10000 + m.u16(key_holder + 0xA)
+    node = find(m, table + 0x68, key, 8)
+    return m.u64(node + 0x18) if node else m.u64(table + 0xD0)
+
+
+@lifted(0xCEE118)
+def personal_byte_5(m, key_holder, *_):
+    """Byte 5 of the personal record's struct at field +0x30."""
+    t = _personal_table(m, key_holder)
+    return m.u8(t + m.u16(t - m.s(t, 4) + 0x30) + 5)
+
+
+@lifted(0xE13DA0)
+def level_for_exp(m, species, form, exp, *_):
+    """The level (1..100) whose experience threshold the growth rate (0xb860e0) puts at or below exp:
+    the u32 thresholds at [table field 0] + rate * 0x194 + level * 4 of the static at 0x46da7c8."""
+    exp &= 0xFFFFFFFF
+    level = 1
+    with m.frame(0x10) as p:
+        while True:
+            m.put(p, 8, m.u64(m.main + 0x46D8EE0) + 0x10)
+            m.put(p + 8, 2, species); m.put(p + 0xA, 2, form)
+            rate = m.call(m.main + 0xB860E0, p) & 0xFF
+            table = static_table(m, 0x46DA7C0, 0x46DA7C8, 0x46DA7D0)
+            root = m.vcall(m.u64(table + 0x30), 0x70)
+            if root == 0:
+                need = 1
+            else:
+                t = root + m.u32(root)
+                rows = t + m.u16(t - m.s(t, 4) + 4)
+                need = m.u32(rows + (0 if rate > 8 else rate) * 0x194 + level * 4)
+            if need > exp:
+                break
+            level += 1
+            if level == 0x65:
+                return 100
+    return level - 1 if level & 0xFF >= 2 else 1
+
+
+@lifted(0x2014160)
+def hash_of_id(m, owner, key, *_):
+    """The 64-bit name hash of u16 id `key` (282 entries of 0x18 bytes from +0x30); 0 if unknown."""
+    table = static_table(m, 0x46D8900, 0x46D8908, 0x46D8910)
+    key &= 0xFFFF
+    if key:
+        for i in range(0x11A):
+            if m.u16(table + 0x38 + 0x18 * i) == key:
+                return m.u64(table + 0x30 + 0x18 * i)
+    return 0
+
+
+@lifted(0x2A1C178)
+def is_zero_u16(m, _o, v, *_): return int(v & 0xFFFF == 0)
+
+
+@lifted(0x2A70AB4)
+def destroy_event_holder(m, p, *_):
+    """Set the vtable 0x44a92f8 and finalize the light event at +0x28 (nn::os::FinalizeLightEvent
+    clears its byte +1)."""
+    m.put(p, 8, m.main + 0x44A92F8)
+    m.put(p + 0x29, 1, 0)
+    return p + 0x28
+
+
+@lifted(0x13736D8)
+def refresh_battle_stats(m, b, reset, scale, *_):
+    """reset: +0x40a/+0x40b from vf 0x350/0x358, +0x410 = 0, +0x40c = 0x12. Always +0x40d from the
+    core's vf 0x130. scale: the u16 stats +0x400..+0x408 = core vf 0x70(1..5) * byte +0x3f6.. / 10."""
+    if reset & 1:
+        m.put(b + 0x40A, 1, m.vcall(b, 0x350))
+        m.put(b + 0x40B, 1, m.vcall(b, 0x358))
+        m.put(b + 0x410, 4, 0)
+        m.put(b + 0x40C, 1, 0x12)
+    m.put(b + 0x40D, 1, m.vcall(m.u64(b + 0x48), 0x130))
+    if scale & 1:
+        for i in range(5):
+            v = m.vcall(m.u64(b + 0x48), 0x70, i + 1) & 0xFFFF
+            m.put(b + 0x400 + 2 * i, 2, (v * m.u8(b + 0x3F6 + i) & 0xFFFFFFFF) // 10)
+
+
+@lifted(0x14806D0)
+def apply_five_flags(m, b, flags, *_):
+    """For each non-zero byte k of flags +4..+8, vf 0x370(k - 3, byte)."""
+    vals = [m.u8(flags + 4 + k) for k in range(5)]
+    if not any(vals):
+        return b
+    r = b
+    for k, v in enumerate(vals):
+        if v:
+            r = _vtail(m, b, 0x370, k + 1, v)
+    return r
+
+
+@lifted(0xFA1F30)
+def push_side_battler(m, o, side, ident, *_):
+    """Append battler `ident` (map o+0x140) to side's list (o + side*0x38: objects +0x28, count u8 +0x58),
+    taking and dropping a reference on its control block; nothing when the id is unknown, a null entry
+    when the node holds none."""
+    from pokeldn.sv.battle.engine.containers import find
+    node = find(m, o + 0x140, ident & 0xFFFFFFFF, 4)
+    if not node:
+        return o
+    obj = m.u64(node + 0x18)
+    row = o + (side & 0xFF) * 0x38
+    if obj == 0:
+        c = m.u8(row + 0x58)
+        m.put(row + 0x58, 1, c + 1)
+        m.put(row + 0x28 + 8 * c, 8, 0)
+        return o
+    ctl = m.u64(obj + 0x30)
+    inner = m.u64(ctl + 0x10)
+    if inner == 0:
+        raise UnliftedCall("AddReference abort: m_object is null")
+    count = m.u16(ctl + 0x1A)
+    if count == 0xFFFF:
+        raise UnliftedCall("AddReference abort: counter overflow")
+    if count == 0:
+        _need(m, m.u64(m.u64(inner)))
+        _need(m, m.u64(m.u64(obj) + 0x50))
+    r = o
+    m.put(ctl + 0x1A, 2, count + 1)
+    if count == 0:
+        r = m.vcall(inner, 0)
+        m.put(ctl + 8, 8, r)
+        m.put(ctl + 0x1C, 4, 0xFFFFFFFE)
+    c = m.u8(row + 0x58)
+    m.put(row + 0x58, 1, c + 1)
+    m.put(row + 0x28 + 8 * c, 8, obj)
+    ctl = m.u64(obj + 0x30)
+    count = m.u16(ctl + 0x1A)
+    if count == 0:
+        raise UnliftedCall("ReleaseReference abort: counter underflow")
+    m.put(ctl + 0x1A, 2, count - 1)
+    if count == 1:
+        m.put(ctl + 0x10, 8, 0)
+        return _vtail(m, obj, 0x50)
+    return r
+
+
+@lifted(0xE13EF0)
+def computed_max_hp(m, pp, *_):
+    """Max HP from the core record: (IV + 2 * base + EV / 4) * level / 100 + level + 10; 1 for species
+    0x124. The level is the party record's, or the one the experience gives."""
+    for a in (0xBF41A8, 0xCEDBF4, 0xD97F74, 0xE14B64, 0xE13DA0, 0xD9987C, 0xC1EB6C, 0xD8FAE8):
+        _need(m, m.main + a)
+    acc = m.u64(pp + 0x70)
+    species = m.call(m.main + 0xBF44F4, acc) & 0xFFFF
+    if m.u64(acc + 8):
+        level = m.call(m.main + 0xD9987C, acc) & 0xFF
+    else:
+        s = m.call(m.main + 0xBF44F4, acc)
+        f = m.call(m.main + 0xBF41A8, m.u64(pp + 0x70))
+        e = m.call(m.main + 0xE14B64, m.u64(pp + 0x70))
+        level = m.call(m.main + 0xE13DA0, s & 0xFFFFFFFF, f & 0xFFFFFFFF, e & 0xFFFFFFFF) & 0xFF
+    s = m.call(m.main + 0xBF44F4, m.u64(pp + 0x70))
+    f = m.call(m.main + 0xBF41A8, m.u64(pp + 0x70))
+    with m.frame(0x10) as p:
+        m.put(p, 8, m.u64(m.main + 0x46D8EE0) + 0x10)
+        m.put(p + 8, 2, s); m.put(p + 0xA, 2, f)
+        base = m.call(m.main + 0xCEDBF4, p) & 0xFF
+    if m.call(m.main + 0xC1EB6C, m.u64(pp + 0x70)) & 1:
+        iv = 0x1F
+    else:
+        iv = m.call(m.main + 0xD97F74, m.u64(pp + 0x70)) & 0xFFFF
+    ev = m.call(m.main + 0xD8FAE8, m.u64(pp + 0x70)) & 0xFFFFFFFF
+    if species == 0x124:
+        return 1
+    return (((iv + 2 * base + (ev >> 2 & 0x3FFF)) * level & 0xFFFFFFFF) // 100 + level + 10) & 0xFFFFFFFF
+
+
+@lifted(0x1536F5C)
+def push_cb_pair(m, o, a, b, c, *_):
+    """Message 0xcb with (a, c & 0xffff, b's id from vf 0x98) on the queue [o+0x18]."""
+    v = m.vcall(b, 0x98)
+    return _tail(m, m.main + 0x157EBC0, m.u64(o + 0x18), 0xCB, a & 0xFFFFFFFF, c & 0xFFFF, v & 0xFFFFFFFF,
+                 0xFFFF0000)
+
+
+@lifted(0x153314C)
+def move_kind_8_message(m, o, _x1, ctx, *_):
+    """For a move (u16 at [ctx]) whose record field 5 (static 0x46d7948) is 8: when 0x1536cb0 agrees,
+    message 0xcb with ([ctx+8]'s id, 0x122, [ctx+0x10]) through 0x1536f5c."""
+    from pokeldn.sv.battle.engine.containers import data_record
+    if m.u8(m.u64(m.main + 0x46D7940)) & 1 == 0:
+        raise UnliftedCall("static 0x46d7948 not built")
+    move = m.u16(m.u64(ctx))
+    rec = data_record(m, m.u64(m.u64(m.main + 0x46D7948)), move)
+    vt = rec - m.s(rec, 4)
+    kind8 = m.u16(vt) >= 0xB and m.u16(vt + 0xA) and m.u8(rec + m.u16(vt + 0xA)) == 8
+    if kind8:
+        for a in (0x1536894, 0x1533CA0, 0x1536CB0, 0x1143584):
+            _need(m, m.main + a)
+    static_table(m, 0x46D7940, 0x46D7948, 0x46D7950)
+    if not kind8:
+        return rec
+    k = m.call(m.main + 0x1536894, m.u16(m.u64(ctx)))
+    k = m.call(m.main + 0x1533CA0, m.u32(ctx + 0x18), k & 0xFFFFFFFF)
+    r = m.call(m.main + 0x1536CB0, o, m.u64(ctx + 8), m.u64(ctx + 0x10), k & 0xFFFFFFFF)
+    if r & 1 == 0:
+        return r
+    owner = m.call(m.main + 0x1143584, o)
+    ident = m.vcall(m.u64(ctx + 8), 0x98)
+    return _tail(m, m.main + 0x1536F5C, owner, ident & 0xFFFFFFFF, m.u64(ctx + 0x10), 0x122)
+
+
+@lifted(0x1535450)
+def record_hits(m, o, _x1, ctx, *_):
+    """For each of the u8 [ctx+0x18] targets ([ctx+0x20]: battlers at +0, u16 amounts at +0x30): add the
+    battler to the member list [ctx+0x28] (pointers +0, u16 sums +0x58, +0x6e, flags +0x84, count +0xa6,
+    high mark +0xa7, at most 11) and add the amount to every matching entry, then hand the hit to the
+    target's handler (0xf21c94, vf 0x788), message 0x42 and vf 0x508(2)."""
+    i = 0
+    while i < m.u8(ctx + 0x18):
+        lst = m.u64(ctx + 0x28)
+        hits = m.u64(ctx + 0x20)
+        v = m.u64(hits + 8 * i)
+        amount = m.u16(hits + 0x30 + 2 * i)
+        n = m.u8(lst + 0xA6)
+        if v and n < 0xB and all(m.u64(lst + 8 * k) != v for k in range(n)):
+            m.put(lst + 8 * n, 8, v)
+            m.put(lst + 0x84 + m.u8(lst + 0xA6), 1, 0)
+            m.put(lst + 0x58 + 2 * m.u8(lst + 0xA6), 2, 0)
+            m.put(lst + 0x6E + 2 * m.u8(lst + 0xA6), 2, 0)
+            n = (m.u8(lst + 0xA6) + 1) & 0xFF
+            m.put(lst + 0xA6, 1, n)
+            if m.u8(lst + 0xA7) < n:
+                m.put(lst + 0xA7, 1, n)
+        if n:
+            if m.u64(lst) == v:
+                m.put(lst + 0x58, 2, m.u16(lst + 0x58) + amount)
+                m.put(lst + 0x84, 1, 1)
+                n = m.u8(lst + 0xA6)
+            if n >= 2:
+                if m.u64(lst + 8) == v:
+                    m.put(lst + 0x5A, 2, m.u16(lst + 0x5A) + amount)
+                    m.put(lst + 0x85, 1, 1)
+                    n = m.u8(lst + 0xA6)
+                if n >= 3:
+                    k = 0
+                    while True:
+                        if m.u64(lst + 0x10 + 8 * k) == v:
+                            m.put(lst + 0x5C + 2 * k, 2, m.u16(lst + 0x5C + 2 * k) + amount)
+                            m.put(lst + 0x86 + k, 1, 1)
+                            n = m.u8(lst + 0xA6)
+                        k += 1
+                        if k + 2 >= n:
+                            break
+        target = m.u64(hits + 8 * i)
+        amount = m.u16(hits + 0x30 + 2 * i)
+        root = m.u64(m.u64(m.u64(o + 0x78) + 0x60) + 0x20)
+        move = m.u64(ctx + 0x10)
+        mid, b8, b9 = m.u16(move), m.u8(move + 8), m.u8(move + 9)
+        user = m.u64(ctx)
+        flag = m.u8(ctx + 8)
+        tid = m.vcall(target, 0x98) & 0xFFFFFFFF
+        uid = m.vcall(user, 0x98) & 0xFFFFFFFF
+        with m.frame(0x10) as p:
+            m.put(p, 2, mid); m.put(p + 2, 2, amount); m.put(p + 4, 1, b9); m.put(p + 5, 1, b8)
+            m.put(p + 8, 4, uid); m.put(p + 0xC, 1, flag)
+            h = m.call(m.main + 0xF21C94, m.u64(m.u64(m.u64(root + 0x20) + 0x10) + 0x30), tid)
+            m.vcall_void(h, 0x788, p)
+        que = m.u64(root + 0x18)
+        tid = m.vcall(target, 0x98) & 0xFFFFFFFF
+        uid = m.vcall(user, 0x98) & 0xFFFFFFFF
+        m.call_void(m.main + 0x119AFF0, que, 0x42, tid, uid, flag, b8, b9, mid, amount)
+        m.vcall_void(m.u64(m.u64(ctx + 0x20) + 8 * i), 0x508, 2)
+        i += 1
+
+
+@lifted(0x15368CC)
+def damage_messages(m, o, user, move, n, targets, effects, amounts, *_):
+    """For each of n targets: 0x13fced4([o+0x20], target, amount, 3, user) and message 2 (target, user,
+    amount, 3); then group 0xd0 of (target id, effect byte) pairs, and message 0x8e (n, 2 when an effect
+    byte is above 7, else 3 when one is below 7, else 1, the u16 move)."""
+    n &= 0xFFFFFFFF
+    hi = lo = 0
+    for i in range(n):
+        t = m.u64(targets + 8 * i)
+        amount = m.u16(amounts + 2 * i)
+        uid = m.vcall(user, 0x98) & 0xFFFFFFFF
+        tid = m.vcall(t, 0x98) & 0xFFFFFFFF
+        m.call_void(m.main + 0x13FCED4, m.u64(o + 0x20), tid, amount, 3, uid)
+        tid = m.vcall(t, 0x98) & 0xFFFFFFFF
+        m.call_void(m.main + 0x119AFF0, m.u64(o + 0x18), 2, tid, uid, amount, 3)
+        e = m.u8(effects + i)
+        hi += e > 7
+        lo += e < 7
+    que = m.u64(o + 0x18)
+    at = m.u32(que + 0x68)
+    m.put(que + 0x70 + at, 1, 0)
+    m.put(que + 0x70 + ((at + 1) & 0xFFFFFFFF), 1, 0xD0)
+    m.put(que + 0x68, 4, at + 3)
+    m.put(que + 0x70 + ((at + 2) & 0xFFFFFFFF), 1, n << 1)
+    for i in range(n):
+        q = m.u64(o + 0x18)
+        v = m.vcall(m.u64(targets + 8 * i), 0x98)
+        at = m.u32(q + 0x68); m.put(q + 0x68, 4, at + 1); m.put(q + 0x70 + at, 1, v)
+        q = m.u64(o + 0x18)
+        at = m.u32(q + 0x68); m.put(q + 0x68, 4, at + 1); m.put(q + 0x70 + at, 1, m.u8(effects + i))
+    k = 2 if hi & 0xFF else (3 if lo & 0xFF else 1)
+    return _tail(m, m.main + 0x119AFF0, m.u64(o + 0x18), 0x8E, n & 0xFF, k, m.u16(move))
+
+
+@lifted(0xFAB500)
+def clear_12(m, p, *_):
+    m.put(p, 8, 0); m.put(p + 8, 4, 0)
+
+
+@lifted(0xFA98A4)
+def clear_fa98a4(m, p, *_):
+    m.write(p, bytes(0x1B)); m.put(p + 0x20, 8, 0)
+
+
+@lifted(0xFA949C)
+def clear_fa949c(m, p, *_):
+    m.write(p + 0x30, bytes(0x1B)); m.write(p + 0x50, bytes(0x23)); m.write(p + 0x78, bytes(0x23))
+    m.put(p + 0xA0, 8, 0)
+
+
+@lifted(0xFA6268)
+def set_30(m, p, v, *_): m.put(p + 0x30, 8, v)
+
+
+@lifted(0xFAF004)
+def clear_2420(m, p, *_): m.put(p + 0x2420, 1, 0)
+
+
+@lifted(0xFAF010)
+def fill_five_from_28(m, p, *_):
+    v = m.u64(p + 0x28)
+    for k in range(5):
+        m.put(p + 8 * k, 8, v)
+
+
+@lifted(0xFB00C0)
+def field_170(m, p, *_): return m.u64(p + 0x170)
+
+
+@lifted(0xFB00D8)
+def field_1d0(m, p, *_): return m.u64(p + 0x1D0)
+
+
+@lifted(0xFA58C0)
+def byte_e3(m, p, *_): return m.u8(p + 0xE3)
+
+
+@lifted(0x16F814C)
+def byte_712_of_38(m, p, *_): return m.u8(m.u64(p + 0x38) + 0x712)
+
+
+@lifted(0xFA38C8)
+def kind_2_in_37(m, a, b, *_):
+    """1 when a is 2 and b - 1 (0..5) is a set bit of 0x37."""
+    k = (b - 1) & 0xFFFFFFFF
+    if a & 0xFFFFFFFF == 2 and k & 0xFF <= 5:
+        return 0x37 >> (k & 0x1F) & 1
+    return 0
+
+
+@lifted(0xFA47C8)
+def copy_24_to_40(m, p, src, *_):
+    m.put(p + 0x40, 8, m.u64(src)); m.put(p + 0x50, 8, m.u64(src + 0x10)); m.put(p + 0x48, 8, m.u64(src + 8))
+
+
+@lifted(0xFA0154)
+def spread_8c(m, o, dst, *_):
+    """0xfa01f8(0xfa01f0(dst), i, u16 o+0x8c) for i in 0..4."""
+    for i in range(4):
+        m.call_void(m.main + 0xFA01F8, m.call(m.main + 0xFA01F0, dst), i, m.u16(o + 0x8C))
+    return _tail(m, m.main + 0xFA01F8, m.call(m.main + 0xFA01F0, dst), 4, m.u16(o + 0x8C))
+
+
+@lifted(0x127E0C8)
+def init_entries_127e0c8(m, p, *_):
+    """30 entries of 0x10 from +0x10: u64 0, u32 0x102, bytes +0xc and +0xe cleared."""
+    for k in range(1, 0x1F):
+        e = p + 0x10 * k
+        m.put(e, 8, 0); m.put(e + 8, 4, 0x102); m.put(e + 0xC, 1, 0); m.put(e + 0xE, 1, 0)
+    return p + 0xD0  # x0 after the pre-indexed stores
+
+
+@lifted(0x127DCFC)
+def clear_flags_127dcfc(m, p, *_):
+    for k in range(50):
+        m.put(p + 0x15 + 0x18 * k, 1, 0)
+
+
+def _move_ref(m, dst, src, *_):
+    """Move-assign an intrusive reference (u32 count at +0x28): drop dst's object (vf 0x10 at the last
+    reference), then take src's and clear src."""
+    old = m.u64(dst)
+    if old:
+        count = m.u32(old + 0x28)
+        if count == 0:
+            raise UnliftedCall("DecrementReference abort: counter underflow")
+        if count == 1:
+            _need(m, m.u64(m.u64(old) + 0x10))
+    m.put(dst, 8, 0)
+    if old:
+        m.put(old + 0x28, 4, count - 1)
+        if count == 1:
+            m.vcall_void(old, 0x10)
+    v = m.u64(src)
+    m.put(src, 8, 0)
+    m.put(dst, 8, v)
+
+
+for _a in (0xFAB6BC, 0xFAB860):
+    lifted(_a)(_move_ref)
+
+
+@lifted(0xFA6424)
+def assign_shared(m, dst, new, *_):
+    """Store `new` at dst after taking a reference on its control block (+0x30: object +0x10, u16 count
+    +0x1a; the first reference builds +8 through vf 0 of +0x10), then drop the old object's (the last
+    one clears +0x10 and runs its vf 0x50). The old object is the result."""
+    if new:
+        ctl = m.u64(new + 0x30)
+        inner = m.u64(ctl + 0x10)
+        if inner == 0:
+            raise UnliftedCall("AddReference abort: m_object is null")
+        count = m.u16(ctl + 0x1A)
+        if count == 0xFFFF:
+            raise UnliftedCall("AddReference abort: counter overflow")
+        if count == 0:
+            _need(m, m.u64(m.u64(inner)))
+    old = m.u64(dst)
+    if old:
+        oc = m.u16(m.u64(old + 0x30) + 0x1A)
+        if oc == 0 and not (new and m.u64(new + 0x30) == m.u64(old + 0x30)):
+            raise UnliftedCall("ReleaseReference abort: counter underflow")
+        if oc == 1 and not (new and m.u64(new + 0x30) == m.u64(old + 0x30)):
+            _need(m, m.u64(m.u64(old) + 0x50))
+    if new:
+        m.put(ctl + 0x1A, 2, count + 1)
+        if count == 0:
+            m.put(ctl + 8, 8, m.vcall(inner, 0))
+            m.put(ctl + 0x1C, 4, 0xFFFFFFFE)
+    old = m.u64(dst)
+    m.put(dst, 8, new)
+    if old == 0:
+        return 0
+    ctl = m.u64(old + 0x30)
+    c = m.u16(ctl + 0x1A)
+    m.put(ctl + 0x1A, 2, c - 1)
+    if c == 1:
+        m.put(ctl + 0x10, 8, 0)
+        return _vtail(m, old, 0x50)
+    if c == 0:
+        raise UnliftedCall("ReleaseReference abort: counter underflow")
+    return old
+
+
+lifted(0xFA95F8)(_move_ref)
+
+
+@lifted(0xFA0028)
+def side_slot_typed(m, o, side, k, *_):
+    """Entry k of side's list (o + side*0x38: objects +0x28, count u8 +0x58) when the type list from its
+    +0x28 interface (vf 0) holds the static 0x46d3f08; else 0."""
+    side &= 0xFF; k &= 0xFF
+    if side > 4 or m.u8(o + side * 0x38 + 0x58) <= k:
+        return 0
+    obj = m.u64(o + side * 0x38 + 8 * k + 0x28)
+    if obj == 0:
+        return 0
+    node = m.vcall(obj + 0x28, 0)
+    if m.u8(m.u64(m.main + 0x46D3F00)) & 1 == 0:
+        raise UnliftedCall("static 0x46d3f08 not built")
+    static = m.u64(m.main + 0x46D3F08)
+    while node:
+        if node == static:
+            return obj
+        node = m.u64(node)
+    return 0
+
+
+@lifted(0x1142D98)
+def run_1142dcc(m, o, *_):
+    """0x1142dcc(0x1142dc4([o+0x78]), two out slots on the stack)."""
+    with m.frame(0x10) as p:
+        return _tail(m, m.main + 0x1142DCC, m.call(m.main + 0x1142DC4, m.u64(o + 0x78)), p, p + 8)
+
+
+@lifted(0x17D3110)
+def run_17d3154(m, o, a, b, c, *_):
+    """0x17d3154(0x17d314c([o+0x78]), an out slot, &{a, u16 b, c & 1})."""
+    with m.frame(0x20) as p:
+        m.put(p + 8, 8, a); m.put(p + 0x10, 2, b); m.put(p + 0x12, 1, c & 1)
+        return _tail(m, m.main + 0x17D3154, m.call(m.main + 0x17D314C, m.u64(o + 0x78)), p, p + 8)
+
+
+@lifted(0x1858568)
+def release_shared(m, p, *_):
+    """Drop a reference on [p]'s control block (+0x30, u16 count +0x1a); the last one clears +0x10 and
+    runs the object's vf 0x50."""
+    obj = m.u64(p)
+    if obj == 0:
+        return 0
+    ctl = m.u64(obj + 0x30)
+    c = m.u16(ctl + 0x1A)
+    if c == 0:
+        raise UnliftedCall("ReleaseReference abort: counter underflow")
+    if c == 1:
+        _need(m, m.u64(m.u64(obj) + 0x50))
+    m.put(ctl + 0x1A, 2, c - 1)
+    if c == 1:
+        m.put(ctl + 0x10, 8, 0)
+        return _vtail(m, obj, 0x50)
+    return obj
+
+
+lifted(0x18584F0)(release_shared)
+
+
+@lifted(0x18B7E00)
+def find_u32_at(m, table, key_ptr, *_):
+    """The node holding the u32 at key_ptr, or 0."""
+    from pokeldn.sv.battle.engine.containers import find
+    return find(m, table, m.u32(key_ptr), 4)
+
+
+@lifted(0xF79790)
+def battler_checked(m, o, ident, *_):
+    """The battler with id `ident` (map o+0x140) when present (count, then at), else 0."""
+    return battler(m, o, ident)
+
+
+# Message ids for a stat change of stat k + 1 (k 0..6), by the result r of the change (r < 2, r == 2,
+# r > 2): words +4, +8, +0xc of the 16-byte rows at 0x3c6a6ec (raised), 0x3c6a75c (raised, with a
+# cause) and 0x3c6a804 (lowered).
+_RAISED = tuple((11 + k, 18 + k, 25 + k) for k in range(7))
+_RAISED_BY = tuple((303 + k, 310 + k, 317 + k) for k in range(7))
+_LOWERED = tuple((32 + k, 39 + k, 46 + k) for k in range(7))
+
+
+@lifted(0x13818F8)
+def stat_change_messages(m, o, who, b, stat, amount, cause, show, quiet, *_):
+    """Change stat `stat` of battler b by the signed `amount` (vf 0x370 up, vf 0x378 down; stat 8 goes to
+    0x288db34) and queue its messages: 0xc / 0xd and, unless quiet is 2, 0x92 / 0x93; with `show`,
+    message 0xcb (who, the text id, b, cause or the stat)."""
+    s = stat & 0xFF
+    amount = amount & 0xFFFFFFFF
+    amount = amount - (1 << 32) if amount >> 31 else amount
+    ident = m.vcall(b, 0x98) & 0xFFFFFFFF
+    q = (quiet & 0xFF) == 2
+    if s == 8:
+        if amount < 1:
+            return
+        m.call_void(m.main + 0x288DB34, o, m.vcall(b, 0x98) & 0xFFFFFFFF, amount & 0xFFFFFFFF)
+        if not q:
+            m.call_void(m.main + 0x119AFF0, m.u64(o + 0x18), 0x92, ident, 8, amount & 0xFF)
+        if show & 1 == 0:
+            return
+        i2 = m.vcall(b, 0x98) & 0xFFFFFFFF
+        return _tail(m, m.main + 0x157EBC0, m.u64(o + 0x18), 0xCB, who & 0xFFFFFFFF, 0x150, i2, 0xFFFF0000)
+    up = amount >= 1
+    if up:
+        r = m.vcall(b, 0x370, s, amount & 0xFFFFFFFF) & 0xFF
+    else:
+        r = m.vcall(b, 0x378, s, -amount & 0xFFFFFFFF) & 0xFF
+    m.call_void(m.main + 0x119AFF0, m.u64(o + 0x18), 0xC if up else 0xD, ident, s, r)
+    if not q:
+        m.call_void(m.main + 0x119AFF0, m.u64(o + 0x18), 0x92 if up else 0x93, ident, s, r)
+    if show & 1 == 0:
+        return
+    k = (stat - 1) & 0xFF
+    if k > 6:
+        return
+    col = 1 if r == 2 else (2 if r > 2 else 0)
+    if not up:
+        extra = (stat & 0xFFFFFFFF,)
+        text = _LOWERED[k][col]
+    elif cause & 0xFFFF:
+        extra = (cause & 0xFFFF,)
+        text = _RAISED_BY[k][col]
+    else:
+        extra = ()
+        text = _RAISED[k][col]
+    return _tail(m, m.main + 0x157EBC0, m.u64(o + 0x18), 0xCB, who & 0xFFFFFFFF, text, ident, *extra,
+                 0xFFFF0000)
+
+
+@lifted(0x13608B0)
+def release_if_live(m, o, e, *_):
+    """Release a live element (+0x44) to the free list of [[o+8]+0xd0] (0x13608e0); one still held
+    (+0x3f) is marked for release instead (0x1360cdc(e, 1))."""
+    if e == 0 or m.u8(e + 0x44) == 0:
+        return
+    if m.u8(e + 0x3F):
+        return _tail(m, m.main + 0x1360CDC, e, 1)
+    return _tail(m, m.main + 0x13608E0, m.u64(m.u64(o + 8) + 0xD0), e)
+
+
+@lifted(0x114ED80)
+def new_entry(m, o, kind, key, level, low, value, ptr, flag, *_):
+    """Take the head of the free list of [[o+8]+0xd0] (0x119baac(-1)), fill it (kind +0x28, ptr +0x20,
+    key +0x30, value +0x34, value again +0x38 for kinds 0, 4 and 5, (~level << 24) + 0x9000000 | low at
+    +0x2c, flag +0x3e, u16 [o+0x80] at +0x3c, live +0x44) and add it with 0x119b6cc."""
+    _need(m, m.main + 0x119B6CC)
+    serial = m.u32(o + 0x80)
+    table = m.u64(m.u64(o + 8) + 0xD0)
+    e = m.call(m.main + 0x119BAAC, table, 0xFFFFFFFF)
+    if e == 0:
+        return 0
+    k = kind & 0xFF
+    v2 = value if (1 << (k & 0x1F)) & 0x31 else 0
+    if k > 5:
+        v2 = 0
+    m.put(e + 0x12, 4, 0xEE00EE)
+    m.write(e + 0x18, bytes(0x58))
+    m.put(e + 0x2C, 4, ((~level & 0xFFFFFFFF) << 24) + 0x9000000 | low & 0xFFFFFFFF)
+    m.put(e + 0x28, 1, kind)
+    m.put(e + 0x20, 8, ptr)
+    m.put(e + 0x3E, 1, flag)
+    m.put(e + 0x30, 2, key)
+    m.put(e + 0x34, 4, value)
+    m.put(e + 0x38, 4, v2)
+    m.put(e + 0x3C, 2, serial)
+    m.put(e + 0x44, 1, 1)
+    m.call_void(m.main + 0x119B6CC, table, e)
+    return e
+
+
+@lifted(0x114D844)
+def first_live_of_kind(m, owner, kind, *_):
+    """The first element of the active list (head key owner+0x70) that is live (+0x44), of kind `kind`
+    (+0x28) and not retired (+0x41); else 0."""
+    from pokeldn.sv.battle.engine.containers import _element
+    e = _element(m, owner + 8, m.u16(owner + 0x70))
+    while e:
+        if m.u8(e + 0x44) and m.u8(e + 0x28) == kind & 0xFF and m.u8(e + 0x41) == 0:
+            return e
+        e = _element(m, m.u64(e + 8) + 8, m.u16(e + 0x14))
+    return 0
+
+
+def _peek_block_u16(m, acc, logical, off):
+    """The u16 at `off` of logical block `logical` as an accessor would read it, without touching the
+    record (decrypted on a copy)."""
+    core = m.u64(acc + 0x10)
+    data = bytearray(m.read(core, _pk.CORE))
+    if m.u8(acc + 0x18):
+        seed = int.from_bytes(data[0:4], "little")
+        for i in range(_pk.BLOCKS, _pk.CORE, 2):
+            seed = _pk._lcg(seed)
+            v = (data[i] | data[i + 1] << 8) ^ (seed >> 16)
+            data[i], data[i + 1] = v & 0xFF, v >> 8
+        total = sum(data[i] | data[i + 1] << 8 for i in range(_pk.BLOCKS, _pk.CORE, 2)) & 0xFFFF
+        if total != (data[6] | data[7] << 8):
+            data[4] |= 4
+    if data[4] >> 2 & 1:
+        return m.u16(m.main + _pk.BAD_READ_CORE + _pk.BLOCKS + 0x50 * logical + off)
+    pos = _pk.BLOCK_POSITION[(int.from_bytes(data[0:4], "little") >> 13) & 0x1F][logical]
+    at = _pk.BLOCKS + 0x50 * pos + off
+    return data[at] | data[at + 1] << 8
+
+
+@lifted(0x133B218)
+def change_form(m, pp, form, ctx, *_):
+    """Give the Pokemon form `form` unless it has it: 0x133ba0c, the form (0xdf289c), the ability for
+    (species, form, 0xd99784) (0x133b78c, 0xdf2550), 0x133b4b4 of the gender (0xdf644c), then the stats
+    (0xe13b9c(pp, 1))."""
+    _need(m, m.main + 0xBF41A8)
+    if _peek_block_u16(m, m.u64(pp + 0x70), 0, 0x1C) != form & 0xFFFF:
+        for a in (0x133BA0C, 0xDF289C, 0xD99784, 0x133B78C, 0xDF2550, 0xBEC030, 0x133B4B4, 0xDF644C, 0xE13B9C):
+            _need(m, m.main + a)
+    acc = m.u64(pp + 0x70)
+    species = m.call(m.main + 0xBF44F4, acc) & 0xFFFFFFFF
+    if m.call(m.main + 0xBF41A8, m.u64(pp + 0x70)) & 0xFFFF == form & 0xFFFF:
+        return
+    form &= 0xFFFFFFFF
+    m.call_void(m.main + 0x133BA0C, pp, form, ctx)
+    m.call_void(m.main + 0xDF289C, m.u64(pp + 0x70), form)
+    g = m.call(m.main + 0xD99784, pp)
+    a = m.call(m.main + 0x133B78C, species, form, g & 0xFFFFFFFF)
+    m.call_void(m.main + 0xDF2550, m.u64(pp + 0x70), a & 0xFFFFFFFF)
+    g = m.call(m.main + 0xBEC030, m.u64(pp + 0x70))
+    a = m.call(m.main + 0x133B4B4, species, form, g & 0xFFFFFFFF)
+    m.call_void(m.main + 0xDF644C, m.u64(pp + 0x70), a & 0xFFFFFFFF)
+    return _tail(m, m.main + 0xE13B9C, pp, 1)
+
+
+def _copy_side_records(m, b):
+    """Copy the four 10-byte records at +0x426/+0x43c/+0x452/+0x468 to +0x430/+0x446/+0x45c/+0x472
+    (u64 then a byte), mark each copied (+0x43a, +0x450, +0x466) and count those with a non-zero u16
+    in +0x482."""
+    m.put(b + 0x482, 1, 0)
+    v = m.u64(b + 0x426)
+    m.put(b + 0x430, 8, v)
+    m.put(b + 0x438, 1, m.u8(b + 0x42E))
+    n = 1 if v & 0xFFFF else 0
+    if n:
+        m.put(b + 0x482, 1, n)
+    for src, dst, flag, byte_src, byte_dst in ((0x43C, 0x446, 0x43A, 0x444, 0x44E), (0x452, 0x45C, 0x450, 0x45A, 0x464),
+                                               (0x468, 0x472, 0x466, 0x470, 0x47A)):
+        bv = m.u8(b + byte_src)
+        m.put(b + flag, 1, 1)
+        m.put(b + byte_dst, 1, bv)
+        v = m.u64(b + src)
+        m.put(b + dst, 8, v)
+        if v & 0xFFFF:
+            n += 1
+            m.put(b + 0x482, 1, n)
+
+
+@lifted(0x2D3DC58)
+def reset_on_switch(m, b, *_):
+    """A battler's reset when it is sent out: the side records copied (_copy_side_records), the turn
+    state and the 48 handler slots cleared, the stat stages back to 6, max HP from the core (vf 0x70(0)
+    times +0x3f4 / 10) with the HP adjusted to it (vf 0x2e8 / 0x2e0), then vf 0x810; flag 0x1c is
+    restored through vf 0x4d8 when vf 0x4d0 had it."""
+    vt = m.u64(b)
+    for slot in (0x4D0, 0x568, 0x2D0, 0x580, 0x108, 0x110, 0x810, 0x2E8, 0x2E0):
+        _need(m, m.u64(vt + slot))
+    _need(m, m.main + 0x14807D0)
+    _need(m, m.u64(m.u64(m.u64(b + 0x48)) + 0x70))
+    if m.u8(b + 0x6C):
+        _need(m, m.u64(vt + 0x7F0))
+    flag = m.vcall(b, 0x4D0, 0x1C)
+    if flag & 1:
+        _need(m, m.u64(vt + 0x4D8))
+    m.put(b + 0x496, 4, 0)
+    m.call_void(m.main + 0x14807D0, b)
+    if m.u8(b + 0x6C):
+        m.vcall_void(b, 0x7F0, 0, 1, 1, 1)
+        _copy_side_records(m, b)
+        m.put(b + 0x47C, 1, 1)
+        m.put(b + 0x6C, 1, 0)
+    _copy_side_records(m, b)
+    m.put(b + 0x486, 1, 0x12)
+    m.put(b + 0x47C, 1, 1)
+    for off in (0x435, 0x42B, 0x44B, 0x441, 0x461, 0x457, 0x477, 0x46D):
+        m.put(b + off, 1, 0)
+    m.put(b + 0x490, 4, 0)
+    m.put(b + 0x48C, 2, 0)
+    m.put(b + 0x5A0, 8, 0)
+    m.vcall_void(b, 0x568)
+    m.vcall_void(b, 0x2D0)
+    m.put(b + 0x487, 1, 1)
+    m.vcall_void(b, 0x580)
+    for k in range(48):
+        m.put(b + 0x88 + 0x10 * k, 8, 0)
+    m.put(b + 0x3C0, 1, 0)
+    m.write(b + 0x388, bytes(0x38))
+    for k in range(7):
+        m.put(b + 0x414 + k, 1, 6)
+    m.put(b + 0x47E, 2, m.u16(b + 0x60))
+    hp = m.vcall(b, 0x108) & 0xFFFFFFFF
+    cur = m.vcall(b, 0x110) & 0xFFFFFFFF
+    base = m.vcall(m.u64(b + 0x48), 0x70, 0) & 0xFFFF
+    top = ((base * m.u16(b + 0x3F4)) & 0xFFFFFFFF) // 10
+    m.put(b + 0x58, 2, top)
+    top16 = top & 0xFFFF
+    if cur & 0xFFFF < top16:
+        m.vcall_void(b, 0x2E8, (top - cur) & 0xFFFFFFFF)
+    if cur & 0xFFFF > top16 and hp & 0xFFFF > top16:
+        m.vcall_void(b, 0x2E0, (hp - top) & 0xFFFFFFFF)
+    m.vcall_void(b, 0x810)
+    if flag & 1:
+        return _vtail(m, b, 0x4D8, 0x1C)
+
+
+@lifted(0x2842E80)
+def battler_308(m, o, ident, *_):
+    """vf 0x308 of the battler with id `ident` (0xf79790 on [[o+8]+0x30])."""
+    b = m.call(m.main + 0xF79790, m.u64(m.u64(o + 8) + 0x30), ident)
+    return _vtail(m, b, 0x308)
+
+
+# Nature modifiers (0x3c62e98, 5 bytes per nature: Atk, Def, Spe, SpA, SpD; 1 raised, 0xff lowered).
+_NATURE = (
+    (0, 0, 0, 0, 0), (1, 255, 0, 0, 0), (1, 0, 0, 0, 255), (1, 0, 255, 0, 0), (1, 0, 0, 255, 0),
+    (255, 1, 0, 0, 0), (0, 0, 0, 0, 0), (0, 1, 0, 0, 255), (0, 1, 255, 0, 0), (0, 1, 0, 255, 0),
+    (255, 0, 0, 0, 1), (0, 255, 0, 0, 1), (0, 0, 0, 0, 0), (0, 0, 255, 0, 1), (0, 0, 0, 255, 1),
+    (255, 0, 1, 0, 0), (0, 255, 1, 0, 0), (0, 0, 1, 0, 255), (0, 0, 0, 0, 0), (0, 0, 1, 255, 0),
+    (255, 0, 0, 1, 0), (0, 255, 0, 1, 0), (0, 0, 0, 1, 255), (0, 0, 255, 1, 0), (0, 0, 0, 0, 0))
+
+
+def _computed_stat(base_fn, trained_bit, iv_fn, ev_fn, column):
+    """A stat from the core record: (IV, or 31 when hyper trained, + 2 * base + EV / 4) * level / 100 + 5,
+    times 1.1 or 0.9 for the nature."""
+    def fn(m, pp, *_):
+        for a in (0xBF41A8, base_fn, iv_fn, ev_fn, 0xC4EA44, 0xE14B64, 0xE13DA0, 0xD9987C):
+            _need(m, m.main + a)
+        acc = m.u64(pp + 0x70)
+        if m.u64(acc + 8):
+            level = m.call(m.main + 0xD9987C, acc) & 0xFF
+        else:
+            s = m.call(m.main + 0xBF44F4, acc)
+            f = m.call(m.main + 0xBF41A8, m.u64(pp + 0x70))
+            e = m.call(m.main + 0xE14B64, m.u64(pp + 0x70))
+            level = m.call(m.main + 0xE13DA0, s & 0xFFFFFFFF, f & 0xFFFFFFFF, e & 0xFFFFFFFF) & 0xFF
+        s = m.call(m.main + 0xBF44F4, m.u64(pp + 0x70))
+        f = m.call(m.main + 0xBF41A8, m.u64(pp + 0x70))
+        with m.frame(0x10) as p:
+            m.put(p, 8, m.u64(m.main + 0x46D8EE0) + 0x10)
+            m.put(p + 8, 2, s); m.put(p + 0xA, 2, f)
+            base = m.call(m.main + base_fn, p) & 0xFF
+        if m.call(m.main + 0xC1EB6C, m.u64(pp + 0x70)) >> trained_bit & 1:
+            iv = 0x1F
+        else:
+            iv = m.call(m.main + iv_fn, m.u64(pp + 0x70)) & 0xFFFF
+        ev = m.call(m.main + ev_fn, m.u64(pp + 0x70)) & 0xFFFFFFFF
+        nature = m.call(m.main + 0xC4EA44, m.u64(pp + 0x70)) & 0xFFFF
+        v = (((iv + 2 * base + (ev >> 2 & 0x3FFF)) * level & 0xFFFFFFFF) // 100 + 5) & 0xFFFFFFFF
+        mod = _NATURE[nature][column] if nature < len(_NATURE) else m.u8(m.main + 0x3C62E98 + 5 * nature + column)
+        if mod == 0xFF:
+            return (v * 90 & 0xFFFE) // 100
+        if mod == 1:
+            return (v * 110 & 0xFFFE) // 100
+        return v
+    return fn
+
+
+for _a, _spec in ((0xE142B0, (0xCEDF60, 2, 0xD98604, 0xD90170, 1)), (0xE146B8, (0xCEE488, 4, 0xD98FDC, 0xD90B3C, 3))):
+    lifted(_a)(_computed_stat(*_spec))
+
+
+@lifted(0x288B6FC)
+def query_15372e8(m, o, b, key, arg, *_):
+    """Build a request {u32 0, b's id, u16 key, flags 1 at +0xd/+0xe/+0xf/+0x11, sub-record +0x14 from
+    0x287eca8(arg)} and return the byte 0x15372e8 answers for 0x1537120(0x1361214(o))."""
+    with m.frame(0x50) as s:
+        out = s + 0x40
+        m.write(s, bytes(0x40))
+        m.put(s + 0xE, 4, 0x01000101)
+        m.call_void(m.main + 0x1146154, s + 0x14)
+        m.put(s + 4, 4, m.vcall(b, 0x98))
+        m.put(s + 8, 2, key)
+        m.put(s + 0x10, 1, 0)
+        m.put(s + 0xD, 1, 1)
+        m.call_void(m.main + 0x287ECA8, s + 0x14, arg)
+        r = m.call(m.main + 0x1537120, m.call(m.main + 0x1361214, o))
+        m.call_void(m.main + 0x15372E8, r, out, s)
+        return m.u8(out)
+
+
+@lifted(0x17CDF14)
+def apply_pending_codes(m, o, out, req, *_):
+    """For each of the u8 [req+0x30] battlers (ids at req+8) able to act (vf 0x208), consume its pending
+    codes (0x17ce294 on a copy of req+4) until none is left: code 0x1c may be skipped by 0x17ce520;
+    each other one is recorded (0x17ce41c) and applied (0x17ce354 when +0x35, else 0x114a970 then
+    0x114b0ac), code 0x13 also runs 0x287fe9c, and out[0] / out[1 + i] are set. With +0x34 the run is
+    bracketed by 0x17ce0e4 / 0x17ce27c."""
+    bracket = m.u8(req + 0x34)
+    if bracket:
+        for a in (0x1143584, 0x17CE0E4, 0x17CE27C):
+            _need(m, m.main + a)
+    if m.u8(req + 0x30):
+        for a in (0x17CE294, 0x17CE520, 0x1146E90, 0x179372C, 0x17CE41C, 0x1143584, 0x114A970, 0x114B0AC,
+                  0x287FE9C, 0x1146154):
+            _need(m, m.main + a)
+    m.put(out + 5, 8, 0)
+    m.put(out, 8, 0)
+    if bracket:
+        m.call_void(m.main + 0x17CE0E4, m.call(m.main + 0x1143584, o), m.u32(req))
+    if m.u8(req + 0x30):
+        i = 0
+        with m.frame(0x50) as sp:
+            while True:
+                b = m.call(m.main + 0x13813F4, o, m.u32(req + 8 + 4 * i))
+                if m.vcall(b, 0x208) & 1:
+                    m.put(sp + 0x14, 4, m.u32(req + 4))
+                    while True:
+                        code = m.call(m.main + 0x17CE294, 0, b, sp + 0x14) & 0xFFFFFFFF
+                        if code & 0xFFFF == 0:
+                            break
+                        if code & 0xFFFF == 0x1C and m.call(m.main + 0x17CE520, m.call(m.main + 0x1146E90, o), b) & 1:
+                            continue
+                        m.call_void(m.main + 0x179372C, sp)
+                        m.call_void(m.main + 0x17CE41C, m.call(m.main + 0x1143584, o), b, code, sp)
+                        who = m.u32(req)
+                        if m.u8(req + 0x35):
+                            m.call_void(m.main + 0x17CE354, o, who, req + 0x38)
+                        else:
+                            key = m.u16(req + 0x32)
+                            m.call_void(m.main + 0x1146154, sp + 0x18)
+                            ident = m.vcall(b, 0x98) & 0xFFFFFFFF
+                            if m.call(m.main + 0x114A970, code, sp, ident, key, sp + 0x18) & 1:
+                                m.call_void(m.main + 0x114B0AC, m.call(m.main + 0x1143584, o), who, sp + 0x18)
+                        if code & 0xFFFF == 0x13:
+                            m.call_void(m.main + 0x287FE9C, o, b)
+                        m.put(out, 1, 1)
+                        m.put(out + i + 1, 1, 1)
+                i += 1
+                if i >= m.u8(req + 0x30):
+                    break
+    if bracket:
+        m.call_void(m.main + 0x17CE27C, m.call(m.main + 0x1143584, o), m.u32(req))
+
+
+@lifted(0x149FEDC)
+def max_118_unmatched(m, o, *_):
+    """The largest vf 0x118 byte (at least 1) over the battlers the iterator 0x1147754([o+8], [o+0x10])
+    hands out for which 0x1142ecc(0x13813ec([o+0x10]), 0x149fe8c([o+8]), 0x1589a40(o, id)) is false."""
+    best = 1
+    with m.frame(0x30) as it:
+        cur = it + 0x28
+        m.put(cur, 8, 0)
+        m.call_void(m.main + 0x1147754, it, m.u64(o + 8), m.u64(o + 0x10))
+        while m.call(m.main + 0x1360DBC, it, cur) & 1:
+            a = m.call(m.main + 0x149FE8C, m.u64(o + 8)) & 0xFFFFFFFF
+            ident = m.vcall(m.u64(cur), 0x98) & 0xFFFFFFFF
+            c = m.call(m.main + 0x1589A40, o, ident) & 0xFFFFFFFF
+            if m.call(m.main + 0x1142ECC, m.call(m.main + 0x13813EC, m.u64(o + 0x10)), a, c) & 1 == 0:
+                v = m.vcall(m.u64(cur), 0x118) & 0xFF
+                best = max(best, v)
+    return best
+
+
+@lifted(0x2888060)
+def send_record(m, o, req, side, *_):
+    """Unless the u16 req+0x1a is 0x9c, 0x2888154(0x17d31e0(o, [req]), 0x28230f4(..., side, 0), it); then
+    0x114b0ac([req], a copy of req+0x20 (0x28800b8), with 0x2888170(0, side) when +0x44), bracketed by
+    0x17ce0e4 / 0x17ce27c when +0x1c."""
+    need = [0x28800B8, 0x1143584, 0x114B0AC]
+    if m.u16(req + 0x1A) != 0x9C:
+        need += [0x17D31E0, 0x1482534, 0x13813EC, 0x28230F4, 0x2888154]
+    if m.u8(req + 0x1C):
+        need += [0x17CE0E4, 0x17CE27C]
+    if m.u8(req + 0x44):
+        need += [0x2888170]
+    for a in need:
+        _need(m, m.main + a)
+    if m.u16(req + 0x1A) != 0x9C:
+        a = m.call(m.main + 0x17D31E0, o, m.u32(req)) & 0xFFFFFFFF
+        t = m.call(m.main + 0x13813EC, m.call(m.main + 0x1482534, o))
+        b = m.call(m.main + 0x28230F4, t, side & 0xFFFFFFFF, 0) & 0xFFFFFFFF
+        m.call_void(m.main + 0x2888154, m.call(m.main + 0x1143584, o), a, b, m.u16(req + 0x1A))
+    if m.u8(req + 0x1C):
+        m.call_void(m.main + 0x17CE0E4, m.call(m.main + 0x1143584, o), m.u32(req))
+    with m.frame(0x30) as p:
+        m.call_void(m.main + 0x28800B8, p, req + 0x20)
+        if m.u8(req + 0x44):
+            m.call_void(m.main + 0x2888170, p, 0, side & 0xFF)
+        m.call_void(m.main + 0x114B0AC, m.call(m.main + 0x1143584, o), m.u32(req), p)
+    if m.u8(req + 0x1C):
+        m.call_void(m.main + 0x17CE27C, m.call(m.main + 0x1143584, o), m.u32(req))
+
+
+@lifted(0xB4E600)
+def thread_block(m, *_):
+    """The calling thread's 0x12d0-byte block in TLS slot u32 0x4759408, allocated zeroed through the
+    allocator at 0x4759430 (vf 0x10) on first use."""
+    if m.u8(m.main + 0x4759410) & 1 == 0:
+        raise UnliftedCall("static 0x4759408 not built")
+    slot = m.u32(m.main + 0x4759408)
+    if m.call(m.main + 0x343DA20, slot) == 0:
+        if m.u8(m.main + 0x4759438) & 1 == 0:
+            raise UnliftedCall("static 0x4759430 not built")
+        block = m.vcall(m.u64(m.main + 0x4759430), 0x10, 0x12D0, 8)
+        m.write(block, bytes(0x12D0))
+        m.call_void(m.main + 0x343DA30, m.u32(m.main + 0x4759408), block)
+    return m.call(m.main + 0x343DA20, m.u32(m.main + 0x4759408))
+
+
+@lifted(0xFA9DA8)
+def copy_ref_190(m, src, *_):
+    """The intrusive reference at src+0x190, copied into the result (x8) with its count (+0x28) raised."""
+    out = m.x8
+    v = m.u64(src + 0x190)
+    if v and m.u32(v + 0x28) == 0xFFFFFFFF:
+        raise UnliftedCall("IncrementReference abort: counter overflow")
+    m.put(out, 8, v)
+    if v:
+        m.put(v + 0x28, 4, m.u32(v + 0x28) + 1)
+    return src
