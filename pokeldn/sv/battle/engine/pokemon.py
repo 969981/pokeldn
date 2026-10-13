@@ -17,7 +17,9 @@ BLOCK_POSITION = (
     (1, 2, 3, 0), (1, 3, 2, 0), (2, 1, 3, 0), (3, 1, 2, 0), (2, 3, 1, 0), (3, 2, 1, 0),
     (0, 1, 2, 3), (0, 1, 3, 2), (0, 2, 1, 3), (0, 3, 1, 2), (0, 2, 3, 1), (0, 3, 2, 1),
     (1, 0, 2, 3), (1, 0, 3, 2))
-BAD_RECORD_BLOCK = 0x47422E0          # a zero block in main's .bss, read for a record flagged bad
+# Static records in main's .bss standing in for a record flagged bad: one read from, one written to.
+BAD_READ_PARTY, BAD_READ_CORE = 0x4742280, 0x4742288
+BAD_WRITE_PARTY, BAD_WRITE_CORE = 0x47423D0, 0x47423D8
 CORE, BLOCKS = 0x148, 8
 
 
@@ -47,11 +49,18 @@ def _crypt(m, acc):
         _xor_words(m, party, 8, ec)
 
 
-def block(m, core, logical):
-    """Address of logical block `logical` of a plain core record."""
+def block(m, core, logical, write=False):
+    """Address of logical block `logical` of a plain core record (a static stand-in when it is bad)."""
     if m.u8(core + 4) >> 2 & 1:
-        return m.main + BAD_RECORD_BLOCK
+        return m.main + (BAD_WRITE_CORE if write else BAD_READ_CORE) + BLOCKS + 0x50 * logical
     return core + BLOCKS + 0x50 * BLOCK_POSITION[(m.u32(core) >> 13) & 0x1F][logical]
+
+
+def party_record(m, acc, write=False):
+    """Address of the 16-byte party record (a static stand-in when the core is bad)."""
+    if m.u8(m.u64(acc + 0x10) + 4) >> 2 & 1:
+        return m.main + (BAD_WRITE_PARTY if write else BAD_READ_PARTY)
+    return m.u64(acc + 8)
 
 
 def access(m, acc, read):

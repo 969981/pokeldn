@@ -36,11 +36,11 @@ lifted(0x2A1091C)(_own(0x98))
 
 
 @lifted(0x2A10930)
-def own_730(m, b, *_): return m.vcall(b, 0x730) & 0xFFFF
+def own_730(m, b, *args): return m.vcall(b, 0x730, *args[:4]) & 0xFFFF
 
 
 @lifted(0x2A10950)
-def own_740(m, b, *_): return m.vcall(b, 0x740) & 0xFFFF
+def own_740(m, b, *args): return m.vcall(b, 0x740, *args[:4]) & 0xFFFF
 
 
 @lifted(0x2D3BF0C)
@@ -160,7 +160,7 @@ def clear_flag_49a(m, b, i, *_):
     i &= 0xFFFFFFFF
     a = b + ((i >> 3) & 0xFF) + 0x49A
     m.put(a, 1, m.u8(a) & ~(1 << (i & 7)))
-    return m.vcall(b, 0x500, i)
+    m.vcall_void(b, 0x500, i)
 
 
 @lifted(0x2D3ECBC)
@@ -242,7 +242,7 @@ def set_added_type(m, b, t, v, *_):
 @lifted(0x2D3EAE4)
 def set_6f2_and_610(m, b, v, *_):
     m.put(b + 0x6F2, 2, v)
-    return m.vcall(b, 0x610, 8)
+    m.vcall_void(b, 0x610, 8)
 
 
 @lifted(0x2D3E710)
@@ -304,3 +304,185 @@ def mark_42c(m, b, i, *_):
     s = b + MOVE_SLOT * (i & 0xFF)
     if m.u8(s + 0x43A) == 0 and m.u8(s + 0x42C) == 0:
         m.put(s + 0x42C, 1, 1); m.put(b + 0x485, 1, m.u8(b + 0x485) + 1)
+
+
+@lifted(0xF7FFE0)
+def condition_value(m, pair, *_):
+    """The value a condition entry carries (bits 9.. of its second word) for kinds 1 to 4."""
+    w = m.u64(pair + 8)
+    return w >> 9 if w & 7 in (1, 2, 3, 4) else 0
+
+
+def _staged(base_slot, stage_off):
+    from pokeldn.sv.battle.engine.battler import STAGE_RATIO
+
+    def fn(m, b, *_):
+        v = m.vcall(b, base_slot)
+        stage = m.u8(b + stage_off)
+        if stage >= 13:
+            return v
+        num, den = STAGE_RATIO[stage]
+        return ((v * num) & 0xFFFF) // den & 0xFFFFFFFF
+    return fn
+
+
+# Attack, Defense, Sp. Atk, Sp. Def with their stages at +0x414..+0x417 (Speed is 0x2d3beb0).
+for _addr, _slot, _off in ((0x2D3BD60, 0xC0, 0x414), (0x2D3BDB4, 0xC8, 0x415),
+                           (0x2D3BE08, 0xD0, 0x416), (0x2D3BE5C, 0xD8, 0x417)):
+    lifted(_addr)(_staged(_slot, _off))
+
+
+@lifted(0x287A554)
+def marker(m, *_):
+    from pokeldn.sv.battle.engine.getters import static_46d3f08
+    return static_46d3f08(m)
+
+
+@lifted(0x2D3BB74)
+def ability_unless(m, b, *_):
+    if m.vcall(b, 0x220, 0x10) & 1 == 0 and m.vcall(b, 0x438) & 1 == 0:
+        return m.vcall(b, 0xF0)
+    return 0
+
+
+@lifted(0x2D3ED14)
+def is_47e_unless(m, b, v, *_):
+    if m.vcall(b, 0x220, 0x10) & 1 == 0 and m.vcall(b, 0x438) & 1 == 0:
+        return int(m.u16(b + 0x47E) == v & 0xFFFF)
+    return 0
+
+
+@lifted(0x2D3C99C)
+def move_pp_full(m, b, i, base, *_):
+    s = b + MOVE_SLOT * (i & 0xFF) + (0x426 if base & 1 else 0x430)
+    return int(m.u16(s) != 0 and m.u8(s + 2) == m.u8(s + 3))
+
+
+@lifted(0x2D3DB0C)
+def count_condition_e8(m, b, *_):
+    w = m.u64(b + 0xE8)
+    kind, limit = w & 7, (w >> 3) & 0x3F
+    if kind in (2, 4) and limit:
+        t = (m.u8(b + 0x396) + 1) & 0xFF
+        m.put(b + 0x396, 1, t)
+        if limit <= t:
+            return 1
+    return 0
+
+
+@lifted(0x2D3DB94)
+def clear_condition(m, b, cond, *_):
+    cond &= 0xFFFF
+    if cond < 6:
+        m.vcall_void(b, 0x608, cond)
+        return
+    m.put(b + 0x80 + 0x10 * cond, 8, 0); m.put(b + 0x88 + 0x10 * cond, 8, 0); m.put(b + 0x390 + cond, 1, 0)
+
+
+@lifted(0x2D3C064)
+def neither_19_nor_1a(m, b, *_):
+    if m.vcall(b, 0x4D0, 0x19) & 1:
+        return 0
+    return ~m.vcall(b, 0x4D0, 0x1A) & 1
+
+
+@lifted(0x2D3C624)
+def base_move(m, b, i, *_):
+    i &= 0xFF
+    if i < 4:
+        v = m.u16(b + 0x426 + MOVE_SLOT * i)
+        return v if v else 0xA5
+    return 0xA5
+
+
+@lifted(0x2D3E570)
+def turn_count_back(m, b, back, *_):
+    back &= 0xFF
+    if back < 3:
+        i = m.u8(b + 0x6EF) - back
+        return m.u8(b + 0x6EC + (i if i >= 0 else i + 3))
+    return 0
+
+
+@lifted(0x2D3EB18)
+def take_6f2(m, b, want_ptr, *_):
+    have, want = m.u16(b + 0x6F2), m.u16(want_ptr)
+    left = have - want
+    done = have <= want
+    if done:
+        left = 0
+        m.put(want_ptr, 2, have)
+    m.put(b + 0x6F2, 2, left)
+    return int(done)
+
+
+@lifted(0x2D3C198)
+def condition_228_value(m, b, *_):
+    w = m.u64(b + 0x228)
+    kind, v = w & 7, (w >> 9) & 0xFFFFFFFF
+    return v if kind in (1, 2) else 0
+
+
+@lifted(0x2D3C918)
+def move_byte_432_of(m, b, move, *_):
+    move &= 0xFFFF
+    for i in range(m.u8(b + MOVE_COUNT)):
+        if m.u16(b + 0x430 + MOVE_SLOT * i) == move:
+            return m.u8(b + 0x432 + MOVE_SLOT * i)
+    return 0
+
+
+@lifted(0x2D3EBC0)
+def in_3c2(m, b, v, *_):
+    v &= 0xFFFFFFFF
+    return int(any(m.u8(b + 0x3C2 + i) == v for i in range(m.u8(b + 0x3C1))))
+
+
+@lifted(0x2D3C4CC)
+def base_move_count(m, b, *_):
+    if m.u16(b + 0x426) == 0:
+        return 0
+    if m.u16(b + 0x43C) == 0:
+        return 1
+    if m.u16(b + 0x452) == 0:
+        return 2
+    return 4 if m.u16(b + 0x468) else 3
+
+
+def _any_of(count_slot, test_slot):
+    def fn(m, b, *_):
+        n = m.vcall(b, count_slot) & 0xFF
+        return int(any(m.vcall(b, test_slot, i) & 0xFF for i in range(n)))
+    return fn
+
+
+lifted(0x2D3C810)(_any_of(0x708, 0x670))
+lifted(0x2D3C880)(_any_of(0x710, 0x678))
+
+
+def _condition_value_of(cond, require):
+    def fn(m, b, *_):
+        if require and m.vcall(b, 0x220, cond) & 1 == 0:
+            return 0
+        from pokeldn.sv.battle.machine import Pair
+        with m.frame(16) as pair:
+            p = m.vcall(b, 0x240, cond)
+            m.put(pair, 8, p[0]); m.put(pair + 8, 8, p[1])
+            if not require and p[1] & 7 == 0:
+                return 0
+            return condition_value(m, pair)
+    return fn
+
+
+lifted(0x2899E98)(_condition_value_of(0x1C, False))
+lifted(0x2899E38)(_condition_value_of(0x1B, True))
+
+
+@lifted(0x2D3CA2C)
+def use_pp(m, b, i, n, *_):
+    s = b + MOVE_SLOT * (i & 0xFF)
+    if m.u8(s + 0x43A):
+        return
+    left = m.u8(s + 0x428) - (n & 0xFF)
+    m.put(s + 0x428, 1, left if left >= 0 else 0)
+    return m.vcall(_core(m, b), 0x118, i, n)
