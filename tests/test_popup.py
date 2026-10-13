@@ -39,8 +39,7 @@ def test_a_run_sends_each_pop_up_as_one_line_and_its_answer_fires_the_callback(m
     assert out.count("\n") == 1 and out.startswith(popup.PREFIX) and popup.available()
     message = popup.read(out.rstrip("\n"))[1]
     assert message == {"op": "open", "id": id, "n": message["n"], "kind": "ack", "title": "Saved",
-                       "text": "The backup is in the session folder.", "label": "OK", "stack": True,
-                       "urgent": False, "tone": "warning"}
+                       "text": "The backup is in the session folder.", "label": "OK", "tone": "warning"}
     assert reply(message, "agree") and acked == []      # not one of an acknowledgement's answers
     assert reply(message, "ack") and acked == [1]
     assert reply(message, "ack") and acked == [1]       # answered once
@@ -82,28 +81,6 @@ def test_a_cancelled_pop_up_fires_nothing_and_an_unknown_id_is_nothing_to_cancel
     assert fired == [] and len(sent) == 2
 
 
-def test_a_timeout_dismisses_a_confirmation_and_closes_an_acknowledgement_silently(sent):
-    dismissed, acked = threading.Event(), []
-    popup.confirm("Trade?", "", "Trade", "Skip", id="ask", timeout=0.05, on_dismiss=dismissed.set)
-    popup.acknowledge("Note", id="note", timeout=0.05, on_ack=lambda: acked.append(1))
-    assert dismissed.wait(5)
-    for _ in range(100):
-        if {"op": "cancel", "id": "note"} in sent:
-            break
-        threading.Event().wait(0.02)
-    assert {"op": "cancel", "id": "ask"} in sent and {"op": "cancel", "id": "note"} in sent and acked == []
-    with pytest.raises(ValueError):
-        popup.acknowledge("Note", timeout=0)
-
-
-def test_an_answer_ends_the_timer(sent):
-    dismissed = []
-    popup.confirm("Trade?", "", "Trade", "Skip", timeout=0.1, on_dismiss=lambda: dismissed.append(1))
-    reply(sent[0], "agree")
-    threading.Event().wait(0.3)
-    assert dismissed == [] and len(sent) == 1
-
-
 def test_a_dispatcher_runs_the_callbacks_and_one_that_raises_prints_its_traceback(sent, capsys):
     handed = []
     popup.set_dispatcher(handed.append)
@@ -137,15 +114,12 @@ def test_with_no_app_a_pop_up_is_a_log_line_and_never_answered(capsys):
         popup.acknowledge("Loud", tone="alarm")
 
 
-def test_with_no_app_only_a_pop_up_with_a_timeout_waits(capsys):
-    """A terminal run never answers: a host that warns each round never reaches LIMIT, and a timeout still
-    dismisses its pop-up."""
+def test_with_no_app_a_pop_up_waits_for_nothing(capsys):
+    """A terminal run never answers: a host that warns each round never reaches LIMIT."""
     for n in range(popup.LIMIT + 8):
         popup.acknowledge(f"Round {n}", id=f"gift-{n}")
-    dismissed = threading.Event()
-    popup.confirm("Trade?", "", "Trade", "Skip", timeout=0.05, on_dismiss=dismissed.set)
-    assert dismissed.wait(5) and popup._live == {}
-    assert capsys.readouterr().out.count("[pop-up] ") == popup.LIMIT + 9
+    assert popup._live == {}
+    assert capsys.readouterr().out.count("[pop-up] ") == popup.LIMIT + 8
 
 
 def test_a_message_is_found_wherever_another_threads_print_left_it():
@@ -177,7 +151,7 @@ class View:
 
 def opened(title, id=None, kind="ack", n=1, **fields):
     message = {"op": "open", "id": id or title, "n": n, "kind": kind, "title": title, "text": "", "label": "OK",
-               "stack": True, "urgent": False, "tone": "info"}
+               "tone": "info"}
     if kind == "confirm":
         message.update(agree="Yes", disagree="No")
     return {**message, **fields}
@@ -194,22 +168,6 @@ def titles(view):
     return [e.title for e in view.shown]
 
 
-def test_pop_ups_stack_until_one_that_refuses_it_shows_then_wait_their_turn():
-    app, view, run, _ = manager()
-    run.take(opened("A"))
-    run.take(opened("Blocker", stack=False))
-    run.take(opened("B"))
-    run.take(opened("C", stack=False))
-    run.take(opened("D"))
-    assert titles(view) == ["A", "Blocker"] and [e.title for e in app.queue] == ["B", "C", "D"]
-    run.take(opened("Now", urgent=True))
-    assert titles(view) == ["A", "Blocker", "Now"]
-    app.answer(view.shown[1], "ack")
-    assert titles(view) == ["A", "Now", "B", "C"] and [e.title for e in app.queue] == ["D"]
-    app.answer(view.shown[3], "ack")
-    assert titles(view) == ["A", "Now", "B", "D"] and app.queue == []
-
-
 def test_a_pop_up_opened_again_under_its_id_keeps_its_place():
     app, view, run, answers = manager()
     run.take(opened("Old", id="gift"))
@@ -218,13 +176,6 @@ def test_a_pop_up_opened_again_under_its_id_keeps_its_place():
     assert titles(view) == ["New", "Top"] and ("refresh", "New") in view.events
     app.answer(view.shown[0], "ack")
     assert answers == [{"id": "gift", "n": 2, "answer": "ack"}]
-    run.take(opened("Blocker", stack=False))
-    run.take(opened("Queued", id="q"))
-    run.take(opened("Later"))
-    run.take(opened("Queued again", id="q", n=3))
-    assert [e.title for e in app.queue] == ["Queued again", "Later"]
-    run.take(opened("Queued, urgent", id="q", n=4, urgent=True))
-    assert titles(view)[-1] == "Queued, urgent" and [e.title for e in app.queue] == ["Later"]
 
 
 def test_an_answer_goes_back_once_and_esc_dismisses_or_acknowledges():
@@ -242,14 +193,13 @@ def test_an_answer_goes_back_once_and_esc_dismisses_or_acknowledges():
     assert view.shown == []
 
 
-def test_cancel_closes_an_open_pop_up_or_takes_a_queued_one_out_and_the_app_reports_nothing():
+def test_cancel_closes_an_open_pop_up_and_the_app_reports_nothing():
     app, view, run, answers = manager()
-    run.take(opened("Blocker", stack=False))
-    run.take(opened("Queued"))
-    run.take({"op": "cancel", "id": "Queued"})
-    run.take({"op": "cancel", "id": "Blocker"})
-    assert view.shown == [] and app.queue == [] and answers == []
-    assert view.events == [("show", "Blocker"), ("hide", "Blocker")]
+    run.take(opened("Open"))
+    run.take({"op": "cancel", "id": "Open"})
+    run.take({"op": "cancel", "id": "Never opened"})
+    assert view.shown == [] and answers == []
+    assert view.events == [("show", "Open"), ("hide", "Open")]
 
 
 def test_a_program_that_exits_leaves_its_acknowledgements_without_an_answer():
@@ -257,13 +207,12 @@ def test_a_program_that_exits_leaves_its_acknowledgements_without_an_answer():
     other = app.program("Other", answers.append)
     run.take(opened("Note"))
     run.take(opened("Ask", kind="confirm"))
-    other.take(opened("Blocker", stack=False))
-    run.take(opened("Queued"))
+    other.take(opened("Theirs"))
     run.ended()
-    assert titles(view) == ["Note", "Blocker"] and app.queue == []
+    assert titles(view) == ["Note", "Theirs"]
     run.take(opened("After"))
     view.shown[0].press("ack")
-    assert answers == [] and titles(view) == ["Blocker"]
+    assert answers == [] and titles(view) == ["Theirs"]
 
 
 def test_each_program_has_its_own_ids_and_a_malformed_message_opens_nothing():

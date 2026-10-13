@@ -141,7 +141,7 @@ answers = queue.Queue()
 popup.set_dispatcher(answers.put)       # callbacks wait for the loop below instead of running on their own thread
 asked = popup.confirm("Trade the shiny?", "Your partner offers a shiny Gholdengo.", "Trade", "Skip",
                       on_agree=lambda: print("trading"), on_disagree=lambda: print("skipping"),
-                      timeout=60, tone="warning")
+                      tone="warning")
 while not finished():                   # the script's own work goes on meanwhile
     try:
         answers.get(timeout=0.5)()
@@ -332,8 +332,8 @@ or a downgrade.
 | `pokeldn.plugins.data_folder(id)` | the same folder from a tool's script (1.1) |
 | `Tool`, `Field`, `Game` | the app's catalog types, imported from `pokeldn.plugins` |
 | `pokeldn.ldn.show_done()` | prints the line that ticks a trade off |
-| `pokeldn.popup.acknowledge(title, text="", *, id, label="OK", on_ack, stack, urgent, timeout, tone)` | a pop-up with one button; -> its id (1.2, [Pop-ups](gui.md#pop-ups)) |
-| `pokeldn.popup.confirm(title, text, agree, disagree, *, id, on_agree, on_disagree, on_dismiss, stack, urgent, timeout, tone)` | a pop-up with the agree and disagree buttons the caller names, and Dismiss; -> its id (1.2) |
+| `pokeldn.popup.acknowledge(title, text="", *, id, label="OK", on_ack, tone)` | a pop-up with one button; -> its id (1.2, [Pop-ups](gui.md#pop-ups)) |
+| `pokeldn.popup.confirm(title, text, agree, disagree, *, id, on_agree, on_disagree, on_dismiss, tone)` | a pop-up with the agree and disagree buttons the caller names, and Dismiss; -> its id (1.2) |
 | `pokeldn.popup.cancel(id)`, `available()`, `set_dispatcher(dispatch)` | closes a pop-up, dropping its callbacks; whether an app shows them; where callbacks run (1.2) |
 
 This table is the supported surface. Anything else a plugin imports from pokeldn can change in any

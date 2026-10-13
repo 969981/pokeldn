@@ -1,9 +1,8 @@
-"""The app's side of the pop-ups programs show (pokeldn.popup, docs/gui.md, Pop-ups): which ones show, which wait,
-and where each answer goes.
+"""The app's side of the pop-ups programs show (pokeldn.popup, docs/gui.md, Pop-ups): which ones show and where
+each answer goes.
 
 The manager runs on the app's UI loop: `call` brings each program's messages there, and the view (gui.popups)
-shows and hides the pop-ups and reports the buttons pressed. One pop-up with `stack` off keeps the later ones
-queued, oldest first, until it closes; an urgent one shows at once whatever is open.
+shows and hides the pop-ups and reports the buttons pressed.
 """
 
 from pokeldn.popup import ANSWERS, LIMIT, TONES
@@ -32,7 +31,6 @@ class Entry:
         self.disagree = _clip(message.get("disagree"), CLIP["disagree"])
         if not self.id or kind == "confirm" and not (self.agree and self.disagree):
             raise ValueError("not a pop-up")
-        self.stack, self.urgent = message.get("stack") is not False, message.get("urgent") is True
         self.tone = message.get("tone") if message.get("tone") in TONES else "info"
 
     @property
@@ -64,8 +62,8 @@ class Program:
         self.manager.call(lambda: self.manager.take(self, message))
 
     def ended(self) -> None:
-        """The program exited, from any thread: its confirmations close, its acknowledgements stay with no answer
-        to go back, and its queued pop-ups are dropped."""
+        """The program exited, from any thread: its confirmations close, and its acknowledgements stay with no
+        answer to go back."""
         self.manager.call(lambda: self.manager.ended(self))
 
 
@@ -73,18 +71,13 @@ class Manager:
     def __init__(self, view, call=lambda fn: fn()):
         self.view, self.call = view, call
         self.open: list[Entry] = []      # bottom to top
-        self.queue: list[Entry] = []     # waiting for a pop-up with `stack` off to close, oldest first
 
     def program(self, label: str, send) -> Program:
         """A program to show pop-ups for: `send(message)` takes the answers back to it."""
         return Program(self, label, send)
 
-    @property
-    def blocked(self) -> bool:
-        return any(not entry.stack for entry in self.open)
-
     def _find(self, program, id) -> Entry | None:
-        return next((e for e in self.open + self.queue if e.program is program and e.id == id), None)
+        return next((e for e in self.open if e.program is program and e.id == id), None)
 
     def take(self, program: Program, message: dict) -> None:
         if program.over or not isinstance(message, dict):
@@ -98,42 +91,17 @@ class Manager:
                 entry = Entry(program, message)
             except ValueError:
                 return
-            if old is not None:
-                self._replace(old, entry)
-            elif sum(e.program is program for e in self.open + self.queue) < LIMIT:
-                self._add(entry)
-        self._drain()
-
-    def _add(self, entry: Entry) -> None:
-        if entry.urgent or not self.blocked:
-            self.open.append(entry)
-            self.view.show(entry)
-        else:
-            self.queue.append(entry)
-
-    def _replace(self, old: Entry, entry: Entry) -> None:
-        # In place: an open one keeps its dialog and its place in the stack, a queued one its turn.
-        if old in self.open:
-            self.open[self.open.index(old)] = entry
-            self.view.refresh(old, entry)
-        elif entry.urgent:
-            self.queue.remove(old)
-            self._add(entry)
-        else:
-            self.queue[self.queue.index(old)] = entry
+            if old is not None:     # in place: it keeps its dialog and its place in the stack
+                self.open[self.open.index(old)] = entry
+                self.view.refresh(old, entry)
+            elif sum(e.program is program for e in self.open) < LIMIT:
+                self.open.append(entry)
+                self.view.show(entry)
 
     def _close(self, entry: Entry) -> None:
         if entry in self.open:
             self.open.remove(entry)
             self.view.hide(entry)
-        elif entry in self.queue:
-            self.queue.remove(entry)
-
-    def _drain(self) -> None:
-        while self.queue and not self.blocked:
-            entry = self.queue.pop(0)
-            self.open.append(entry)
-            self.view.show(entry)
 
     def answer(self, entry: Entry, answer: str) -> None:
         """The player answered an open pop-up: it closes and the answer goes back to its program."""
@@ -142,7 +110,6 @@ class Manager:
         self._close(entry)
         if not entry.program.over:
             entry.program.send({"id": entry.id, "n": entry.n, "answer": answer})
-        self._drain()
 
     def dismissed(self, entry: Entry) -> None:
         """A pop-up's dialog closed: Esc or a click outside, unless the app closed it first. A confirmation is
@@ -152,7 +119,5 @@ class Manager:
 
     def ended(self, program: Program) -> None:
         program.over = True
-        self.queue = [e for e in self.queue if e.program is not program]
         for entry in [e for e in self.open if e.program is program and e.kind == "confirm"]:
             self._close(entry)
-        self._drain()

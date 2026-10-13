@@ -3,14 +3,14 @@ confirmation, with agree, disagree and Dismiss.
 
 Opening one never waits: `acknowledge` and `confirm` return the pop-up's id at once, and the player's answer comes
 later as a callback, which may fire at any time. Callbacks run on the pop-up thread (the one reading the app's
-answers, or a timeout's timer) unless `set_dispatcher` hands them to the program's own loop. `cancel(id)` closes a
-pop-up, or takes it out of the app's queue; no callback of a pop-up fires once `cancel`, or a pop-up opened again
-under its id, has returned, but one an earlier answer already handed to the dispatcher still runs.
+answers) unless `set_dispatcher` hands them to the program's own loop. `cancel(id)` closes a pop-up; no callback
+of a pop-up fires once `cancel`, or a pop-up opened again under its id, has returned, but one an earlier answer
+already handed to the dispatcher still runs.
 
 A process the app started (POKELDN_POPUPS set) sends its pop-ups as `[popup]` lines on stdout and reads the
 answers on stdin (pokeldn.app.runner); code in the app talks to the app's manager directly (`attach`,
-pokeldn.app.popups). With no app, a pop-up is a log line and no answer comes (`available`); a timeout still fires,
-being the program's own, and only a pop-up with one counts toward LIMIT.
+pokeldn.app.popups). With no app, a pop-up is a log line, no answer comes (`available`), and it never counts toward
+LIMIT.
 """
 
 import itertools
@@ -27,51 +27,45 @@ TONES = ("info", "warning", "error")
 ANSWERS = {"ack": ("ack",), "confirm": ("agree", "disagree", "dismiss")}
 
 _lock = threading.RLock()           # orders the messages of one id, whatever thread sends them
-_live: dict[str, "_Popup"] = {}     # id -> the pop-up open under it, until answered, cancelled or expired
+_live: dict[str, "_Popup"] = {}     # id -> the pop-up open under it, until answered or cancelled
 _serial = itertools.count(1)        # tells a pop-up from the one opened again under its id
 _sink = None                        # the app's manager, for code in the app (`attach`)
 _dispatch = None                    # the program's own loop (`set_dispatcher`)
 
 
 class _Popup:
-    __slots__ = ("n", "kind", "callbacks", "timer")
+    __slots__ = ("n", "kind", "callbacks")
 
     def __init__(self, n, kind, callbacks):
-        self.n, self.kind, self.callbacks, self.timer = n, kind, callbacks, None
+        self.n, self.kind, self.callbacks = n, kind, callbacks
 
 
 def acknowledge(title: str, text: str = "", *, id: str | None = None, label: str = "OK", on_ack=None,
-                stack: bool = True, urgent: bool = False, timeout: float | None = None, tone: str = "info") -> str:
+                tone: str = "info") -> str:
     """Shows `text` under `title` with one button, `label`; -> the pop-up's id. `on_ack()` fires when the player
     presses it, or presses Esc or clicks outside. See `confirm` for the rest."""
-    return _open("ack", id, {"title": title, "text": text, "label": label}, {"ack": on_ack},
-                 stack, urgent, timeout, tone)
+    return _open("ack", id, {"title": title, "text": text, "label": label}, {"ack": on_ack}, tone)
 
 
 def confirm(title: str, text: str, agree: str, disagree: str, *, id: str | None = None, on_agree=None,
-            on_disagree=None, on_dismiss=None, stack: bool = True, urgent: bool = False,
-            timeout: float | None = None, tone: str = "info") -> str:
+            on_disagree=None, on_dismiss=None, tone: str = "info") -> str:
     """Asks with three buttons: `agree` and `disagree`, the caller's labels, and Dismiss; -> the pop-up's id. Each
     fires its callback, if given; Esc and a click outside are Dismiss.
 
     `id` names the pop-up; one opened under the id of a pop-up still open replaces it in place, its callbacks
-    dropped. `stack=False` keeps any later pop-up waiting until this one closes, unless that one is `urgent`, which
-    shows at once whatever is open. After `timeout` seconds unanswered, the pop-up closes as if dismissed.
-    `tone` (info, warning or error) picks its icon. A program holding LIMIT pop-ups unanswered gets RuntimeError."""
+    dropped. `tone` (info, warning or error) picks its icon. A program holding LIMIT pop-ups unanswered gets RuntimeError."""
     if not (agree and disagree):
         raise ValueError("a confirmation names its agree and disagree buttons")
     return _open("confirm", id, {"title": title, "text": text, "agree": agree, "disagree": disagree},
-                 {"agree": on_agree, "disagree": on_disagree, "dismiss": on_dismiss}, stack, urgent, timeout, tone)
+                 {"agree": on_agree, "disagree": on_disagree, "dismiss": on_dismiss}, tone)
 
 
 def cancel(id: str) -> None:
-    """Closes the pop-up `id`, or takes it out of the queue; its callbacks never fire. An answered, expired or
-    unknown id is nothing to cancel."""
+    """Closes the pop-up `id`; its callbacks never fire. An answered or unknown id is nothing to cancel."""
     with _lock:
         popup = _live.pop(str(id), None)
         if popup is None:
             return
-        _stop(popup)
         _send({"op": "cancel", "id": str(id)})
 
 
@@ -87,55 +81,30 @@ def set_dispatcher(dispatch) -> None:
     _dispatch = dispatch
 
 
-def _open(kind, id, fields, callbacks, stack, urgent, timeout, tone):
+def _open(kind, id, fields, callbacks, tone):
     if tone not in TONES:
         raise ValueError(f"a pop-up's tone is one of {', '.join(TONES)}, not {tone!r}")
-    if timeout is not None and not timeout > 0:
-        raise ValueError(f"a pop-up's timeout is a positive number of seconds, not {timeout!r}")
     with _lock:
         id = uuid.uuid4().hex if id is None else str(id)
-        old = _live.pop(id, None)
-        if old is not None:
-            _stop(old)
-        elif len(_live) >= LIMIT:
+        if _live.pop(id, None) is None and len(_live) >= LIMIT:
             raise RuntimeError(f"{LIMIT} pop-ups wait for an answer already: cancel one first")
         popup = _Popup(next(_serial), kind, callbacks)
-        if timeout or available():      # with no app, only a timeout ever ends one
+        if available():                 # with no app, nothing ever answers one
             _live[id] = popup
-        if timeout:
-            popup.timer = threading.Timer(timeout, _expire, (id, popup.n))
-            popup.timer.daemon = True
-            popup.timer.start()
         _send({"op": "open", "id": id, "n": popup.n, "kind": kind, **{k: str(v) for k, v in fields.items()},
-               "stack": bool(stack), "urgent": bool(urgent), "tone": tone})
+               "tone": tone})
     return id
-
-
-def _stop(popup):
-    if popup.timer is not None:
-        popup.timer.cancel()
-
-
-def _expire(id, n):
-    with _lock:
-        popup = _live.get(id)
-        if popup is None or popup.n != n:
-            return
-        del _live[id]
-        _send({"op": "cancel", "id": id})
-    _fire(popup.callbacks.get("dismiss"))
 
 
 def answered(message: dict) -> None:
     """The app's answer to one of the pop-ups: {"id", "n", "answer"}. It fires that pop-up's callback, unless the
-    pop-up was cancelled, replaced, answered or expired since."""
+    pop-up was cancelled, replaced or answered since."""
     id, n, answer = str(message.get("id")), message.get("n"), message.get("answer")
     with _lock:
         popup = _live.get(id)
         if popup is None or popup.n != n or answer not in ANSWERS[popup.kind]:
             return
         del _live[id]
-        _stop(popup)
     _fire(popup.callbacks.get(answer))
 
 
