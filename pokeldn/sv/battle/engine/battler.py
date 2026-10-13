@@ -232,3 +232,68 @@ def can_act(m, b, *_):
     if m.vcall(b, 0x200) & 1 or m.vcall(b, 0x7B8) & 1:
         return 0
     return (m.vcall(b, 0x520, 7) ^ 1) & 1
+
+
+@lifted(0x2D3CDA0)
+def has_type(m, b, t, *_):
+    """Whether the battler is of type `t` (its two types, or the added type at +0x40c); none never matches."""
+    t &= 0xFF
+    if t == NO_TYPE:
+        return 0
+    with m.frame(8) as out:
+        m.vcall_void(b, 0x808, out, out + 4)
+        return int(m.u8(out) == t or m.u8(out + 4) == t or m.u8(b + 0x40C) == t)
+
+
+@lifted(0x2D3CD30)
+def packed_types(m, b, *_):
+    with m.frame(8) as out:
+        m.vcall_void(b, 0x808, out, out + 4)
+        return (m.u8(out) & 0x1F) | (m.u8(out + 4) & 0x1F) << 5 | (m.u8(b + 0x40C) & 0x1F) << 10
+
+
+@lifted(0x2D3D8CC)
+def clear_4a0(m, b, i, *_): m.put(b + (i & 0xFFFFFFFF) * 8 + 0x4A0, 8, 0)
+
+
+@lifted(0x2D3E6BC)
+def counter_5a8(m, b, i, *_):
+    i &= 0xFF
+    return m.u32(b + 0x5A8 + 4 * i) if i < 9 else 0
+
+
+@lifted(0x2D3C8F0)
+def move_byte_432(m, b, i, *_):
+    """Byte +2 of move slot i (the slots are 0x16 bytes from +0x430), for i below the count at +0x482."""
+    i &= 0xFF
+    return m.u8(b + 0x432 + 0x16 * i) if i < m.u8(b + 0x482) else 0
+
+
+@lifted(0x2D3D0F4)
+def bump_72(m, b, *_): m.put(b + 0x72, 2, m.u16(b + 0x72) + 1)
+
+
+@lifted(0x2D3D818)
+def set_flag_49a(m, b, i, *_):
+    """Set flag i of the +0x49a set unless the battler holds condition i (vf 0x4d0), then tell vf 0x500."""
+    i &= 0xFFFFFFFF
+    if m.vcall(b, 0x4D0, i) & 1:
+        return
+    a = b + ((i >> 3) & 0xFF) + 0x49A
+    m.put(a, 1, m.u8(a) | (1 << (i & 7)))
+    m.vcall_void(b, 0x500, i)
+
+
+@lifted(0x2D3E434)
+def set_last_490(m, b, p2, p3, p4, p5, p6, *_):
+    """Record the battler's last action: +0x490 (p5), +0x492, +0x48e, +0x486, and the repeat count at
+    +0x48c (reset unless p4's bit 0, kept counting while p5 repeats)."""
+    previous = m.u16(b + 0x490)
+    m.put(b + 0x490, 2, p5); m.put(b + 0x492, 2, p6); m.put(b + 0x48E, 1, p2); m.put(b + 0x486, 1, p3)
+    if previous == p5 & 0xFFFF:
+        if p4 & 1 == 0:
+            m.put(b + 0x48C, 2, 0)
+            return
+        m.put(b + 0x48C, 2, m.u16(b + 0x48C) + 1)
+    else:
+        m.put(b + 0x48C, 2, p4 & 1)

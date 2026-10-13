@@ -3,6 +3,7 @@ it out, addressed by u64, and the engine's functions keyed by the address of the
 reproduces (docs/sv_raid.md, The house engine). Every load and store truncates to its width.
 """
 
+import contextlib
 import struct
 
 PAGE = 0x1000
@@ -31,9 +32,10 @@ class UnliftedCall(Exception):
 class Machine:
     """State as pages of bytes, plus the call interface the lifted functions use."""
 
-    def __init__(self, pages=None, main=0):
+    def __init__(self, pages=None, main=0, stack=None):
         self.pages = pages if pages is not None else {}
         self.main = main            # where the game's main image sits in this state's address space
+        self.sp = stack             # top of the engine's own scratch stack (locals of lifted functions)
 
     def page(self, address):
         p = self.pages.get(address & ~(PAGE - 1))
@@ -67,6 +69,16 @@ class Machine:
     def u16(self, a): return self.u(a, 2)
     def u32(self, a): return self.u(a, 4)
     def u64(self, a): return self.u(a, 8)
+
+    @contextlib.contextmanager
+    def frame(self, size):
+        """Scratch memory for a lifted function's locals, like a stack frame."""
+        size = (size + 15) & ~15
+        self.sp -= size
+        try:
+            yield self.sp
+        finally:
+            self.sp += size
 
     def call(self, address, *args):
         """Call the engine's version of the game function at `address` (an absolute address in this

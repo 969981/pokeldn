@@ -91,3 +91,10 @@ def find_handler(m, owner, kind, ident, *_):
             return node + 0x18
         key, table = m.u16(node + 0x2C), m.u64(node + 0x20) + 8
     return 0
+
+
+@lifted(0xBF60CC)
+def data_record(m, table, key, *_):
+    """The record for a u16 id (a move, ...) from a data table's map at +0x68, else its default (+0xd0)."""
+    node = find(m, table + 0x68, key & 0xFFFF, 2)
+    return m.u64(node + 0x18) if node else m.u64(table + 0xD0)
