@@ -37,9 +37,10 @@ conversion.
 Settings, Your trainer is the original trainer of every Pokemon the app builds: a name, a gender, a
 language and two ID pairs, entered as the games show them. Legends Z-A takes a received Pokemon as its
 player's own only when the original trainer's gender, IDs and name match
-([the received record](za.md#what-the-trade-writes-into-a-received-record)). Legends Arceus's trades
-show the console a player of that gender
-([the record](pla.md#the-games-reader-and-the-pre-handler-phase)). A record stores the trainer as a
+([the received record](za.md#what-the-trade-writes-into-a-received-record)). Legends Arceus's data
+exchange record carries that gender and a look that matches it
+([the record](pla.md#the-games-reader-and-the-pre-handler-phase)); on retail trades the screen
+showed the partner's gender nowhere. A record stores the trainer as a
 16-bit TID and a 16-bit SID, the low and high halves of one 32-bit id.
 
 | games | ID shown | secret ID | stored id |

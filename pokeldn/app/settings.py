@@ -36,7 +36,7 @@ class Settings:
     switch_sid: int | None = None
     language: int = 2
     # 0 male, 1 female. Legends Z-A checks it before taking a Pokemon back as its trainer's, and Legends
-    # Arceus's data exchange record shows that player.
+    # Arceus's data exchange record carries it.
     gender: int = 0
     board_names: dict = field(default_factory=dict)   # MAC -> name the user gave the board
     tool_values: dict = field(default_factory=dict)   # tool key -> {"values": {...}, "extra": {...}}
