@@ -577,11 +577,11 @@ def test_a_scarlet_host_hears_the_identity_on_the_consoles_own_port():
     """A station sends its records on the 0x81 port of its station index (docs/sv.md, The records): a trading
     console's identity is on port 1, record 1 compressed; its port 0 carries only the stream opening."""
     import sv_host
-    assert sv_host.identity_record(0x81, 1, 1, 0x1F, 1)
-    assert sv_host.identity_record(0x81, 3, 1, 0x1F, 3)
-    assert not sv_host.identity_record(0x81, 0, 1, 0x0F, 1)       # its stream opening, retail
-    assert not sv_host.identity_record(0x81, 1, 2, 0x17, 1)       # record 2
-    assert not sv_host.identity_record(0x81, 1, 1, 0x0F, 1)
+    assert sv_host.identity_chunk(0x81, 1, 0x1F, 1)
+    assert sv_host.identity_chunk(0x81, 3, 0x1F, 3)
+    assert not sv_host.identity_chunk(0x81, 0, 0x0F, 1)       # its stream opening, retail
+    assert not sv_host.identity_chunk(0x81, 1, 0x0F, 1)
+    assert not sv_host.identity_chunk(0x81, 2, 0x1F, 1)       # another station's records
 
 
 def test_a_za_identity_names_the_save_and_its_host_passes_it_on():

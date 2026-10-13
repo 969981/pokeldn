@@ -176,7 +176,7 @@ before any Pokemon, and the host passes it on (`receiver_gift.hear`):
 | Let's Go | kind 1, the save's MyStatus block ([Kind 1](lgpe_session.md#the-games-messages-on-the-reliable-protocol), `pb7.first_trainer`) | id pair, version, gender, language, name |
 | Brilliant Diamond/Shining Pearl | 0x24 `TradeTranerData`, as the trade opens ([The Pokemon](bdsp_trade.md#the-pokemon), `room.traner_trainer`) | id pair, version, language, name |
 | Legends Arceus | its 0x81 data exchange record, the save's MyStatus block ([The game's reader](pla.md#the-games-reader-and-the-pre-handler-phase), `data_exchange.read_trainer`) | id pair, version, gender, language, name |
-| Scarlet/Violet | record 1 of its identity block, on the 0x81 port of its station index ([The records](sv.md#the-records), `sv_host.identity_record`, `reference.identity_trainer`) | id pair, version, gender, language, name |
+| Scarlet/Violet | record 1 of its identity block, on the 0x81 port of its station index ([The records](sv.md#the-records), `sv_host.identity_chunk`, `reference.identity_trainer`) | id pair, version, gender, language, name |
 | Legends Z-A | the 1400 identity ([The game's own exchange](za.md#the-games-own-exchange), `reference.identity_trainer`) | id pair, gender, language, name |
 
 Brilliant Diamond/Shining Pearl's session never names the gender: the Union Room answers no request

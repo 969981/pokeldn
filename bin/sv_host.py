@@ -74,10 +74,11 @@ RTT_RESPONSE = 1
 ACK_ENTRIES = 4
 
 
-def identity_record(protocol, port, sequence, flags, seat):
-    """Whether a console's message is record 1 of its identity block, which names its save: its first compressed
-    record, on 0x81 at the port of its station index `seat` (docs/sv.md, The records)."""
-    return (protocol == PROTO_STREAM_BROADCAST_RELIABLE and port == seat and sequence == 1
+def identity_chunk(protocol, port, flags, seat):
+    """Whether a console's message may be record 1 of its identity block, which names its save: a compressed
+    record on 0x81 at the port of its station index `seat` (docs/sv.md, The records). Its sequence number is no
+    guide: a console that opened its stream twice sent record 1 at 47."""
+    return (protocol == PROTO_STREAM_BROADCAST_RELIABLE and port == seat
             and bool(flags & reliable5.FLAG_ZLIB))
 
 
@@ -589,7 +590,9 @@ def main(argv=None):
         for it (pokeldn.receiver_gift)."""
         try:
             fields = reference.identity_trainer(streams.decompress(payload))
-        except (ValueError, zlib.error) as exc:
+        except zlib.error:          # another record's chunk
+            return
+        except ValueError as exc:
             print(f"[sv] {ip}: identity record 1 does not read: {exc}")
             return
         if fields:
@@ -1405,8 +1408,8 @@ def main(argv=None):
                                        seq=rm["sequence_id"], flags=rm["flags"],
                                        payload=rm["payload"].hex(), t=time.time())
                                 stream_high[key] = max(stream_high.get(key, 0), rm["sequence_id"])
-                                if receiving is not None and identity_record(
-                                        msg.protocol, msg.port, rm["sequence_id"], rm["flags"], seat_of(src_ip)):
+                                if receiving is not None and identity_chunk(
+                                        msg.protocol, msg.port, rm["flags"], seat_of(src_ip)):
                                     hear_identity(src_ip, rm["payload"])
                                 if (src_ip in raid_hosts and msg.protocol == PROTO_BROADCAST_RELIABLE
                                         and msg.port == 0):

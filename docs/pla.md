@@ -474,7 +474,8 @@ from the step's own copy (`0x1024038`, the block's own serializer: the block sit
 object). A gift made for the receiving player reads the console's trainer
 (`data_exchange.read_trainer`, [Made for the receiving player](gift_simulated.md#made-for-the-receiving-player)).
 
-The block's two other non-zero fields are 32-bit:
+In the reference record, the block's two other non-zero fields are 32-bit; a retail save's record
+also carries a 22-character account identifier at record +0x60 and a 1 at record +0x7d:
 
 - +0x3c (record +0x47) is the look the player picked from the intro's 4x2 `grid_player`, column +
   4 x row (`0x1348df8`, setter `0x1023f94`). The same pick sets the gender, female for columns 2 and

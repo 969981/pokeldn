@@ -213,7 +213,7 @@ the progress word, the return of a script function the game keeps at `0x473a040`
 `0xa5309c`). Native `f20A702BD` (`0x877560`) installs it; in the 3.0.1 script dump
 `BattleNetworkNetReceiver` passes a function that starts from 0, sets 1 when
 `FSYS_SCENARIO_GAME_CLEAR` is set and ors in 4 when `FSYS_SCENARIO_GAME_CLEAR_SU2` is. The retail
-saves sent 5, the reference sends 1.
+Scarlet sent 5, the retail Violet 0 with an all-zero account identifier, and the reference sends 1.
 
 The game's script reads a station's player through native getters registered in this order:
 `PlayerId`, `RomCode`, `Sex`, `LanguageId`, the throw style, `NameStrBuf` (`RegisterPlayerData` and

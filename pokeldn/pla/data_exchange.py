@@ -1,8 +1,8 @@
 """The data exchange Legends Arceus runs on Stream Broadcast Reliable (0x81), and its record.
 
 A station sends its record only after receiving the peer's; the frame is `pokeldn.ldn.reliable5`.
-The record is zlib (4 KB window, level 5) of 139 bytes, identical in both directions and across
-sessions. It holds the save's MyStatus block from +0x0b (PKHeX MyStatus8a): the player id at +0x1b,
+The record is zlib (4 KB window, level 5) of 139 bytes; the reference one here is the same in both
+directions and across sessions, a retail save's carries its own trainer. It holds the save's MyStatus block from +0x0b (PKHeX MyStatus8a): the player id at +0x1b,
 version +0x1f, gender +0x20, language +0x22, the UTF-16 name at +0x2b and the look at +0x47. A host
 writes the player id, the name and the gender, and the look follows the gender (docs/pla.md).
 """
