@@ -123,3 +123,53 @@ def _check(m, o, kind, entry, arg, arg2, lo, hi):
         able = sum(m.vcall(m.u64(plist + 8 * k), 0x208) & 1 for k in range(n)) & 0xFF
         return True if able <= limit else None
     return None
+
+
+@lifted(0x121BDB0)
+def fire_trigger(m, o, fired, event, *_):
+    """Fire the first trigger matching `event` (kind u32, then argument fields) and queue command 0xb6;
+    `*fired` is 1 when a kind 0xf..0x13 or 0x18 trigger with an argument ran its action."""
+    m.put(fired, 1, 0)
+    server = m.u64(o + 0x10)
+    kind = m.u32(event)
+    if m.call(m.main + 0x114A808, o) & 1 == 0:
+        if kind == 0:
+            for i in range(5):
+                if m.u64(m.u64(m.u64(o + 0x10) + 0x210) + 0xA8 + 8 * i):
+                    m.call_void(m.main + 0x172384C, m.u64(o + 0x20), 3, i)
+            kind = m.u32(event)
+    elif kind not in (6, 8):
+        return
+    a, b, c = m.u16(event + 8), m.u8(event + 0xA), m.u16(event + 0xC)
+    if kind == 0x1A:
+        p = m.call(m.main + 0xFA0028, m.u64(server + 0x30), 0, 0)
+        ident = m.vcall(p, 0x98) & 0xFFFFFFFF
+    else:
+        ident = m.u32(event + 4)
+    if ident == 0:
+        arg2 = c | 0x500000000
+    else:
+        p = m.call(m.main + 0x10E2DD4, m.u64(m.u64(m.u64(server + 0x290) + 8) + 0x50), ident)
+        v = m.s(p, 4) if p else 0
+        arg2 = ((v if v < 5 else 0) & 0xFFFFFFFF) << 32 | c
+    i = m.call(m.main + 0x17F457C, m.u64(server + 0x1D0), kind, a << 32 | b << 48 | ident, arg2) & 0xFFFFFFFF
+    if i >> 31:
+        return
+    m.call_void(m.main + 0x1345BC4, m.u64(o + 0x20), i, kind)
+    m.call_void(m.main + 0x119AFF0, m.u64(m.u64(o + 0x20) + 0x18), 0xB6, i & 0xFF, kind & 0xFF)
+    kind = m.u32(event)
+    if m.u32(event + 4) == 0 or kind < 0xF or (kind >= 0x14 and kind != 0x18):
+        return
+    triggers = m.u64(m.u64(o + 0x10) + 0x1D0)
+    action = m.call(m.main + 0x2D3AFBC, triggers, i) & 0xFFFFFFFF
+    if action:
+        target = m.call(m.main + 0x2D3B030, triggers, i) & 0xFFFFFFFF
+        if target == 0 or target != m.u32(event + 4):
+            m.call_void(m.main + 0x17D5C04, o, action)
+        else:
+            who = m.call(m.main + 0xF21C94, m.u64(m.u64(o + 0x10) + 0x30), target)
+            m.call_void(m.main + 0x18672A0, o, action, target, who)
+        if m.u32(event) == 2:
+            m.call_void(m.main + 0x119AFF0, m.u64(m.u64(o + 0x20) + 0x18), 0x2D, 2)
+    m.put(fired, 1, 1)
+    return

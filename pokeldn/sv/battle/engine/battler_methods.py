@@ -486,3 +486,16 @@ def use_pp(m, b, i, n, *_):
     left = m.u8(s + 0x428) - (n & 0xFF)
     m.put(s + 0x428, 1, left if left >= 0 else 0)
     return m.vcall(_core(m, b), 0x118, i, n)
+
+
+@lifted(0x2D1D474)
+def slot_38_is(m, o, a, value, *_):
+    return 1 if m.vcall(o, 0x38, a, value) & 0xFFFF == value & 0xFFFF else 0
+
+
+@lifted(0x2D3D098)
+def slot_2a8_unless_0x13(m, b, record, *_):
+    """Slot 0x2a8, unless the record's +0xbc is set or condition 0x13 holds (then 0)."""
+    if m.u32(record + 0xBC) or m.vcall(b, 0x220, 0x13) & 1:
+        return 0
+    return m.vcall(b, 0x2A8)
