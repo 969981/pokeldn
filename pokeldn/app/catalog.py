@@ -457,15 +457,15 @@ ZA = Game("za", "Legends Z-A", "PLZA", "za.md", (
 ))
 
 def simulated_gift(game: Game, host: Tool, steps: tuple[str, ...]) -> Tool:
-    """The trade host offering one of the game's Mystery Gift Pokemon, picked from PKHeX's event table, in
-    place of a built one, and made for the receiving player where the card names them
+    """The trade host offering up to a party's worth of the game's Mystery Gift Pokemon, picked from PKHeX's
+    event table, in place of built ones and made for the receiving player where each card names them
     (docs/gift_simulated.md)."""
     def gift(f: Field) -> tuple[Field, ...]:
         if f.kind != "pokemon":
             return f,
-        return (replace(f, label="Mystery Gift Pokemon", required=True, events=True, queue=1, more="", count="",
-                        help=f"Every Pokemon gift {game.name} gave, from PKHeX's event database. The console "
-                             "receives a fresh legal copy by trade."),
+        return (replace(f, label="Mystery Gift Pokemon", required=True, events=True, queue=QUEUE,
+                        help=f"Every Pokemon gift {game.name} gave, from PKHeX's event database. Add up to "
+                             f"{QUEUE}; one session trades them in order, each as a fresh legal copy."),
                 FOR_RECEIVER)
     return Tool(host.key.replace("-host", "-gift-host"), "Mystery Gift - Simulated", host.script,
                 "Trade an official Mystery Gift Pokemon to the console: a fresh legal copy, as your trainer "
