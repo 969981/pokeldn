@@ -375,9 +375,9 @@ def test_a_pokemon_file_shows_its_own_species_and_shininess(monkeypatch):
     picker.species.options = [object()]
     picker.control = SimpleNamespace(update=lambda: None)
     shown = []
-    picker.sprite.show = lambda species, shiny, update=True: shown.append((species, shiny))
+    picker.sprite.show = lambda species, shiny, update=True, form=0: shown.append((species, shiny, form))
     asyncio.run(picker._use_file(None))
-    assert shown == [(6, True)]
+    assert shown == [(6, True, 0)]
     assert (saved[-1]["species"], saved[-1]["shiny"], picker.species.value, picker.shiny.value) == (6, True, "6", True)
 
 
@@ -736,11 +736,11 @@ def test_gift_presets_show_the_pokemon_species_and_still_select_it(monkeypatch, 
     from gui.views import gifts as view_module
     from pokeldn.app import gift_builder
 
-    monkeypatch.setattr(view_module, "Sprite", lambda app, n, shiny, size:
+    monkeypatch.setattr(view_module, "Sprite", lambda app, n, shiny, size, form=0:
                         SimpleNamespace(control=ft.Container(data=(n, shiny), width=size)))
     builder = view_module.GiftBuilder.__new__(view_module.GiftBuilder)
     builder.app = None
-    builder.module = gift_builder.module(game)
+    builder.game, builder.module = game, gift_builder.module(game)
     builder.value = gift_builder.normalized(game, {})
     builder.commit = lambda rebuild=False: None
     preset = builder.module.PRESET[key]
@@ -752,25 +752,75 @@ def test_gift_presets_show_the_pokemon_species_and_still_select_it(monkeypatch, 
     assert builder.value["preset"] == key
 
 
-@pytest.mark.parametrize("species,shiny_type", [(25, 0), (25, 1), (25, 2), (25, 3), (0, 0)])
-def test_official_gift_icons_follow_the_record_and_keep_selection(monkeypatch, species, shiny_type):
+@pytest.mark.parametrize("species,shiny_type,form", [
+    (25, 0, 0), (25, 1, 0), (25, 2, 0), (25, 3, 0), (0, 0, 0), (146, 2, 1), (25, 0, 9),
+])
+def test_official_gift_icons_follow_the_record_and_keep_selection(monkeypatch, species, shiny_type, form):
     from gui.views import gifts as view_module
     from pokeldn.swsh import gift_builder, wc8
 
-    monkeypatch.setattr(view_module, "Sprite", lambda app, n, shiny, size:
-                        SimpleNamespace(control=ft.Container(data=(n, shiny), width=size)))
+    monkeypatch.setattr(view_module, "Sprite", lambda app, n, shiny, size, form=0:
+                        SimpleNamespace(control=ft.Container(data=(n, shiny, form), width=size)))
     builder = view_module.GiftBuilder.__new__(view_module.GiftBuilder)
     builder.app, builder.module = None, gift_builder
     builder.value = {"event": "other"}
     builder.commit = lambda rebuild=False: None
-    raw = (wc8.pokemon_card(species, shiny_type=shiny_type) if species else
+    raw = (wc8.pokemon_card(species, shiny_type=shiny_type, form=form) if species else
            gift_builder.record(gift_builder.blank(kind="items")))
     card = {"key": "test", "label": "Test gift", "summary": "A gift", "record": raw}
     tile = builder._event_tile(card)
     sprites = [c.data for c in tile.content.controls if isinstance(c.data, tuple)]
-    assert sprites == ([(species, shiny_type in (2, 3))] if species else [])
+    assert sprites == ([(species, shiny_type in (2, 3), form)] if species else [])
     tile.on_click(None)
     assert builder.value["event"] == "test"
+
+
+@pytest.mark.parametrize("game,key,initial,changed,national", [
+    ("frlg", "species", 25, 409, 385), ("frlg", "icon", 251, 277, 252),
+    ("swsh", "species", 25, 146, 146),
+])
+def test_custom_gift_previews_follow_species_form_and_shiny_edits(monkeypatch, game, key, initial,
+                                                                changed, national):
+    from gui.views import gifts as view_module
+
+    class Preview:
+        def __init__(self, app, species, shiny, size, form):
+            self.control = ft.Container()
+            self.show(species, shiny, form)
+
+        def show(self, species, shiny, form=0):
+            self.control.data = (species, shiny, form)
+
+    monkeypatch.setattr(view_module, "Sprite", Preview)
+    monkeypatch.setattr(view_module, "NamePicker", lambda *a, **kw: SimpleNamespace(control=ft.Container()))
+    builder = view_module.GiftBuilder.__new__(view_module.GiftBuilder)
+    builder.game, builder.app, builder.previews = game, None, []
+    builder.value = {"build": {"kind": "pokemon", key: initial}}
+    builder.commit = lambda rebuild=False: None
+    field = builder.name_field("Pokemon", "species", key, preview=True)
+    builder.edit(key, changed)
+    assert field.controls[1].data == (national, False, 0)
+    if game == "swsh":
+        builder.edit("form", 1)
+        builder.edit("shiny", True)
+        assert field.controls[1].data == (146, True, 1)
+        builder.state["kind"] = "egg"
+        builder.edit("shiny", True)
+        assert field.controls[1].data == (146, False, 1)
+
+
+def test_trade_preview_keeps_the_selected_form_when_shiny_changes_and_resets_on_clear(monkeypatch):
+    monkeypatch.setattr(ft.BaseControl, "update", lambda self: None)
+    picker = pokemon.PokemonPicker.__new__(pokemon.PokemonPicker)
+    picker.value = {"species": 25, "shiny": False, "options": {}}
+    shown = []
+    picker.sprite = SimpleNamespace(show=lambda species, shiny, **kw: shown.append((species, shiny, kw["form"])))
+    picker.options = OfferOptions(picker)
+    choice = picker.options._choice("form", [{"id": 0, "name": "Normal"}, {"id": 9, "name": "World"}])
+    choice.on_select(SimpleNamespace(control=SimpleNamespace(value="9")))
+    picker._shiny(SimpleNamespace(control=SimpleNamespace(value=True)))
+    picker.options._clear(None)
+    assert shown == [(25, False, 9), (25, True, 9), (25, True, 0)]
 
 
 def test_a_pokemon_home_card_is_outlined_in_amber_and_says_why(monkeypatch):

@@ -29,6 +29,27 @@ STEPS = (("pokemon", "Pokemon"), ("item", "Item"), ("egg", "Egg"), ("battle", "W
          ("message", "Message"))
 FULL = "Oh, there is no room!\nPlease make room and come back."
 
+# Internal ids 277..411, matched by species name to pret/pokefirered's
+# include/constants/pokedex.h. Ids 252..276 are the old Unown slots, not Hoenn Pokemon.
+NATIONAL_SPECIES = (
+    252, 253, 254, 255, 256, 257, 258, 259, 260, 261, 262, 263, 264, 265, 266,
+    267, 268, 269, 270, 271, 272, 273, 274, 275, 290, 291, 292, 276, 277, 285,
+    286, 327, 278, 279, 283, 284, 320, 321, 300, 301, 352, 343, 344, 299, 324,
+    302, 339, 340, 370, 341, 342, 349, 350, 318, 319, 328, 329, 330, 296, 297,
+    309, 310, 322, 323, 363, 364, 365, 331, 332, 361, 362, 337, 338, 298, 325,
+    326, 311, 312, 303, 307, 308, 333, 334, 360, 355, 356, 315, 287, 288, 289,
+    316, 317, 357, 293, 294, 295, 366, 367, 368, 359, 353, 354, 336, 335, 369,
+    304, 305, 306, 351, 313, 314, 345, 346, 347, 348, 280, 281, 282, 371, 372,
+    373, 374, 375, 376, 377, 378, 379, 382, 383, 384, 380, 381, 385, 386, 358,
+)
+
+
+def national_species(species):
+    """A builder's GBA species id -> National Dex number for its app preview."""
+    if 0 <= species <= 251:
+        return species
+    return NATIONAL_SPECIES[species - 277] if 277 <= species <= 411 else 0
+
 
 def species_names():
     """[(internal id, name)] the GBA cartridge knows, by name."""
