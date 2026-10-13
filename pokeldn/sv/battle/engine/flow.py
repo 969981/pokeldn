@@ -141,3 +141,35 @@ def set_action_state(m, o, ident, state, p4, p5, *_):
         return
     if m.vcall(b, 0x510, 0x19) & 1:
         m.vcall_void(b, 0x528, 7)
+
+
+def add_member(m, lst, b):
+    """Append a battler to a member list (pointers at +0, count +0xa6, high mark +0xa7, at most 11),
+    once; its per-entry fields at +0x84, +0x58 and +0x6e start at zero."""
+    n = m.u8(lst + 0xA6)
+    if n > 10 or any(m.u64(lst + 8 * i) == b for i in range(n)):
+        return
+    m.put(lst + 8 * n, 8, b)
+    m.put(lst + 0x84 + n, 1, 0)
+    m.put(lst + 0x58 + 2 * n, 2, 0)
+    m.put(lst + 0x6E + 2 * n, 2, 0)
+    m.put(lst + 0xA6, 1, n + 1)
+    if m.u8(lst + 0xA7) < (n + 1) & 0xFF:
+        m.put(lst + 0xA7, 1, n + 1)
+
+
+@lifted(0x1144704)
+def standing_members(m, o, lst, *_):
+    """Fill a member list with every party member still in the battle, client by client."""
+    m.write(lst, bytes(0x8F))
+    m.put(lst + 0xA0, 8, 0); m.put(lst + 0x90, 8, 0); m.put(lst + 0x98, 8, 0); m.put(lst + 0xA8, 2, 0)
+    with m.frame(0x20) as it:
+        m.put(it, 8, m.u64(m.main + 0x46E2580) + 0x10)
+        m.put(it + 8, 8, m.u64(o + 8)); m.put(it + 0x10, 8, m.u64(o + 0x10))
+        m.put(it + 0x18, 2, 0); m.put(it + 0x1A, 1, 1)
+        first_standing(m, it)
+        with m.frame(8) as out:
+            while next_standing(m, it, out):
+                b = m.u64(out)
+                if b:
+                    add_member(m, lst, b)

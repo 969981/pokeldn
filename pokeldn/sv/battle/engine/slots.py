@@ -143,3 +143,45 @@ def within_side(m, ids, pokecon, ident, *_):
     mode = m.u32(setup + 0x36C)
     side = SIDE_CLASS[mode][client] if mode in SIDE_CLASS and client <= 4 else 2
     return int(idx < positions_on_side(m, mode, m.u8(setup + 0x370), side))
+
+
+def _position_slots(mode, rule):
+    """Client slot of positions 0..9 as 0xfe161c walks them (5 = none)."""
+    s0 = 5 if mode > 2 else 0
+    s1 = (2 if rule else 5) if mode == 2 else (1 if mode in (0, 1) else 5)
+    if mode == 2:
+        s2, s3 = (3 if rule > 1 else 5), (5 if rule < 3 else 4)
+    elif mode == 1:
+        s2 = _MODE1_A[rule - 1] if 0 <= rule - 1 < 5 else 0
+        s3 = _MODE1_B[rule - 1] if 0 <= rule - 1 < 5 else 1
+    else:
+        s2 = s3 = 5
+    return (s0, s1, s2, s3) + (1 if mode == 2 else 5,) * 6
+
+
+@lifted(0xFE161C)
+def position_of(m, o, ident, *_):
+    """The battle position (0..9) of the party member with id `ident`, or 10."""
+    setup = m.u64(o + 8)
+    p = m.call(m.main + 0x10E2DD4, m.u64(setup + 0x50), ident)
+    client = 0
+    if p:
+        client = m.s(p, 4)
+        client = 0 if client > 4 else client
+        if client & 0xFF > 4:
+            return 10
+    client &= 0xFF
+    base = m.u64(setup + 0x30) + 0x38 * client
+    n = m.u8(base + 0x58)
+    for i in range(n):
+        member = m.u64(base + 0x28 + 8 * i) if i < m.u8(base + 0x58) else 0
+        if member and m.vcall(member, 0x98) & 0xFFFFFFFF == ident & 0xFFFFFFFF:
+            break
+    else:
+        return 10
+    for pos, slot in enumerate(_position_slots(m.u32(setup + 0x36C), m.u8(setup + 0x370))):
+        if slot == client:
+            if i == 0:
+                return pos
+            i -= 1
+    return 10

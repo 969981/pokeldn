@@ -157,3 +157,53 @@ def head_entry(m, owner, *_):
         return 0
     node = find(m, owner + 8, key, 2)
     return node + 0x18 if node else 0
+
+
+def _element(m, table, key):
+    node = _key_node(m, table, key)
+    return node + 0x18 if node else 0
+
+
+def _next_key(m, e):
+    """The key of e's next element, or 0xee when it has none."""
+    node = _key_node(m, m.u64(e + 8) + 8, m.u16(e + 0x14))
+    return m.u16(node + 0x28) if node else NONE_KEY
+
+
+@lifted(0x119BAAC)
+def take_free(m, owner, key, *_):
+    """Take an element off the free list headed at owner+0x72: the one keyed `key`, or the head when
+    `key` is negative. Returns it unlinked, or 0 when it is not on the list."""
+    head = _element(m, owner + 8, m.u16(owner + 0x72))
+    if head == 0:
+        return 0
+    if key & 0x80000000 == 0:
+        e = head
+        while m.u16(e + 0x10) != key & 0xFFFF:
+            e = _element(m, m.u64(e + 8) + 8, m.u16(e + 0x14))
+            if e == 0:
+                return 0
+        if e != head:
+            unlink(m, e)
+            return e
+    m.put(owner + 0x72, 2, _next_key(m, head))
+    unlink(m, head)
+    return head
+
+
+@lifted(0x13608E0)
+def release(m, owner, e, *_):
+    """Move an element from the active list (head key owner+0x70) to the front of the free list
+    (head key owner+0x72), clearing its 0x58-byte payload."""
+    if _element(m, owner + 8, m.u16(owner + 0x70)) == e:
+        m.put(owner + 0x70, 2, _next_key(m, e))
+    unlink(m, e)
+    m.put(e + 0x12, 4, 0xEE00EE)
+    m.write(e + 0x18, bytes(0x58))
+    free = _key_node(m, owner + 8, m.u16(owner + 0x72))
+    if free:
+        m.put(e + 0x14, 2, m.u16(free + 0x28))
+        m.put(free + 0x2A, 2, m.u16(e + 0x10))
+    else:
+        m.put(e + 0x14, 2, NONE_KEY)
+    m.put(owner + 0x72, 2, m.u16(e + 0x10))
