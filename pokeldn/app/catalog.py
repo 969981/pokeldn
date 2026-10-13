@@ -77,14 +77,13 @@ FRESH_PID = Field("--fresh-pid", "New PID each run", "switch", default=True, hid
                   help="Offer the Pokemon under a new PID and encryption constant, so a save that "
                        "already received it takes it again. Turn it off for a file whose PID must stay, "
                        "such as an event Pokemon.")
-FOR_RECEIVER = Field("--for-receiver", "Made for the receiving player", "switch", default=True, your_ot=True,
-                     help="A gift that names its receiver is made again during the trade, for the trainer of "
-                          "the console's save: the Pokemon the console offers names it when that save caught "
-                          "it, and the console's own session data names it otherwise. When neither can, the "
-                          "gift goes with your trainer from Settings, as it does with this off.")
-GIFT_OFFER_BACK = ("Offer a Pokemon, best one you caught in this save, and confirm: a gift that names its receiver "
-                   "is made for your save's trainer, read from that Pokemon or else from the console's own data. "
-                   "The event Pokemon comes over; yours goes to Received.")
+FOR_RECEIVER = Field("--for-receiver", "Made for the receiving player", "switch", default=True, hidden=True,
+                     your_ot=True,
+                     help="A gift that gave its receiver's own trainer is made again during the trade for the "
+                          "console's save, read from the Pokemon the console offers or from its session data. "
+                          "Off, or when neither names the save, it goes with your trainer from Settings.")
+GIFT_OFFER_BACK = ("Offer a Pokemon you caught in this save and confirm. The event Pokemon comes over; yours goes "
+                   "to Received.")
 CHANNEL_HELP = "The wireless channel of the network pokeldn hosts."
 CODE_HELP = "The same code the player enters on the console."
 
@@ -465,8 +464,7 @@ def simulated_gift(game: Game, host: Tool, steps: tuple[str, ...]) -> Tool:
             return f,
         return (replace(f, label="Mystery Gift Pokemon", required=True, events=True, queue=1, more="", count="",
                         help=f"Every Pokemon gift {game.name} gave, from PKHeX's event database. The console "
-                             "gets it as a traded event Pokemon, under the card's own trainer or, where the "
-                             "card gave the receiver's, the receiving save's or yours."),
+                             "receives a fresh legal copy by trade."),
                 FOR_RECEIVER)
     return Tool(host.key.replace("-host", "-gift-host"), "Mystery Gift - Simulated", host.script,
                 "Trade an official Mystery Gift Pokemon to the console: a fresh legal copy, as your trainer "
@@ -520,10 +518,8 @@ GAMES = (
                 (SV_SEARCH, "Offer and confirm on the trade screen.")),
     with_online(with_gift(ZA, ("Choose the event Pokemon, then start the host.",
                                "X, Link Play, Link Trade, Nearby Players, the same code, then search.",
-                               "Pick on the trade box a Pokemon, best one you caught in this save, then trade: a "
-                               "gift that names its receiver is made for your save's trainer, read from that "
-                               "Pokemon or else from the console's own data. The event Pokemon comes over; yours "
-                               "goes to Received.", "Back out with B after the trade.")),
+                               "Pick a Pokemon you caught in this save on the trade box, then trade. The event "
+                               "Pokemon comes over; yours goes to Received.", "Back out with B after the trade.")),
                 ("X, Link Play, Link Trade, Nearby Players, the same code, then search.",
                  "Pick on the trade box, offer, then trade.")),
 )

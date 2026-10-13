@@ -458,7 +458,7 @@ was made with: pick the gift again after changing the trainer. A gift that names
 never reached saves in the trainer's language, such as Let's Go's Chinese Meltan and Melmetal for any
 other, has an illegal tile that says why, and a click on it says so and keeps the offer
 ([Saves a card reached](gift_simulated.md#saves-a-card-reached)). With Made for the receiving player
-on, the default, the trade makes a gift that names its receiver again for the console's own save
+(Advanced tab) on, the default, the trade makes a gift that names its receiver again for the console's own save
 ([Made for the receiving player](gift_simulated.md#made-for-the-receiving-player)). A gift with its
 card's own trainer goes as made: picking it turns the switch off, disabled and faded, and the note
 under it names that trainer (`command.locked`). The launch then passes no `--for-receiver`. Picking a
