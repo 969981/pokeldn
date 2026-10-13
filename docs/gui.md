@@ -206,7 +206,7 @@ Mystery Gift - Simulated follows the setting too ([Mystery Gift - Simulated](#my
 Among the gifts, PKHeX wants a tracker only on one HOME gave: under `empty` its copy has none, under
 `made` a made one (`MendGift` in `services/pkhex/Program.cs`). A made tracker comes with what HOME
 changes on a Pokemon it has seen, which PKHeX's check expects of one with a tracker
-([HomeQuirks](https://github.com/kwsch/PKHeX/blob/master/PKHeX.Core/Legality/Restrictions/HomeQuirks.cs)):
+[HomeQuirks]:
 a Scarlet/Violet Pokemon's height is its scale, a Legends Z-A one's height and weight, and a Legends Z-A
 Alpha carries the Alpha mark (`HomeSeen`). PKHeX.Core 26.8.26 holds 16 such gifts for Sword/Shield, 4
 each for Brilliant Diamond/Shining Pearl, Legends Arceus and Legends Z-A, and 5 for Scarlet/Violet, and

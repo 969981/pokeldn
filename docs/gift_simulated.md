@@ -62,11 +62,11 @@ A Your OT copy names the receiving save as its OT, so it must be a save the card
 `gift_event` replies with `refused`: why no save like the trainer's received the card, empty when
 one did (`services/pkhex/Program.cs`).
 
-- **Its language:** a Your OT copy is in the receiving save's language. Where the card fixes another,
+- Language: a Your OT copy is in the receiving save's language. Where the card fixes another,
   the copy in the save's language goes through PKHeX's check, which knows the languages each card
   was given in (`CanHaveLanguage`): legal, it is the copy; illegal, the card is refused
   (`InTrainerLanguage`).
-- **Its version:** made for one save's version (`"only_version"`, below), a Your OT card refuses a
+- Version: made for one save's version (`"only_version"`, below), a Your OT card refuses a
   version it never reached (`ReachedVersion`). HOME's cards (9000 on) reached either version's saves,
   whatever origin they fix. Any other card that fixes its origin reached that version alone;
   otherwise the card's own restriction says (`RestrictVersion`, Let's Go's `IRestrictVersion`). A
@@ -98,27 +98,25 @@ it ([The HOME tracker setting](gui.md#the-home-tracker-setting)): none under `em
 flags and the app accepts as the only problem, and a made one under `made`, which Pokemon HOME
 refuses. Each reply says which (`home_tracker`). No other gift needs a tracker.
 
-- **The list:** each such gift is outlined in amber with the setting's warning, which the search
-  finds.
-- **The chosen copy:** Legal, with the same warning.
-- **The trade:** the host checks its offer under the same setting, which it inherits from the app
+- The list outlines each such gift in amber with the setting's warning, which the search finds.
+- The chosen copy shows Legal, with the same warning.
+- The trade's host checks its offer under the same setting, which it inherits from the app
   (`POKELDN_HOME_TRACKER`).
 
 Two of HOME's gifts need more than PKHeX's `ConvertToPKM` gives (`services/pkhex/Program.cs`):
 
-- **Let's Go's Meltan (card 9028)** keeps the height and weight HOME gave it
+- Let's Go's Meltan (card 9028) keeps the height and weight HOME gave it
   (`WB7.IsHeightWeightFixed`), which PKHeX's check expects in place of the computed ones
   [MiscVerifierPB7]. The service computes every other Let's Go Pokemon's as the console does, and
   restores this card's (`ResetSizes`).
-- **Legends Z-A's Chikorita, Tepig and Totodile (cards 9031 to 9033)** are Alphas with three perfect
+- Legends Z-A's Chikorita, Tepig and Totodile (cards 9031 to 9033) are Alphas with three perfect
   IVs and 20 in the rest (`WA9.HomeBaseIV`). PKHeX.Core 26.8.26 makes them with one perfect IV and
   five at 0, which its own check refuses, so the service sets HOME's spread (`SetHomeIVs`).
 
 ## The copy a trade offers
 
 Picking a gift runs `gift_event`: a fresh copy for the trainer in Settings, made on each of the game's
-versions in turn until one gives a legal copy. Scarlet/Violet's card 1540 gave Scarlet a shiny
-Miraidon and Violet a shiny Koraidon, each to that version alone. A copy illegal as made gets a
+versions in turn until one gives a legal copy, as a card given to one version alone needs. A copy illegal as made gets a
 handler (POKELDN), as the receiving save sets one on a card that arrives already handled. The card's
 moves are never refitted. A PID roll its own check rejects is rolled again, up to eight times on each
 version.
@@ -224,7 +222,7 @@ The trade runs as an online one does ([Online](online.md)):
    setting), then the host's own loader.
 4. The copy goes up once the console has offered in that trade, and stays up until the trade ends. A
    cancel from the host is unmeasured.
-5. Our confirm follows the console's.
+5. The host confirms after the console does.
 
 | game | loader | what it checks |
 |---|---|---|
