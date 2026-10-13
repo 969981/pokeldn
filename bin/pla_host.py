@@ -935,7 +935,7 @@ def main():
                                 is_new = rm["sequence_id"] > reliable_high.get(src_ip, 0)
                                 high = max(reliable_high.get(src_ip, 0), rm["sequence_id"])
                                 reliable_high[src_ip] = high
-                                if receiving is not None and rm["flags"] & reliable5.FLAG_ZLIB:
+                                if receiving is not None and is_new and rm["flags"] & reliable5.FLAG_ZLIB:
                                     # The console's record names its save, for a gift made for it
                                     # (pokeldn.receiver_gift).
                                     receiver_gift.hear(

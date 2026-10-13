@@ -176,7 +176,12 @@ def rounds(game, keys, offers, log=print):
     for n, body in enumerate(offers):
         key = keys[n] if n < len(keys) else ""
         if key:
-            info = pokemon.SERVICE.gift_event(game, key, PROBE, keep=False)
+            try:
+                info = pokemon.SERVICE.gift_event(game, key, PROBE, keep=False)
+            except pokemon.BuilderError as exc:
+                log(f"[gift] offer {n + 1}: card {key} is not in this PKHeX ({exc}), so it goes as made")
+                out.append(("", bytes(body)))
+                continue
             if info["your_ot"]:
                 log(f"[gift] offer {n + 1}: {info['title']} is made for the console's save when its offer or "
                     "session names it, and goes with your trainer from Settings otherwise")
