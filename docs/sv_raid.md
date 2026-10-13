@@ -780,7 +780,7 @@ battler or station byte at +0x18 and +0x19:
 | 0x01, 0x05, 0x11, 0x15, 0x25, 0x29, 0x47, 0x49 | the host, address (0x2713, 1, 2) | 50 to 20626 | a step; each guest answers type + 1 under the same counters |
 | 0x02, 0x12, 0x16, 0x26, 0x2a, 0x48, 0x4a | every station, address (0x2713, 3, 5) or (0x2713, 2, 2) | 50 | the answer to a step |
 | 0x06 | a station for its own battler; the host for its own, for each NPC's and again for the guest's | 250 | one battler's command; +0x19 is the battler slot (0 host, 2 the guest, 3 and 4 the NPCs) |
-| 0x15 | the host, one per acting battler, the boss included | 20626 | the round: five 0x70-byte action blocks (slots 0 host, 1 boss, 2 guest, 3 and 4 NPCs) at +0x20, a byte per slot naming who acted at +0x250, the server command queue's length at +0x258 and the queue from +0x25c; 123 to 802 bytes deflated |
+| 0x15 | the host, one per acting battler, the boss included | 20626 | the round: five 0x70-byte action blocks (slots 0 host, 1 boss, 2 guest, 3 and 4 NPCs) at +0x20, a byte per slot counting the actions in its block at +0x250 ([Actions](#actions)), the server command queue's length at +0x258 and the queue from +0x25c; 123 to 802 bytes deflated |
 | 0x46 | the host, 62 times at the start | 54 | |
 | 0x51 | the host | 86 | |
 
@@ -869,6 +869,29 @@ A draw adds `s0 + s1` and steps the state; the count rises by one per call, not 
 | `0x114da8c(rand, p)` | `(s0 + s1) & 0x7f` redrawn while 100 or more; true when below p |
 
 Many round functions inline the step instead of calling these.
+
+### Actions
+
+A round's action header is five 0x70-byte blocks, one per client slot, each up to seven 16-byte
+actions (a u64 action word, then the actor's battler id as a u64), and at +0x230 a byte per slot
+counting the actions in its block. The server decodes them in slot order into 0x8c-byte action
+entries (`0x1145e40`, decoder `0x11461b4`). The action word's low four bits are the kind:
+
+| kind | entry kind | fields of the word |
+|---|---|---|
+| 1 | 1, a move | bits 4..7 the target's battle position, 8..23 the move, bit 25 a flag |
+| 2 | 2 | bits 4..19 and 20..27; the next u32 |
+| 3 | 3, a switch | bits 4..7 the party index (the actor is that party member), 8..11, bit 12 |
+| 4 | 6 | bits 4..11, 12..15 and 16..23 |
+| 5 | 4 | bit 4 |
+| 6 | 5 | bits 4..11 |
+| 7, 10, 11 | 7, 8, 9 | none |
+| 9 | 10 | bits 4..11 |
+| 12 | 11 | bits 4..11; the next u32 |
+| 13 | 14 | bits 4..7, 8..11, 12..15, 16..27, 32..43, 44..55, 56..59, 60..63 |
+
+A word whose bits 0..3 are 3 and bit 12 is set is skipped, as are kinds 0, 8, 14 and 15. A recorded
+player action `41 67 03 00 ...` is a move (kind 1) at target position 4, move 871 (Torch Song).
 
 ### The server command queue
 

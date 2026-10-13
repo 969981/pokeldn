@@ -69,3 +69,20 @@ def decode_action(m, o, entry, word_ptr, client, *_):
     m.put(entry + 0x54, 4, n)
     m.put(counter + 8, 4, m.u32(counter + 8) + 1)
     return 1
+
+
+BLOCK, COUNTS = 0x70, 0x230      # one 0x70-byte block of (action word, actor id) pairs per client
+
+
+@lifted(0x1145E40)
+def collect_actions(m, o, actions, header, *_):
+    """Decode every action of a round's action header into the server's action list: client c's
+    count is the byte at header+0x230+c and its pairs start at header+0x70*c."""
+    from pokeldn.sv.battle.engine.getters import append_action
+    with m.frame(0xA0) as entry, m.frame(0x10) as word:
+        for client in range(5):
+            for k in range(m.u8(header + COUNTS + client)):
+                pair = header + BLOCK * client + 0x10 * k
+                m.write(word, m.read(pair, 0x10))
+                if decode_action(m, o, entry, word, client) & 1:
+                    append_action(m, actions, entry)
