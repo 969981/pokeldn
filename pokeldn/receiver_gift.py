@@ -264,7 +264,6 @@ class ReceiverGift:
         self.notify = notify or (lambda title, text: None)
         self.lock = threading.Lock()
         self.round = 0
-        self.finished = False
         self.save = None            # (trainer, version), once the console's offer or session named them
         self.named_by = ""          # "pokemon" or "session": a Pokemon the save caught outranks the session
         self.heard = None           # the trainer fields the console's session data gave (`hear`)
@@ -282,9 +281,6 @@ class ReceiverGift:
     def offer(self, body):
         """The console offers `body`."""
         with self.lock:
-            if self.finished:
-                self.log("[gift] every gift has been traded: nothing more is offered")
-                return
             self.asked = True
             if self.current.offer is not None or self.reading:
                 return
@@ -387,14 +383,16 @@ class ReceiverGift:
         pass
 
     def done(self):
-        """This round's trade completed; the next round's record is made at once for the save."""
+        """This round's trade completed; the next round's record is made at once for the save. The last round
+        serves every later trade, as a host's last offer does, made afresh."""
         with self.lock:
-            self.round += 1
             self.asked = False
             self.current = Offer()
-            if self.round >= len(self.rounds):
-                self.finished = True
-            elif self.rounds[self.round][0] and self.save is not None:
+            if self.round + 1 < len(self.rounds):
+                self.round += 1
+            else:
+                self.made.pop(self.round, None)
+            if self.rounds[self.round][0] and self.save is not None:
                 self._build(self.round)
 
     def close(self):

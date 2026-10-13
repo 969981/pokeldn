@@ -150,11 +150,7 @@ class TradeStage:
                 self.trades += 1
                 if self.partner is not None:
                     self.partner.done()
-                    # A receiver's gifts run out (pokeldn.receiver_gift); an online partner's never do.
-                    if getattr(self.partner, "finished", False):
-                        self.done = True
-                    else:
-                        self._start()
+                    self._start()
                 elif self.index + 1 < len(self.offers):
                     self.index += 1
                     self._start()

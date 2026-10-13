@@ -251,7 +251,7 @@ version, and where the copy stopped (`receiver_gift.maker`):
 Scarlet/Violet, Legends Arceus and Legends Z-A give each console its own `ReceiverGift`, so one
 console's save never names another's gift; Let's Go and Brilliant Diamond/Shining Pearl host one
 console. A later trade in the same seat is made as soon as the trade before it completes, for the save
-already known.
+already known. The last gift serves every later trade, made afresh, as a host's last offer does.
 
 On retail consoles of all five games, the gift came with the save's own trainer whether the console
 offered a Pokemon the save caught or one it received in a trade, which left the save to the session;

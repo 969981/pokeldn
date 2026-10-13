@@ -234,7 +234,7 @@ def test_a_pokemon_that_names_no_one_gets_the_gift_under_the_trainer_from_settin
     builds()
     assert made == [("2001-25-0-2", SAVE, "SL")] and our_offers(ticked(stage)) == [MADE]
     traded(stage, send)
-    assert stage.trades == 3 and stage.done and gift.finished
+    assert stage.trades == 3 and not stage.done
 
 
 def test_the_gift_is_made_for_the_save_when_it_offers_a_pokemon_it_caught(builds):
@@ -249,7 +249,7 @@ def test_the_gift_is_made_for_the_save_when_it_offers_a_pokemon_it_caught(builds
     send(trade.KIND_CONFIRM)
     assert confirms(ticked(stage)) and stage.confirmed
     complete(stage, send)
-    assert stage.trades == 1 and stage.done and gift.finished
+    assert stage.trades == 1 and not stage.done
     assert stage.joiner_offers == [CAUGHT] and gift.popups == []
 
 
@@ -334,7 +334,7 @@ def test_the_next_round_is_made_for_the_known_save_as_the_trade_closes(builds):
     send(trade.KIND_CONFIRM)
     ticked(stage)
     complete(stage, send)
-    assert stage.trades == 1 and not stage.done and not gift.finished
+    assert stage.trades == 1 and not stage.done
     builds()
     assert [key for key, _, _ in made] == ["1501-25-0-2", "0050-133-0-0"]
     send(trade.KIND_OFFER, TRADED)
@@ -342,8 +342,10 @@ def test_the_next_round_is_made_for_the_known_save_as_the_trade_closes(builds):
     send(trade.KIND_CONFIRM)
     ticked(stage)
     complete(stage, send)
-    gift.offer(CAUGHT)
-    assert gift.finished and said[-1] == "[gift] every gift has been traded: nothing more is offered"
+    builds()                                         # the last gift serves every later trade, made afresh
+    assert [key for key, _, _ in made] == ["1501-25-0-2", "0050-133-0-0", "0050-133-0-0"]
+    send(trade.KIND_OFFER, TRADED)
+    assert our_offers(ticked(stage)) == [MADE] and not stage.done
 
 
 # The other games' hosts read the console's offer through the service (Service.owner); `read` stands in.
@@ -403,7 +405,8 @@ def test_a_za_host_previews_and_picks_the_gift_for_the_console(builds, caught):
         builds()
         console.run(t + 0.05, t)
         t += 0.1
-    assert host.trades == 1 and gift.finished and made == ([("9031-152-0", SAVE, "ZA")] if caught else [])
+    # A copy for the next trade is made as this one closes.
+    assert host.trades == 1 and made[:1] == ([("9031-152-0", SAVE, "ZA")] if caught else [])
     shown = [x[2] for x in console.game_heard() if x[2][:2] == b"\x01\x01"]
     assert [m[-1] for m in shown] == [1, 0] and shown[1] == (copy if caught else given_)
 
