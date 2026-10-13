@@ -2473,6 +2473,291 @@ def set_stat_multiplier(m, b, which, value, *_):
     then recompute that stat (0x171cb20)."""
     _need(m, m.main + 0x171CAC8)
     _need(m, m.main + 0x171CB20)
-    v = m.vcall(b, 0x1D0)
+    v = m.vcall(b, 0x1D0, which, value)  # x1, x2 pass through to the getter
     m.call_void(m.main + 0x171CAC8, b + 0x3F4, which & 0xFFFFFFFF, (v - value) & 0xFFFFFFFF)
     return _tail(m, m.main + 0x171CB20, b, which & 0xFFFFFFFF)
+
+
+def _tls_top(m):
+    """(the TLS block of slot u32 0x4765a30, the last of its u64 entries counted at +0x80, or 0)."""
+    if m.u8(m.main + 0x4765A38) & 1 == 0:
+        raise UnliftedCall("static 0x4765a30 not built")
+    v = m.call(m.main + 0x343DA20, m.u32(m.main + 0x4765A30))
+    if v == 0 or m.u64(v + 0x80) == 0:
+        return v, 0
+    return v, m.u64(v + 8 * m.u64(v + 0x80) - 8)
+
+
+@lifted(0xFAC3A0)
+def init_fac3a0(m, p, *_):
+    """Construct the object: vtables 0x44ed828 / 0x44ed860, +8 the current TLS entry (_tls_top), and at
+    +0x48 the record 0xfac480 builds (the entry again, 0x1fffffffffffffff, 0, 0)."""
+    _, top = _tls_top(m)
+    if top == 0:
+        raise UnliftedCall("main+0xf60ed0")
+    m.put(p + 0x10, 8, 0); m.put(p + 0x18, 4, 0)
+    m.put(p, 8, m.u64(m.main + 0x46D66F8) + 0x10)
+    m.put(p + 0x28, 4, 0)
+    m.put(p, 8, m.main + 0x44ED828); m.put(p + 8, 8, top)
+    m.put(p + 0x20, 8, m.main + 0x44ED860)
+    m.put(p + 0x40, 8, 0); m.put(p + 0x30, 8, 0); m.put(p + 0x38, 8, 0)
+    v, top = _tls_top(m)
+    q = p + 0x48
+    m.put(q + 0x18, 4, 0); m.put(q, 8, top); m.put(q + 8, 8, 0x1FFFFFFFFFFFFFFF); m.put(q + 0x10, 8, 0)
+    return v
+
+
+@lifted(0xFA5E0C)
+def copy_shared_in_context(m, ctx, out, src, *_):
+    """With [ctx] pushed on the TLS context stack (slot 0x4765a30, at most 16 entries, count +0x80):
+    *out = *src, taking a reference on its control block (+0x30; the first builds +8 through vf 0 of
+    +0x10)."""
+    if m.u8(m.main + 0x4765A38) & 1 == 0:
+        raise UnliftedCall("static 0x4765a30 not built")
+    v = m.call(m.main + 0x343DA20, m.u32(m.main + 0x4765A30))
+    if v and m.u64(v + 0x80) >= 0x10:
+        raise UnliftedCall("TLS context stack full")
+    obj = m.u64(src)
+    if obj:
+        ctl = m.u64(obj + 0x30)
+        if m.u64(ctl + 0x10) == 0:
+            raise UnliftedCall("AddReference abort: m_object is null")
+        count = m.u16(ctl + 0x1A)
+        if count == 0xFFFF:
+            raise UnliftedCall("AddReference abort: counter overflow")
+        if count == 0:
+            _need(m, m.u64(m.u64(m.u64(ctl + 0x10))))
+    r = v
+    if v:
+        n = m.u64(v + 0x80)
+        m.put(v + 8 * n, 8, m.u64(ctx))
+        m.put(v + 0x80, 8, n + 1)
+    m.put(out, 8, obj)
+    if obj:
+        m.put(ctl + 0x1A, 2, count + 1)
+        if count == 0:
+            r = m.vcall(m.u64(ctl + 0x10), 0)
+            m.put(ctl + 8, 8, r)
+            m.put(ctl + 0x1C, 4, 0xFFFFFFFE)
+    if v:
+        m.put(v + 0x80, 8, m.u64(v + 0x80) - 1)
+    return r
+
+
+@lifted(0xFA6BBC)
+def at_u32(m, table, key_ptr, *_):
+    """unordered_map::at for the u32 at key_ptr: the value slot (node+0x18); a missing key throws."""
+    from pokeldn.sv.battle.engine.containers import find
+    node = find(m, table, m.u32(key_ptr), 4)
+    if node == 0:
+        raise UnliftedCall("unordered_map::at: key not found")
+    return node + 0x18
+
+
+@lifted(0xFA38F8)
+def assign_ref(m, dst, new, *_):
+    """Copy-assign an intrusive reference (u32 count at +0x28): raise new's count, store it, drop the old
+    object's (vf 0x10 at the last reference)."""
+    if new and m.u32(new + 0x28) == 0xFFFFFFFF:
+        raise UnliftedCall("IncrementReference abort: counter overflow")
+    old = m.u64(dst)
+    if old:
+        c = m.u32(old + 0x28) + (1 if old == new else 0)
+        if c == 0:
+            raise UnliftedCall("DecrementReference abort: counter underflow")
+        if c == 1:
+            _need(m, m.u64(m.u64(old) + 0x10))
+    if new:
+        m.put(new + 0x28, 4, m.u32(new + 0x28) + 1)
+    m.put(dst, 8, new)
+    if old == 0:
+        return 0
+    c = m.u32(old + 0x28)
+    m.put(old + 0x28, 4, c - 1)
+    if c == 1:
+        return _vtail(m, old, 0x10)
+    return old
+
+
+def _map_clear(m, buckets, first, alloc, size, node_size):
+    """unordered_map::clear: free each node (the allocator's vf 0x18(node, size, 4), or 0xb48fe8 when its
+    vf 0xf8 says frees are deferred and the thread block's +0x12c8 is positive), then zero the buckets."""
+    if m.u64(size) == 0:
+        return
+    node = m.u64(first)
+    while node:
+        a = m.u64(alloc)
+        nxt = m.u64(node)
+        if m.vcall(a, 0xF8) & 1 and m.s(m.call(m.main + 0xB4E600) + 0x12C8, 4) >= 1:
+            m.call_void(m.main + 0xB48FE8, a, node, node_size, 4)
+        else:
+            m.vcall_void(a, 0x18, node, node_size, 4)
+        node = nxt
+    m.put(first, 8, 0)
+    n = m.u64(buckets + 8)
+    for i in range(n):
+        m.put(m.u64(buckets) + 8 * i, 8, 0)
+    m.put(size, 8, 0)
+
+
+def _need_free(m, alloc, first):
+    if m.u64(first):
+        a = m.u64(alloc)
+        _need(m, m.u64(m.u64(a) + 0xF8)); _need(m, m.u64(m.u64(a) + 0x18)); _need(m, m.main + 0xB48FE8)
+
+
+@lifted(0x127DDC8)
+def clear_127ddc8(m, p, *_):
+    """Clear +0x70 and the map at +8 (first node +0x38, allocator +0x40, size +0x60, nodes 0x20)."""
+    if m.u64(p + 0x60):
+        _need_free(m, p + 0x40, p + 0x38)
+    m.put(p + 0x70, 4, 0)
+    _map_clear(m, p + 8, p + 0x38, p + 0x40, p + 0x60, 0x20)
+
+
+@lifted(0x127E548)
+def clear_127e548(m, p, *_):
+    """Zero +8..+0x2ec and clear the map at +0x2f0 (first node +0x320, allocator +0x328, size +0x348,
+    nodes 0x18)."""
+    if m.u64(p + 0x348):
+        _need_free(m, p + 0x328, p + 0x320)
+    m.write(p + 8, bytes(0x2E4))
+    _map_clear(m, p + 0x2F0, p + 0x320, p + 0x328, p + 0x348, 0x18)
+
+
+@lifted(0x127E8B4)
+def release_all_127e8b4(m, owner, *_):
+    """Hand every element of the active list (head key owner+0x70) to 0x127c86c in order (the next one
+    looked up before), then mark the list empty (0xee)."""
+    from pokeldn.sv.battle.engine.containers import _element
+    e = _element(m, owner + 8, m.u16(owner + 0x70))
+    if e:
+        _need(m, m.main + 0x127C86C)
+    while e:
+        nxt = _element(m, m.u64(e + 8) + 8, m.u16(e + 0x14))
+        m.call_void(m.main + 0x127C86C, owner, e)
+        e = nxt
+    m.put(owner + 0x70, 2, 0xEE)
+
+
+@lifted(0x114EB70)
+def note_718_in_side(m, o, b, *_):
+    """For a battler whose type list (+0x28 interface, vf 0) holds the static 0x46d3f08: store its u16
+    +0x718 at +6 of the entry holding its id among the six 0x10-byte entries from +0x10 of its side's
+    0x60-byte row ([[o+0x10]+0x250]; side from the setup map, 0..4)."""
+    node = m.vcall(b + 0x28, 0)
+    if m.u8(m.u64(m.main + 0x46D3F00)) & 1 == 0:
+        raise UnliftedCall("static 0x46d3f08 not built")
+    static = m.u64(m.main + 0x46D3F08)
+    while node != static:
+        if node == 0:
+            return
+        node = m.u64(node)
+    ident = m.vcall(b, 0x98) & 0xFFFFFFFF
+    v = m.u16(b + 0x718)
+    p = m.call(m.main + 0x10E2DD4, m.u64(m.u64(m.u64(m.u64(o + 0x10) + 0x290) + 8) + 0x50), ident)
+    side = 0
+    if p:
+        side = m.s(p, 4)
+        if side >= 5:
+            side = 0
+        if side & 0xFF > 4:
+            return
+        side &= 0xFF
+    row = m.u64(m.u64(o + 0x10) + 0x250) + side * 0x60
+    for k in range(1, 7):
+        if m.u32(row + 0x10 * k) == ident:
+            m.put(row + 0x10 * k + 6, 2, v)
+            return
+
+
+@lifted(0x2844800)
+def not_flagged_and_not_308(m, o, ident, *_):
+    """1 unless 0x28422f0 holds for {0x283d610(o), 1} or battler `ident`'s vf 0x308 (0x2842e80) does."""
+    with m.frame(0x10) as p:
+        m.put(p, 8, m.call(m.main + 0x283D610, o, ident))
+        m.put(p + 8, 1, 1)
+        if m.call(m.main + 0x28422F0, o, p) & 1:
+            return 0
+    return (m.call(m.main + 0x2842E80, o, ident & 0xFFFFFFFF) ^ 1) & 1
+
+
+@lifted(0x1140D40)
+def run_11424b8(m, o, e, *_):
+    """0x11424b8(0x1140d74([o+0x78]), an out slot, &[e+0x28])."""
+    with m.frame(0x10) as p:
+        m.put(p + 8, 8, m.u64(e + 0x28))
+        return _tail(m, m.main + 0x11424B8, m.call(m.main + 0x1140D74, m.u64(o + 0x78)), p, p + 8)
+
+
+@lifted(0xE13B9C)
+def recompute_stats(m, pp, keep, *_):
+    """Keep the record plain (0xd677e8) unless it already is, then store the level for its experience
+    and every stat (0xe13cb8(keep & 1) for HP, then Atk, Def, SpA, SpD, Spe) into the party record;
+    drop the plain hold again (0xd679f0) when this call took it."""
+    for a in (0xD677E8, 0xBF41A8, 0xE14B64, 0xE13DA0, 0xE15150, 0xE13CB8, 0xE1415C, 0xE15484, 0xE142B0,
+              0xE157B8, 0xE14560, 0xE15E20, 0xE146B8, 0xE16154, 0xE14408, 0xE15AEC, 0xD679F0):
+        _need(m, m.main + a)
+    took = m.u8(m.u64(pp + 0x70) + 0x19) == 0
+    if took:
+        m.call(m.main + 0xD677E8, m.u64(pp + 0x70))
+    s = m.call(m.main + 0xBF44F4, m.u64(pp + 0x70)) & 0xFFFFFFFF
+    f = m.call(m.main + 0xBF41A8, m.u64(pp + 0x70)) & 0xFFFFFFFF
+    e = m.call(m.main + 0xE14B64, m.u64(pp + 0x70)) & 0xFFFFFFFF
+    lv = m.call(m.main + 0xE13DA0, s, f, e) & 0xFFFFFFFF
+    m.call_void(m.main + 0xE15150, m.u64(pp + 0x70), lv)
+    m.call_void(m.main + 0xE13CB8, pp, keep & 1)
+    r = None
+    for get, put in ((0xE1415C, 0xE15484), (0xE142B0, 0xE157B8), (0xE14560, 0xE15E20), (0xE146B8, 0xE16154),
+                     (0xE14408, 0xE15AEC)):
+        v = m.call(m.main + get, pp) & 0xFFFFFFFF
+        r = _tail(m, m.main + put, m.u64(pp + 0x70), v)
+    if took and m.u8(m.u64(pp + 0x70) + 0x19):
+        return _tail(m, m.main + 0xD679F0, m.u64(pp + 0x70))
+    return r
+
+
+@lifted(0x28024A0)
+def static_46e2578(m, *_):
+    """A function-local static (guard and storage through the GOT); read only once built."""
+    if m.u8(m.u64(m.main + 0x46E2570)) & 1 == 0:
+        raise UnliftedCall("static 0x46e2578 not built")
+    return m.u64(m.main + 0x46E2578)
+
+
+@lifted(0x13606C4)
+def note_and_queue_5f(m, o, ident, *_):
+    """0x13606f8([o+0x20], ident) (ident passes through in x1), then message 0x5f(ident)."""
+    _need(m, m.main + 0x119AFF0)
+    m.call_void(m.main + 0x13606F8, m.u64(o + 0x20), ident)
+    return _tail(m, m.main + 0x119AFF0, m.u64(o + 0x18), 0x5F, ident & 0xFFFFFFFF)
+
+
+@lifted(0x283F0DC)
+def apply_side_effects(m, o, out, req, *_):
+    """For each target 0x2823478 lists for the u8 req+4: 0x288818c(o, flags, target, req+5) (out set when
+    one holds); then for each of the 2 x 19 flags set, 0x288835c([req], side, k); bracketed by
+    0x17ce0e4 / 0x17ce27c when req+9 and 0x2888224(flags) hold."""
+    for a in (0x1482534, 0x13813EC, 0x2823478, 0x288818C, 0x2888224, 0x1143584, 0x288835C):
+        _need(m, m.main + a)
+    if m.u8(req + 9):
+        _need(m, m.main + 0x17CE0E4); _need(m, m.main + 0x17CE27C)
+    m.put(out, 1, 0)
+    with m.frame(0x30) as sp:
+        flags = sp + 8
+        m.write(sp, bytes(0x30))
+        t = m.call(m.main + 0x13813EC, m.call(m.main + 0x1482534, o))
+        m.call_void(m.main + 0x2823478, t, sp + 4, sp, m.u8(req + 4))
+        i = 0
+        while i < m.u8(sp):
+            if m.call(m.main + 0x288818C, o, flags, m.u8(sp + 4 + i), req + 5) & 1:
+                m.put(out, 1, 1)
+            i += 1
+        if m.u8(req + 9) and m.call(m.main + 0x2888224, flags) & 1:
+            m.call_void(m.main + 0x17CE0E4, m.call(m.main + 0x1143584, o), m.u32(req))
+        for side in range(2):
+            for k in range(0x13):
+                if m.u8(flags + side * 0x13 + k):
+                    m.call_void(m.main + 0x288835C, m.call(m.main + 0x1143584, o), m.u32(req), side, k)
+        if m.u8(req + 9) and m.call(m.main + 0x2888224, flags) & 1:
+            m.call_void(m.main + 0x17CE27C, m.call(m.main + 0x1143584, o), m.u32(req))
