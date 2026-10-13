@@ -1,21 +1,27 @@
-# pokeldn 0.22.2
+# pokeldn 0.23.0
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- Online trades verify incoming messages, keep the partner's identity fixed, and limit incoming
-  work. A rejected replacement Pokemon clears the previous offer and confirmation.
-- Plugin packages reject unsafe file paths and changes made after the install preview.
-- Sprite downloads reject malformed images and limit image decoding.
-- App updates and raid-event downloads check archive paths, links, file counts and unpacked size.
-  Downloads enforce size and time limits; app and firmware updates check their release source.
+- Mystery Gift - Simulated: Let's Go, Brilliant Diamond/Shining Pearl, Legends Arceus,
+  Scarlet/Violet and Legends Z-A trade an official gift Pokemon from PKHeX's event list, made for
+  the receiving console's own save by default. The last gift is offered again to a console that
+  trades on.
+- Sword/Shield's Official events add Pokemon HOME's gifts, and Sword/Shield gifts take a nature.
+- Settings, HOME tracker: "empty" (default) leaves the tracker unset, as HOME 3.1.0 and later
+  require; "made" keeps the previous behaviour.
+- Tera Raids: the raid card shows the boss's shield and scripted actions. With several consoles,
+  each console fights its own copy of the battle after the shared lobby.
+- Legends Arceus sends the trainer's gender from Settings, and the partner sees the matching look.
+- Programs and plugins can show pop-ups in the app; the plugin API (1.3) lists what a plugin or a
+  separate front end can rely on.
+- Gen 9 sprites with a colour profile, such as Sprigatito and Miraidon, now display.
+- Launchers print each packet only with `--print-packets`, which keeps the app's output readable.
 
-Existing GTS listings continue to work; no relisting is needed.
-
-The radio firmware is unchanged at 1.6.1 and the controller firmware at 1.3.0; no board needs an
-update.
+The radio firmware stays at 1.6.1 (its only change concerns the sniffer tool) and the controller
+firmware at 1.3.0; no board needs an update.
 
 pokeldn is an unofficial fan project, not affiliated with Nintendo or The Pokemon Company. It is not
 meant for commercial or promotional use; see the License section of the README.
