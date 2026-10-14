@@ -955,15 +955,35 @@ The captured app data the host's beacon clones (`pokeldn/frlg/link/host_beacon.p
 `GREEN`, RFU session id `0xac65` and search word `0x1584` (activity 4, version 5, language 2, bit 7
 set).
 
-The advertisement blob is built in the network-manager class (vtable `main + 0x1CA5B0`; its vtable
-pointer is formed at `main + 0x7E244` from the relocated slot `main + 0x1D1E98`). A buffer object
-at `[manager + 0x2D8]` holds the size at `+0x322` and the blob at `+0x324`; a method of the buffer
-object (its vtable slot `+0x68`) writes the `0x5C`-byte Pia system header, the app data is copied
-to `+0x380` (the blob's `+0x5C`) and the size is the app data plus `0x5C` (`main + 0x80C3C`
-refuses an app data stream of `0x125` bytes or more). Three manager methods call
-`nn::ldn::SetAdvertiseData` on that blob (`main + 0x80DAC`, `0x80E48`, `0x80EE4`); two more
-(`main + 0x7F990`, `0x81140`) advertise a second object's data (`[object + 0x18]`, the size its
-vtable slot `+0x38` plus `main + 0x8AC20`). The PLT stub is `main + 0x160A90`, GOT `0x1d3800`.
+The record text goes into an advertise-data builder the handler builds for the occasion (class
+vtable `main + 0x1CB8C8`, constructor `main + 0x87514`): a `0x180`-byte Pia advertise area at
+`+0x1C`, the used size at `+0x18` starting at the `0x5C` header, the app data pointer
+`main + 0xA2C70` = `+0x78`, the app data size `main + 0xA2C90` = used minus `0x5C`, clamped to
+`0x124` (slot `+0x28`, `main + 0x875AC`; the header offset `0x5C` is slot `+0x30`,
+`main + 0x875A4`). `main + 0xA3480` appends the 30 characters at the app data offset, adds 30 to
+the used size and sets bit 1 of `+0x8`; its only caller is the handler (`main + 0x58838`). The
+handler then delivers the builder to the session object at `[component + 0x3528]` through
+`main + 0xB1304` and `main + 0xD4DD0`.
+
+The session object (class vtable `main + 0x1CAC48`, `0xA60` bytes, factory `main + 0x7EED8`,
+constructor `main + 0x83A88`) embeds its own builder at `+0x8C0` and holds the network manager at
+`+0xA8`. The component stores it at `[component + 0x3528]` (`main + 0x528F8`) and opens it with
+its callback `main + 0x52BB4` and itself as context (`main + 0xB14E0` stores them at `+0x88` and
+`+0x90`). The session method `main + 0x84260` (vtable slot `+0x60`) validates a builder
+(`main + 0x8885C`: non-empty, the `+0x8` dirty bit set, the size within the holder's capacity),
+copies it into `+0x8C0` (`main + 0x87578`) and hands it to the manager's blob builder.
+
+The manager class (vtable `main + 0x1CA5B0`, pointer formed at `main + 0x7E244` from the
+relocated slot `main + 0x1D1E98`) keeps its own `NetworkInfo` at `[manager + 0x2D8] + 0xB8`: the
+advertise size is `NetworkInfo + 0x26A` (`+0x322`), the blob `NetworkInfo + 0x26C` (`+0x324`),
+`NetworkInfo + 0x282` at `+0x33A`. Its method `main + 0x80C3C` (the only consumer of a builder's
+app data; `main + 0xA2C70` has this one caller) zeroes `+0x380` (`NetworkInfo + 0x2C8`), copies
+the app data there, sets the size to the app data plus `0x5C` at `+0x322`, writes the `0x5C`-byte
+Pia system header at `+0x324` with the holder's own method (its vtable slot `+0x68`), and calls
+`nn::ldn::SetAdvertiseData(holder + 0x324, size)` (PLT `main + 0x160A90`, GOT `0x1d3800`). Two
+more manager methods advertise a second object's data (`main + 0x7F990`, `0x81140`: `[object +
+0x18]`, the size its vtable slot `+0x38` plus `main + 0x8AC20`), and `main + 0x80EBC` rebuilds the
+holder from `[manager + 0x128]` before advertising it.
 
 `component + 0x2770` (through `[component + 0xD0]`) is read by `swi 0x53` (a boolean) and by
 `main + 0x0511CC` and `main + 0x0511F4`, which no syscall reaches. `main + 0x0511F4` compares it with
