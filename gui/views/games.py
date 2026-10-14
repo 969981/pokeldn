@@ -608,7 +608,7 @@ class SessionPanel:
         self.partner_state = None                     # pokeldn.app.online.Partner
         self.offered = None                # what the offering card shows, to rebuild it only on a change
         self.traded = 0                    # the run's completed trades, from its `[done] trade N` lines
-        self.banked: list[str] = []        # the bank id of each offer the run trades, "" for a built one
+        self.bank_trades = bank.TradeSession([])
         self.running_tool: Tool | None = None
         self.restart = False               # Start on another tool: stop this run, then start that one
         self.received = ft.Container(visible=False)
@@ -920,7 +920,7 @@ class SessionPanel:
         self.transfer.content, self.transfer.visible = None, False
         self.partner.content, self.partner.visible, self.partner_state = None, False, None
         self.traded = 0
-        self.banked = [entry.get("bank", "") for entry in self.offered_entries()]
+        self.bank_trades = bank.TradeSession(self.offered_entries())
         self.stopping = False
         self.app.process_label = tool.name
         self.running_tool = tool
@@ -941,12 +941,15 @@ class SessionPanel:
             self.app.ui(lambda p=partner: self.show_partner(p) if self.partner_state is p else None)
         n = received.trades_done(line)
         if n is not None and n > self.traded:
+            bank_trades = self.bank_trades
             def mark():
-                # A banked Pokemon leaves the bank once its trade completes.
-                for gone in self.banked[self.traded:n]:
-                    if gone:
-                        bank.remove(gone)
-                self.traded = n
+                if self.bank_trades is not bank_trades:
+                    return
+                try:
+                    bank_trades.advance(n)
+                except OSError as error:
+                    self.log.add(f"[app] Bank completion failed: {error}")
+                self.traded = bank_trades.completed
                 self.render_offering()
                 self.offering.update()
             self.app.ui(mark)
