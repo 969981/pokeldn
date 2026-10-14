@@ -1022,7 +1022,32 @@ eight sites in the steps of Pia's own session jobs (`main + 0xCB0CC`-`0xCC738`:
 `nn::pia::session::LeaveMeshJob`, vtable `main + 0x1CEB70`, `nn::pia::session::ProcessHostMigrationJob`,
 `main + 0x1CEBA0`, and the classes at construction slots `main + 0x1D26F8`-`0x1D2728`), each gated
 by its state byte at `+0x90` and reading its holder at `+0x80`, whose `+0x30` is the job (only the
-job's vtable slot `main + 0x1CAD78` holds `+0x130`). The job itself runs as a state machine: its `+0x38`/`+0x40` hold
+job's vtable slot `main + 0x1CAD78` holds `+0x130`).
+
+The chain is gated on the wrapper's network state, and it is the leader-side path. The `swi 0x47`
+body delivers only when the session is non-null, the byte at `component + 0x690` is set,
+`component + 0x2770` is at least 10 and the session predicate `main + 0xB06BC` answers false
+(`main + 0x5879C`-`0x587DC`). The byte at `+0x690` is the listener list's enabled flag: it is set at
+`main + 0x53A58` only while `[component + 0x6A0] == [component + 0x6A4]` (the wrapper's scan and
+join pair), and cleared by the tagged-property dispatcher's walk (`main + 0x4EBB0`, mode `-2`) and
+by the teardown that writes `-1` into both. The delivery's own gates then compare two Pia address
+structs in the manager: `X`'s slot `+0xD8` tails into `main + 0x95C90`, which requires both
+`[manager + 0x1268]` and `[manager + 0x1288]` to pass `main + 0x74BE0` (a valid address) and to
+compare equal in `main + 0x74C18` (the u16 at `+0x18`, then 0x10 bytes at `+8`); slot `+0xE8`
+requires `[manager + 0x12D8]` to be zero. Those two structs hold the wrapper's local address
+(`127.0.0.1` on the emulator) and the peer's (the host's IP), so the chain runs only while the
+console is the leader of the network it is on. A joining console's record stays in the shadow; its
+game data still reaches the parent through the session.
+
+Confirmed live on the emulator in one frame, all eight hops, with a `swi 0x47` carrying version 5,
+language 2, trainer id `0x1234`, activity `0x45` and the username `PKLDNTST`: the handler's shadow
+took the 24 bytes; with the gate byte and the address pair poked equal, the session's
+`main + 0xB1304` ran, the facade's `main + 0x8D4AC` took the stack builder (its app data carried the
+30-character record text ``Z8J4;Vk.+>`.uN;#####<P?>######``), the manager's `main + 0x99C3C` and
+its `+0x250` delegate's `main + 0xA28E4` passed it on, the job's `+0x60` validated it and copied the
+`0x180`-byte area into the job's builder at `+0x8C0` (`main + 0x87578`), the job's `+0x130` ran from
+the state machine, and the manager's blob builder `main + 0x80C3C` received the job's builder with
+the same record text. The job itself runs as a state machine: its `+0x38`/`+0x40` hold
 the current step (a vtable slot with a one-bit virtual flag, or a direct function) and the base
 method `main + 0x6EAA0` ("ExecuteCore", the job's slot `+0x20`) dispatches it; the steps seen are
 the vtable slots `0xB8`, `0xC8`, `0xD8`, `0xE8`, `0xF8`, `0x108`, `0x118`, `0x138`, `0x148` and
