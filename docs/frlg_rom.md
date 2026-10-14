@@ -1136,8 +1136,9 @@ component initializers. The same idiom forms the manager class's pointer (slot `
 
 ### The Pia session-message dispatcher
 
-The wrapper's native Pia session receive is a type switch at `main + 0xB9FC0`. A queue of nodes is
-walked: `[node + 0x10]` is the message, `[node]` its first byte is the type. A node is dispatched
+The wrapper's native Pia session receive is a type switch at `main + 0xB9FC0`. A chain of nodes is
+walked: `[node + 0x10]` is the message body and its first byte is the type, while the node's own
+three leading bytes are the source address. A node is dispatched
 when the manager object's `[x0 + 0xA0]` is non-zero and the type is at most `0x11`, and the switch
 is `adr x8, main + 0xB9FD0` (`main + 0xB9FCC`), `ldrb w9, [main + 0x180FC9 + type]` (`main +
 0xB9FC4`; `adr x27, main + 0x180FC9` at `main + 0xB9EFC`), `add x8, x8, w9, lsl #2`, `br x8`. The
@@ -1167,8 +1168,9 @@ The receive path's owner is the session class (`nn::pia::session::SessionProtoco
 `main + 0x1CE8E0`; its vtable pointer is
 formed at `main + 0xB7D24`/`0xB7E78` from the relocated slot `main + 0x1D2770`, its constructor is
 `main + 0xB7E70`). The pump is that class's vtable slot `+0x50`, `main + 0xB9CA0`, which calls the
-walker `main + 0xB9DB0`; the list hangs off the queue object at `[session + 0xF8]`, whose head
-field is at `+0x70` (`main + 0xD6D68`). Message objects are constructed by `main + 0xD4430` (its
+walker `main + 0xB9DB0`; the chain hangs off the object at `[protocol + 0xF8]` (the session packet
+reader, attached by the protocol manager) at its `+0x70` table (`main + 0xD6D68` returns that
+address). Message objects are constructed by `main + 0xD4430` (its
 vtable pointer comes from the relocated slot `main + 0x1D27B0`). The Pia library itself is
 statically linked in `main` (the image carries `SDK MW+Nintendo+PiaCommon-6_42_1-Release` and the
 session job names).
@@ -1183,7 +1185,7 @@ plus the mangled class names). The classes described above by their vtables only
 | --- | --- | --- |
 | the network manager | `nn::pia::local::LdnProtocol` | `main + 0x1CA5B0` |
 | the session object (builder at `+0x8C0`) | `nn::pia::local::LdnBackgroundProcessJob` | `main + 0x1CAC48` |
-| the session class (queue at `+0xF8`) | `nn::pia::session::SessionProtocol` | `main + 0x1CE8E0` |
+| the session class (the receive path) | `nn::pia::session::SessionProtocol` | `main + 0x1CE8E0` |
 | the packet object | `nn::pia::common::Packet::Header` | `main + 0x1CA100` |
 | the local receive stream | `nn::pia::local::LocalInputStream` | `main + 0x1CA540` |
 | the net receive stream | `nn::pia::net::NetInputStream` | `main + 0x1CC1C8` |
@@ -1240,9 +1242,45 @@ ReceiveThreadStream" (started at `main + 0xE9020`, the name via `adr` at `main +
 SendThreadStream" (`main + 0xEA758`), created through `main + 0xF6010` (`nn::os::CreateThread`,
 PLT `main + 0x15FDF0`, and `StartThread`, `main + 0x15FE00`).
 
-Which code enqueues a received session message into the SessionProtocol's queue
-(`[session + 0xF8]`, head getter `main + 0xD6D68`, consumed by the walker `main + 0xB9DB0`) is
-still open.
+**From the wire to the session handlers.** A received session message is parsed by the session
+packet reader and left in a per-address table that the session protocol walks each update.
+
+`nn::pia::session::SessionPacketReader` (vtable `main + 0x1CE748`) inherits
+`nn::pia::transport::PacketReader` (vtable `main + 0x1CF1A8`). The reader's `+0x30` method
+(`main + 0xD5DE0`) walks a received packet's payload, from `0x1D + footer size` to the packet size,
+and parses each message with `main + 0x74EA8`. Per message, `main + 0xD6460(reader, packet)` takes
+the source address through the reader's `+0x78` virtual (`main + 0xD6D0C`: the u16 at message
+`+0x2C` with the byte at `+0x2E` as its high part) and calls
+`main + 0xD6944(table, address, message)`.
+
+The table sits at `[reader + 0x70]`: a u32 count at `+0`, the buckets at `+8` (0x18 bytes each,
+the chain head at `+0`, the tail at `+8`) and an optional hash callback at `+0x40`. The bucket
+index is `callback(address) % count`, or `(address[0] + address[1] + address[2]) % count` when no
+callback is set. `main + 0xD71F0(bucket, address, message)` takes a node, copies the message into
+it (the three address bytes at `+0`, the body pointer at `+0x10`, the id at `+0x18`, more fields
+at `+0x20` through `+0x30` and the rest through `main + 0x74C54`) and appends it to the bucket's
+doubly-linked list (next at `+0x78`, previous at `+0x80`).
+
+The protocol side: `nn::pia::session::SessionProtocol`'s `+0x50` virtual (`main + 0xB9CA0`) runs
+`main + 0xB9DB0` every update. It reads `[protocol + 0xF8]` (the reader, attached as below), takes
+the reader's table at `+0x70`, computes the bucket for the protocol's own three-byte address (the
+u16 at `+0x120` with the byte at `+0x122`, read by the `+0x18` virtual `main + 0x828E4`; that pair
+is a `nn::pia::transport::Protocol` field, set by `main + 0xDA614`), walks the chain and dispatches
+each node by the first byte of the body at `[node + 0x10]` through the jump table to the handlers
+(`main + 0xBCB60`, `main + 0xBE438`, `main + 0xBE8BC`, `main + 0xBF2D4`, and so on), passing
+`(protocol, node, id)`.
+
+The attach: the protocol manager (embedded at `+0xC8` of its owner, its protocol table at `+0x18`)
+walks its table and sets every protocol's `+0xF0` and `+0xF8` from its owner's `+0xF8` and
+`+0x100` (the setters `main + 0xDA8C8` and `main + 0xDA8D0`, the broadcast `main + 0xDB740`, called
+with the pair at `main + 0xEC0E4`; it refuses either argument when zero). The `+0xF8` object is the
+reader, which is why the walker's table is the reader's `+0x70`.
+
+The `nn::pia::transport::Protocol` base (vtable `main + 0x1CF308`, constructor `main + 0xDA548`,
+vtable pointer from the relocated slot `main + 0x1D2808`) carries the three-byte address at
+`+0x120`/`+0x122`, locks at `+0xC8`, the attached pair at `+0xF0`/`+0xF8`, two configured
+8-byte-plus-u16 values at `+0x100`/`+0x108` and `+0x110`/`+0x118`, a state byte at `+0x123` and a
+flag at `+0xD8`.
 
 ## Repointing the console's outgoing message
 
