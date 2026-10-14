@@ -972,7 +972,15 @@ constructor `main + 0x83A88`) embeds its own builder at `+0x8C0` and holds the n
 its callback `main + 0x52BB4` and itself as context (`main + 0xB14E0` stores them at `+0x88` and
 `+0x90`). The session method `main + 0x84260` (vtable slot `+0x60`) validates a builder
 (`main + 0x8885C`: non-empty, the `+0x8` dirty bit set, the size within the holder's capacity),
-copies it into `+0x8C0` (`main + 0x87578`) and hands it to the manager's blob builder.
+copies it into `+0x8C0` (`main + 0x87578`) and hands it to the manager's blob builder. That
+`+0x60` method has no caller in the image; the handoff that runs is the job's `+0x130` method
+(`main + 0x84360`), which passes the job's builder `+0x8C0` to the manager's slot `+0xD0` at
+`main + 0x8445C` and is called from eight sites in the `0xCBxxx` region (a state machine whose
+`+0x80` holds the job's holder). The job itself runs as a state machine: its `+0x38`/`+0x40` hold
+the current step (a vtable slot with a one-bit virtual flag, or a direct function) and the base
+method `main + 0x6EAA0` ("ExecuteCore", the job's slot `+0x20`) dispatches it; the steps seen are
+the vtable slots `0xB8`, `0xC8`, `0xD8`, `0xE8`, `0xF8`, `0x108`, `0x118`, `0x138`, `0x148` and
+direct functions such as `main + 0x891F0`.
 
 The manager class (`nn::pia::local::LdnProtocol`; vtable `main + 0x1CA5B0`, pointer formed at
 `main + 0x7E244` from the relocated slot `main + 0x1D1E98`) keeps its own `NetworkInfo` at
