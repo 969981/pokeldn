@@ -91,6 +91,8 @@ Contributors to this repository (GitHub does not list contributors on a fork):
   made for the receiving save, pop-ups for programs, Pokemon HOME's gifts among Sword/Shield's
   official events, a Tera Raid boss's scripted actions, and Legends Arceus's trainer gender
 - [elsardine6k7](https://github.com/elsardine6k7): friendship in the Pokemon builder and Showdown sets
+- [junkmailkeep](https://github.com/junkmailkeep): Mystery Gift sprites and form previews in the gift
+  and trade editors
 
 - [kinnay](https://github.com/kinnay): the [LDN library](https://github.com/kinnay/LDN) this builds on,
   and the [NintendoClients wiki](https://github.com/kinnay/NintendoClients/wiki)
