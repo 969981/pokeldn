@@ -768,9 +768,15 @@ target is `buffer_data + fold + 0xA`, the fold being the selected region's slot 
 With `fold = size - 0xB` (in range) the write pair is `(size-1, size)`: the region's last byte
 gets `0x01` and the first byte of the neighbouring allocation gets `0x80`. With
 `fold = size - 0xA` the pair is `(size, size+1)`: `0x01 0x80` onto the neighbour's first two
-bytes. One Mystery Gift session buys one chosen fold; in every run measured the payload's branch
-into the patched site did not return, and the body loops afterwards with the same parked `r0`,
-re-writing the same pair.
+bytes. One Mystery Gift session buys one chosen fold per visit, and several visits in one payload
+compose runs of `01` before one `80`.
+
+The body behind the site returns through a five-word frame: its epilogue at `0x081E177C` is
+`movs r0,#0 ; pop {r4,r5,r6,r7} ; pop {r1} ; bx r1`. A payload that branches to the site skips
+the function's prologue and must push that frame itself, with `lr` at a continuation; the body
+then returns to the payload, which can run more code and finish the session normally. A payload
+that pushes any other frame unwinds through its caller's stack instead, and the measured runs
+re-entered the site with the same parked `r0`.
 
 Window 4, the GBA IO registers, maps to a 0x400-byte region object that sits immediately behind
 its own backing allocation: the backing is at bus `+0x14C0`, the object at bus `+0x18C0`, and
@@ -809,22 +815,37 @@ two seconds after the script, so the message is generic; the graceful Pia leave
   `rt02`..`rt04`) do the same.
 
 So the record-resolver store reaches a live wrapper object on retail when the fold crosses the ROM
-buffer's end, and the app aborts there; the same store kept in guest-visible memory does not. The
-branch into the site did not return in the tested runs on retail either: the payload re-triggers at
-the same site.
+buffer's end, and the app aborts there; the same store kept in guest-visible memory does not. A
+payload that pushes the body's frame returns from the site on retail as well.
+
+The dispatch after the plant is the app's next `bkpt #0x52`. The game produces them from two
+places: the STWI driver's IWRAM copy, about 60 a second while the link is up (a live read of its
+hit count), and its own calls into `Sio32IDMain` at the site (12 hits in a live read of record 1).
+With the vtable's low byte at `0x80` that
+dispatch reaches `main + 0x5492C`, which re-reads `[component] + 0x98` on the planted pointer and
+recurses until the thread stack leaves its region; the console returns to HOME with no
+`Session type 3`. A payload that puts the cartridge's own instruction back over the IWRAM copy's
+`bkpt #0x52` and reverts the cartridge copy's two load-time patches (the 4 KB block that holds
+both sites, through `swi 0x48`) removes both sources: the console then shows the game's own
+communication error, leaves LDN with `Session type 3`, files its network report and runs on. The
+plant is inert in that state, not repaired: no code site restores the vtable. The reverted
+cartridge copy is process-lifetime state as well: the wireless menu then reports the adapter as
+not connected, and a full relaunch re-applies the wrapper's load-time patches.
 
 ### Where the boundary stands
 
 Every guest path into the wrapper's own memory is decoded on this page. The one store past a
 region's backing is the resolver's `0x8001` strh at `fold + 0xA`; a planted pointer's consumers
 read their targets from `main`'s own data at static addresses ([What a plant over a seam
-does](#what-a-plant-over-a-seam-does)). The syscalls' stores into the component and their
-readers are in [The remaining syscalls](#the-remaining-syscalls); the `main + 0x1C36C8` class's
-fields are written by its own constructor and its own code ([What follows the ROM
-buffer](#what-follows-the-rom-buffer-the-sloop-component)). The third load-time patch replaces
-a wait loop. The bad-word filter's two buffers are length-bounded inside the dispatcher's own
-frame ([The bad-word filter](#the-bad-word-filter)); the flash-sector path's bounds are in
-[The flash sector path](#the-flash-sector-path).
+does](#what-a-plant-over-a-seam-does)). The consumer reached during a session is `main + 0x5492C`,
+from the `bkpt #0x52` hook chain; no reachable planted pointer lands on a call into guest memory,
+and removing the chain's two guest sources leaves the plant unread. The syscalls' stores into the
+component and their readers are in [The remaining syscalls](#the-remaining-syscalls); the
+`main + 0x1C36C8` class's fields are written by its own constructor and its own code ([What
+follows the ROM buffer](#what-follows-the-rom-buffer-the-sloop-component)). The third load-time
+patch replaces a wait loop. The bad-word filter's two buffers are length-bounded inside the
+dispatcher's own frame ([The bad-word filter](#the-bad-word-filter)); the flash-sector path's
+bounds are in [The flash sector path](#the-flash-sector-path).
 
 The next surface is the wrapper's own LDN parsing: the emulator is a Pia client of the ldn user
 service, and the other seat's advertisement bytes reach it in native form.
@@ -919,7 +940,10 @@ the host. The reports as Ryujinx's `prepo` prints them:
 The game report is parsed from the flash image. `main + 0x05A280` finds the newest slot by the sector
 footers (signature `0x08012025`), copies its 14 sectors (0xE000 bytes) to `component + 0x140 + 0x70`,
 and `main + 0x05A370` walks it with a per-game description table: badge flag bits, Hall of Fame and
-Pokedex flags, money XORed with the save's key. `swi 0x57` fills `MonsSelect` (the starter, through
+Pokedex flags, money XORed with the save's key. Every offset and bit index comes from the static
+table; the one count the copied save supplies, `playerPartyCount` (a byte), bounds the party walk at
+`main + 0x05AAE0`, and 255 entries of 0x64 bytes stay inside the 0xE000 copy. `swi 0x57` fills
+`MonsSelect` (the starter, through
 the internal-to-national table at `main + 0x17DA8C`); the printed JSON carries a fixed subset of the
 table and omits `MonsSelect`. `swi 0x62` increments `component + 0xE1B0`, which becomes `CommsError`:
 each call adds one to `CommsError` in the next report Ryujinx's `ServicePrepo ProcessPlayReport`
