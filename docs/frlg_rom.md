@@ -962,15 +962,38 @@ vtable `main + 0x1CB8C8`, constructor `main + 0x87514`): a `0x180`-byte Pia adve
 `0x124` (slot `+0x28`, `main + 0x875AC`; the header offset `0x5C` is slot `+0x30`,
 `main + 0x875A4`). `main + 0xA3480` appends the 30 characters at the app data offset, adds 30 to
 the used size and sets bit 1 of `+0x8`; its only caller is the handler (`main + 0x58838`). The
-handler then delivers the builder to the session object at `[component + 0x3528]` through
-`main + 0xB1304` and `main + 0xD4DD0`.
+handler then delivers the builder at `main + 0x58854`: `x0 = [component + 0x3528]`,
+`main + 0xB1304`. That method calls a method on `[session + 0xD0]`, passes it on as an argument,
+zeroes the u32 at `+0xD8` and calls
+`main + 0xD4DD0(x0 = [session + 0x70], x1 = [session + 0xD0], x2 = [session + 0x30], x3 = the
+builder)`. The delivery takes `X = [session + 0x30]` and calls `X`'s vtable slot `+0xA8` as
+`(X, [session + 0x70] + 0x90, builder)`, after gating on `X`'s slots `+0xD8` (must return true)
+and `+0xE8` (must return false). The session's `+0x30` is set by `main + 0xAF760` from
+`[[session + 8] + 0xB8]`, the session owner's `+0xB8`.
 
-The session object (`nn::pia::local::LdnBackgroundProcessJob`; class vtable `main + 0x1CAC48`,
-`0xA60` bytes, factory `main + 0x7EED8`,
-constructor `main + 0x83A88`) embeds its own builder at `+0x8C0` and holds the network manager at
-`+0xA8`. The component stores it at `[component + 0x3528]` (`main + 0x528F8`) and opens it with
-its callback `main + 0x52BB4` and itself as context (`main + 0xB14E0` stores them at `+0x88` and
-`+0x90`). The session method `main + 0x84260` (vtable slot `+0x60`) validates a builder
+The object the component keeps at `[component + 0x3528]` is a `nn::pia::session::Session`: the
+class whose methods fill `main + 0xAF4F8` through `0xB23xx` (primary vtable `main + 0x1CE300`, a
+second at `main + 0x1CE330`, constructor `main + 0xAF4F8`, which zeroes `+0x10` through `+0x100`
+and treats `+0xD8` as a u32). Its methods set `+0x30` (`main + 0xAF760`), `+0x70` (a station array
+owner, `main + 0xAF9F0`, entries of `0x20` bytes counted by the u16 at `+0x10`) and `+0xD0`
+(`main + 0xAFA94`), and clear them at `main + 0xAFB44`; the delivery caller reads `+0x150`,
+`+0x528`, `+0x70`, `+0x30`, `+0xD0` and `+0xD8`, all Session fields. The component picks it at
+`main + 0x528F8` from the object it embeds at `+0x34A0` (its first word) or from the global at
+relocated slot `main + 0x1D1AB0` (which points outside the image, to `0x41FB1C8`), and opens it
+with `main + 0xB14E0`, which stores the callback `main + 0x52BB4` at `+0x88` and the component at
+`+0x90`. The Session's constructor has no caller in the image and its vtable-pointer slot is
+loaded only by that constructor and the destructor, so the instance arrives from outside this
+module.
+
+The advertise machinery belongs to a different object, the
+`nn::pia::local::LdnBackgroundProcessJob` (class vtable `main + 0x1CAC48`, `0xA60` bytes, factory
+`main + 0x7EED8` = the manager's vtable slot `+0x278`, constructor `main + 0x83A88`), which
+derives from `nn::pia::net::NetBackgroundProcessJob` (vtable `main + 0x1CB928`) and embeds a
+`nn::pia::common::StepSequenceJob::Step` at `+0xD8` (vtable `main + 0x1C9770`) and a
+`nn::pia::local::LocalConnectNetworkSetting` at `+0x320` (vtable `main + 0x1CA2D0`). Its base
+constructor `main + 0x875BC` stores the network manager at `+0xA8` and builds the sub-objects; its
+constructor builds the advertise-data builder at `+0x8C0` (`main + 0x87514`). The job's method
+`main + 0x84260` (vtable slot `+0x60`) validates a builder
 (`main + 0x8885C`: non-empty, the `+0x8` dirty bit set, the size within the holder's capacity),
 copies it into `+0x8C0` (`main + 0x87578`) and hands it to the manager's blob builder. That
 `+0x60` method has no caller in the image; the handoff that runs is the job's `+0x130` method
