@@ -83,7 +83,7 @@ FOR_RECEIVER = Field("--for-receiver", "Made for the receiving player", "switch"
                           "console's save, read from the Pokemon the console offers or from its session data. "
                           "Off, or when neither names the save, it goes with your trainer from Settings.")
 GIFT_OFFER_BACK = ("Offer a Pokemon you caught in this save and confirm. The event Pokemon comes over; yours goes "
-                   "to Received.")
+                   "to Received. Trade again for each queued gift, then back out after the last trade.")
 CHANNEL_HELP = "The wireless channel of the network pokeldn hosts."
 CODE_HELP = "The same code the player enters on the console."
 
@@ -520,7 +520,8 @@ GAMES = (
     with_online(with_gift(ZA, ("Choose the event Pokemon, then start the host.",
                                "X, Link Play, Link Trade, Nearby Players, the same code, then search.",
                                "Pick a Pokemon you caught in this save on the trade box, then trade. The event "
-                               "Pokemon comes over; yours goes to Received.", "Back out with B after the trade.")),
+                               "Pokemon comes over; yours goes to Received. Trade again for each queued gift.",
+                               "Back out with B after the last trade.")),
                 ("X, Link Play, Link Trade, Nearby Players, the same code, then search.",
                  "Pick on the trade box, offer, then trade.")),
 )

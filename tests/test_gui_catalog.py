@@ -201,15 +201,18 @@ def test_the_simulated_mystery_gift_trades_its_event_pokemon_as_the_trade_host_d
     assert missing_offer(gift, {}) == "Choose the Mystery Gift Pokemon first."
 
 
-def test_the_simulated_mystery_gift_queue_passes_six_cards_and_offers_in_the_same_order():
-    gift = next(t for game in GAMES for t in game.tools if t.key == "sv-gift-host")
-    chosen = [{"file": f"/tmp/gift-{n}.pk9", "event": f"event-{n}", "your_ot": True}
+@pytest.mark.parametrize("game, attribute", [("lgpe", "offer"), ("bdsp", "offer"),
+                                             ("pla", "trade_box_record"), ("sv", "trade_offer"),
+                                             ("za", "trade_offer")])
+def test_the_simulated_gift_queue_reaches_each_hosts_parser_in_trade_order(game, attribute):
+    gift = next(t for g in GAMES for t in g.tools if t.key == f"{game}-gift-host")
+    chosen = [{"file": f"gift-{n}.bin", "event": f"event-{n}", "your_ot": True}
               for n in range(1, 8)]
-    args = build(gift, {"--trade-offer": chosen}, {}, Settings(), stamp="fixed")
-    offers = [args[n + 1] for n, arg in enumerate(args[:-1]) if arg == "--trade-offer"]
-    events = [args[n + 1] for n, arg in enumerate(args[:-1]) if arg == "--gift-event"]
-    assert offers == [f"/tmp/gift-{n}.pk9" for n in range(1, 7)]
-    assert events == [f"event-{n}" for n in range(1, 7)]
+    args = parser_of(gift.script).parse_args(build(gift, {gift.fields[0].key: chosen}, {}, Settings(),
+                                                  stamp="fixed"))
+    offers = [args.offer, *args.next_offer] if game == "lgpe" else getattr(args, attribute)
+    assert offers == [f"gift-{n}.bin" for n in range(1, 7)]
+    assert args.gift_event == [f"event-{n}" for n in range(1, 7)] and args.for_receiver
 
 
 def test_a_gift_with_its_own_trainer_holds_made_for_the_receiving_player_off():
@@ -224,7 +227,9 @@ def test_a_gift_with_its_own_trainer_holds_made_for_the_receiving_player_off():
         "This gift has its card's own trainer, OT Gavin, and goes as made.")
     args = build(gift, {"--trade-offer": palafin}, {}, Settings(), stamp="fixed")
     assert "--for-receiver" not in args and args[args.index("--gift-event") + 1] == "0503-964-0-10"
-    for chosen in (pikachu, {k: v for k, v in palafin.items() if k != "your_ot"}, {}):
+    assert locked(receiver, gift, {"--trade-offer": [palafin, palafin]}) == (
+        "These gifts have their cards' own trainers, OT Gavin, and go as made.")
+    for chosen in (pikachu, [palafin, pikachu], {k: v for k, v in palafin.items() if k != "your_ot"}, {}):
         assert locked(receiver, gift, {"--trade-offer": chosen}) == ""
         assert "--for-receiver" in build(gift, {"--trade-offer": chosen}, {}, Settings(), stamp="fixed")
     assert locked(next(f for f in gift.fields if f.key == "--fresh-pid"), gift, {"--trade-offer": palafin}) == ""
