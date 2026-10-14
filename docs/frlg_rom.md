@@ -817,16 +817,20 @@ the file image and its relocations. Four placements read live main memory:
 | the IO object | `01 80` at +0..1 | `0x086C8001` | the bus accessor slots: `0x1F7`, zero, raw addends |
 
 The other placements resolve outside the image. `01 80` at +1 gives `0x08800178` (component) and
-`0x08800108` (IO object), inside main's bss: the consumer reads zero and calls address 0. `01 80`
+`0x08800108` (IO object), inside main's bss. A zero-filled bss model predicts a null
+call there; the file image alone does not establish the contents during a live session. `01 80`
 at +2 through +7 moves byte 2 or byte 3, so the consumer's read itself faults. At +8 and +9 the
 pair lands on the field at `+8` (the component's `0x000004BF` becomes `0x00008001` at +8 and
 `0x008001BF` at +9) and the vtable pointer stays in place, so the dispatch is the object's own.
 
-Two site visits compose their pairs on the IO object: no `0x04` access happens between two
-visits, because the payload runs from ROM or EWRAM and the dispatcher's own reads of guest
-memory use the region table directly. Every composition moves byte 2 or higher, so none reads
-live main memory either. On the component the next `bkpt #0x52` (the game's STWI driver, about
-60 a second while the link is up) consumes the first plant before a second visit can run.
+Two site visits can compose their pairs on the IO object when no `0x04` access occurs
+between them; the payload's instruction fetches from ROM or EWRAM do not themselves access
+that object. Repeating a placement is idempotent, and writes at +8 or +9 leave the vtable
+pointer unchanged. Distinct placements confined to bytes 0 and 1 can still leave one of the
+in-image pointers above; compositions that change higher pointer bytes need separate analysis.
+On the component, the next `bkpt #0x52` consumes the current plant. The STWI driver produces
+about 60 such calls a second while the link is up, but that rate alone does not establish that
+a call intervenes between every pair of payload visits.
 
 The IO object's planted block, by bus slot. The access class comes from the caller's result mask
 (`and #0xffff` at `main + 0x18378` for a 16-bit load, the word rotate at `main + 0xBDB8` for a
@@ -881,14 +885,14 @@ not connected, and a full relaunch re-applies the wrapper's load-time patches.
 
 ### Where the boundary stands
 
-Every guest path into the wrapper's own memory is decoded on this page. The one store past a
-region's backing is the resolver's `0x8001` strh at `fold + 0xA`; a planted pointer's consumers
+The guest paths examined on this page include a store past a region's backing: the resolver's `0x8001` strh at `fold + 0xA`; a planted pointer's consumers
 read their targets from `main`'s own data at static addresses ([Every placement a one-write plant
 can make](#every-placement-a-one-write-plant-can-make)). The four placements that read live
 memory and what every other placement leaves are listed there; the component's consumer during a
-session is `main + 0x5492C`, from the `bkpt #0x52` hook chain; no placement reaches a call into
-guest memory, and no dispatch target comes from guest bytes; removing the chain's two guest
-sources leaves the plant unread. The syscalls' stores into the component and their readers are in
+session after the low-byte `80` plant is `main + 0x5492C`, from the `bkpt #0x52` hook chain.
+The single-write analysis identifies no call target supplied by guest bytes; it does not
+establish the outcome of every sequence of writes. Removing the chain's two guest sources
+prevented the observed dispatch. The syscalls' stores into the component and their readers are in
 [The remaining syscalls](#the-remaining-syscalls); the
 `main + 0x1C36C8` class's fields are written by its own constructor and its own code ([What
 follows the ROM buffer](#what-follows-the-rom-buffer-the-sloop-component)). The third load-time
@@ -901,8 +905,9 @@ advertisement record and base85-encoded ([The advertisement
 record](#the-advertisement-record)); the peer's `NetworkInfo` bytes reach the candidate list
 verbatim ([The wrapper's own scan pipeline](#the-wrappers-own-scan-pipeline)); the peer's session
 messages pass the per-type bounds before a handler reads them ([The Pia session-message
-dispatcher](#the-pia-session-message-dispatcher)). What remains is the Pia library's own wire
-parsing between the UDP socket and the session queue (statically linked, `PiaCommon-6_42_1`).
+dispatcher](#the-pia-session-message-dispatcher)). The following [wire-parsing section](#the-pia-librarys-own-wire-parsing)
+traces the statically linked `PiaCommon-6_42_1` path from the UDP socket to the session queue;
+that trace is not an exhaustive validation of its length checks or all message handlers.
 
 #### The remaining syscalls
 
@@ -928,7 +933,7 @@ column is what one issue from the Mystery Gift client with `sloop-svc` showed.
 | 0x4F | `main + 0x057248` -> `main + 0x058B54` | builds `{u16 tag 0x4757; u32 value = r0}` on its stack; the tagged-property dispatcher `main + 0x4EBD0` and setter `main + 0x058BB4` store the value unvalidated at `component + 0x6052A0` | writing 3 and `0x7FFFFFFF`, each followed by 0x49 and 0x4A, changed nothing observable |
 | 0x50 | getter `main + 0x058BA4` | reads the same 4-byte count back | |
 | 0x51 | `main + 0x057270` -> `main + 0x0511BC` | reads `component + 0x3404` into an out-parameter and clears it; the out-parameter is always the dispatcher's own stack slot | |
-| 0x52 | `main + 0x05728C` | folds guest `r0` through the bus object's region table (`[component + 0xE0] + 0x50`) and calls the region's `+0x48` fold. A non-zero guest `r1` also runs the pointer resolver `main + 0x562CC`: it reads `[bus + 0x50 + (r1 >> 24) * 8]` with the index unbounded 0..255, calls the value's `+0x48` as a virtual, then returns `backing + offset` when `offset < size`. The handler is the resolver's only caller, discards its result and returns `r0 = 0`, so guest `r1` reads back 0. The 256 entries read live are main's own method pointers, negative values and zeros, none an object with a `+0x48` method | |
+| 0x52 | `main + 0x05728C` | folds guest `r0` through the bus object's region table (`[component + 0xE0] + 0x50`) and calls the region's `+0x48` fold. A non-zero guest `r1` also runs the pointer resolver `main + 0x562CC`: it reads `[[bus] + 0x50 + (r1 >> 24) * 8]` with the index unbounded 0..255, calls the value's `+0x48` as a virtual, then returns `backing + offset` when `offset < size`. The handler is the resolver's only caller, discards its result and returns `r0 = 0`, so guest `r1` reads back 0. The 256 entries read live are main's own method pointers, negative values and zeros, none an object with a `+0x48` method | |
 | 0x53 | `main + 0x0572D4` | answers `component + 0x2770 == 0` (through `[component + 0xD0]`) | |
 | 0x54 | `main + 0x0572EC` | `svc_CommsAllowedByParentalControls` [sloopsvc.c:182] | returns 1 |
 | 0x55 | `main + 0x057304` | stores `r0` at `component + 0xE1BC`, folds the stored word through the region table and reads one byte back ([What the play reports are built from](#what-the-play-reports-are-built-from)) | |
@@ -1034,9 +1039,10 @@ The manager passes the buffer on to the job's receive half (below), and the job'
 reaches `nn::ldn::SetAdvertiseData` through the manager's blob builder.
 
 The object the component keeps at `[component + 0x3528]` is a `nn::pia::session::Session`: the
-class whose methods fill `main + 0xAF4F8` through `0xB23xx` (primary vtable `main + 0x1CE300`, a
-second at `main + 0x1CE330`, constructor `main + 0xAF4F8`, which zeroes `+0x10` through `+0x100`
-and treats `+0xD8` as a u32). Its methods set `+0x30` (`main + 0xAF760`), `+0x70` (set by
+class whose methods fill `main + 0xAF4E0` through `0xB23xx` (primary vtable `main + 0x1CE300`, a
+second at `main + 0x1CE330`, constructor `main + 0xAF4E0`, which initializes fields from
+`+0x10` onward and treats `+0xD8` as a u32). Its methods set `+0x30` (`main + 0xAF760`),
+`+0x70` (set by
 `main + 0xAF9F0`; live it holds the `UpdateSessionPropertyJob` singleton, whose `+0x10` u16 the
 setter maintains) and `+0xD0` (`main + 0xAFA94`), and clear them at `main + 0xAFB44`; the delivery
 caller reads `+0x150`,
@@ -1282,7 +1288,7 @@ component initializers. The same idiom forms the manager class's pointer (slot `
 
 The wrapper's native Pia session receive is a type switch at `main + 0xB9FC0`. A chain of nodes is
 walked: `[node + 0x10]` is the message body and its first byte is the type, while the node's own
-three leading bytes are the source address. A node is dispatched
+three leading bytes are the protocol address used as the queue key. A node is dispatched
 when the manager object's `[x0 + 0xA0]` is non-zero and the type is at most `0x11`, and the switch
 is `adr x8, main + 0xB9FD0` (`main + 0xB9FCC`), `ldrb w9, [main + 0x180FC9 + type]` (`main +
 0xB9FC4`; `adr x27, main + 0x180FC9` at `main + 0xB9EFC`), `add x8, x8, w9, lsl #2`, `br x8`. The
@@ -1346,14 +1352,15 @@ The transport classes' vtables are `PacketReader` `main + 0x1CF1A8` (a second at
 **The packet.** The packet object is `0x1D18` bytes: the parsed header at `+8` through `+0x24`, the
 datagram buffer at `+0x30` (capacity `0x1C5C`, the bound in the append helpers `main + 0x75664`
 and `main + 0x75694`, the second of which records a footer size at `+0x14`), the received size at
-`+0x1C90` (the receive path stores it at `main + 0x7E40`). Its parse (`main + 0x752D4`, vtable slot
+`+0x1C90` (the local receive path stores it at `main + 0x7DE40`, after a `0x5AC`-byte
+receive and a check against that limit). Its parse (`main + 0x752D4`, vtable slot
 `+0x18`; the entry `main + 0x752C8` supplies the object's own buffer and the constant `0x1C5C`)
 requires more than `0x1C` bytes and reads the `0x1D`-byte header:
 
 | at | size | meaning | lands at |
 | --- | --- | --- | --- |
 | 0x00 | 4 | magic `0x32AB9864`, big-endian | `+0x08` |
-| 0x04 | 1 | `0x80` (encrypted) or version | `+0x0C` |
+| 0x04 | 1 | version in bits 0-6, encrypted flag `0x80` | `+0x0C` |
 | 0x05 | 1 | one byte, kept as sent | `+0x0D` |
 | 0x06 | 2 | destination variable id, big-endian | `+0x0E` |
 | 0x08 | 2 | source variable id, big-endian | `+0x10` |
@@ -1364,8 +1371,10 @@ requires more than `0x1C` bytes and reads the `0x1D`-byte header:
 
 The version this app speaks is `0x10` (16): the validity check `main + 0x75610` demands the magic,
 `([+0xC] & 0x7F) == 0x10` and `size - 0x1D < 0x1C40`. The payload pointer is `+0x4D` (the buffer
-past the header, `main + 0x75458`); `main + 0x7538C` returns `buffer + 0x1D + n` bounded by
-`0x1C5B`.
+past the header, `main + 0x75474`); `main + 0x75458` returns `buffer + t`, where
+`t = (n + 0x1D)` in 32-bit arithmetic, or null when `(t >> 2) > 0x716`. This capacity
+check allows `t` through `0x1C5B`; the message walker separately checks against the received
+size minus the header and footer (`main + 0xDE278`).
 
 **The socket and the receive stream.** The socket is a small holder (constructor `main + 0x6D93C`:
 fd `-1` at `+0`, a count at `+4`, the family at `+8`, the protocol at `+0xC`); `main + 0x6D95C`
@@ -1377,8 +1386,10 @@ converted back by `main + 0x6E9D0`) and `main + 0x6E538` (`nn::socket::SendTo`,
 `main + 0x160990`). The local receive stream (variable id at `+0x88`, a lock at `+0x68`, the
 socket holder pointer at `+0x18`) runs the pump `main + 0x7DD10` (vtable slot `+0x10`): it receives
 into a packet's buffer and parses the header into it (`main + 0x7DDEC`; `main + 0x6E1C8` is the
-thunk); the packet filter `main + 0x91280` (slot `+0x20`) then decides admission: a valid packet,
-`([+0xC] & 0x7F) >= 7`, a non-zero footer size and a destination variable id of at most 1; when
+thunk); the packet filter `main + 0x91280` (slot `+0x20`) first requires a valid packet.
+When the version is at least 7, the footer is non-empty and the destination variable id is
+at most 1, the footer must contain at least two bytes, and the stream's own id (`+0x88`) must
+be non-zero and appear among its big-endian u16 recipient ids (`footer_size >> 1` entries). Separately, when
 `([+0xC] & 0x7E) >= 6` and the destination is 2 or more, it must equal the stream's own `+0x88`.
 
 **The threads.** The transport's receive and send loops are `nn::os` threads named "Pia
@@ -1391,14 +1402,18 @@ packet reader and left in a per-address table that the session protocol walks ea
 
 `nn::pia::session::SessionPacketReader` (vtable `main + 0x1CE748`) inherits
 `nn::pia::transport::PacketReader` (vtable `main + 0x1CF1A8`). The reader's `+0x30` method
-(`main + 0xD5DE0`) walks a received packet's payload, from `0x1D + footer size` to the packet size,
-and parses each message with `main + 0x74EA8`. Per message, `main + 0xD6460(reader, packet)` takes
-the source address through the reader's `+0x78` virtual (`main + 0xD6D0C`: the u16 at message
+(`main + 0xD5DE0`) processes received packets and calls `main + 0xD6460(reader, packet)`
+to walk their messages. The walker starts at datagram offset `0x1D` and stops before
+`packet_size - footer_size` (`main + 0xDE278`, `0xD6510`-`0xD6538`); the footer follows
+the payload. It parses each message with `main + 0x74EA8` and takes the protocol address
+used as the queue key through the reader's `+0x78` virtual (`main + 0xD6D0C`: the u16 at message
 `+0x2C` with the byte at `+0x2E` as its high part) and calls
 `main + 0xD6944(table, address, message)`.
 
-The table sits at `[reader + 0x70]`: a u32 count at `+0`, the buckets at `+8` (0x18 bytes each,
-the chain head at `+0`, the tail at `+8`) and an optional hash callback at `+0x40`. The bucket
+The table is embedded at `reader + 0x70`: a u32 bucket count at `+0`, a pointer to the
+bucket array at `+8` (0x18 bytes per bucket, the chain head at `+0`, the tail at `+8`)
+and an optional hash callback at `+0x40`. `main + 0xD6944` loads the array pointer before
+adding `index * 0x18`; the buckets are not inline in the table. The bucket
 index is `callback(address) % count`, or `(address[0] + address[1] + address[2]) % count` when no
 callback is set. `main + 0xD71F0(bucket, address, message)` takes a node, copies the message into
 it (the three address bytes at `+0`, the body pointer at `+0x10`, the id at `+0x18`, more fields
@@ -1421,7 +1436,8 @@ with the pair at `main + 0xEC0E4`; it refuses either argument when zero). The `+
 reader, which is why the walker's table is the reader's `+0x70`.
 
 Live, the manager sits at `[session + 8] + 0xC8` (the owner above), and its table at
-`manager + 0x18` is `{u32 count; entries at +8}`, each entry `0x18` bytes: `+0` is a node, the
+`[manager + 0x18]` has a u32 bucket count at `+0` and a bucket-array pointer at `+8`.
+Each bucket is `0x18` bytes: `+0` is a node, the
 node's `+8` is the protocol and the node's `+0x30` chains the next node. In the emulated session
 the table had count `19` and exactly six protocols, one per kind, keyed by the protocol's address
 (u16; the byte at `+0x122` is zero, and each protocol's `+0x108` holds the network's Pia var,
@@ -1431,7 +1447,7 @@ the table had count `19` and exactly six protocols, one per kind, keyed by the p
 `nn::pia::transport::MonitoringDataProtocol`. The protocols are one per kind, not per station:
 the `SessionProtocol`'s pump traced the single instance 8 times out of 8, and reader-table nodes
 were filed under the protocol address (`0xfd0a`, message id `0x60`). An instance is created and
-registered by `main + 0xB1F60` (allocate `0xD8E8` bytes via `main + 0xE1114`, constructor
+registered by `main + 0xB1F60` (allocate `0xD8E8` bytes via `main + 0xDB114`, constructor
 `main + 0xB7D0C`, insert into the manager's map keyed by the address pair); the Session's
 constructor calls it once and stores the returned address at `+0x12`/`+0x14`.
 
