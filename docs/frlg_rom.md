@@ -1131,6 +1131,16 @@ type 6 `>= 0xf`, type 9 `== 0x1e or 0x2a`, type 10 and 12 `== 0x15`, type 11 `>=
 its byte count from the bit count, compares it against the declared length, and refuses on short.
 No handler in this set was found to copy a message-controlled length into a fixed buffer.
 
+The types are the Pia session protocol's own message types; the host's session layer
+(`pokeldn/ldn/pia_connect.py`) numbers them 0 join request, 1 join ack, 2 join response, 3 leave
+request, 4 leave response, 5 update, 6 update ack, 7 start host migration, 8 migration ack. The
+type-1 handler `main + 0xBE438` reads a 21-byte message as `[0]` type, `[1:9]` and `[9:0xB]` the
+source station's constant id and variable id, `[0xB:0x13]` and `[0x13:0x15]` the destination's, and
+refuses unless the destination pair matches the transport's own ([transport + 0x1B8], `+0x1C0`),
+then looks the source station up and calls `main + 0xC9B4C` on it. The type-2 handler
+`main + 0xBE8BC` accepts 4 bytes or more, gates on the manager's state byte (`+0x30 == 0xFD`),
+and switches on message byte 3 over 3 to 0x10.
+
 The receive path's owner is the session class (vtable base `main + 0x1CE8E0`; its vtable pointer is
 formed at `main + 0xB7D24`/`0xB7E78` from the relocated slot `main + 0x1D2770`, its constructor is
 `main + 0xB7E70`). The pump is that class's vtable slot `+0x50`, `main + 0xB9CA0`, which calls the
