@@ -342,55 +342,14 @@ them. An app that finds a service running other code
 
 ## Pokemon sprites
 
-The sprites are the 96x96 PNGs behind `sprites.front_default` and `sprites.front_shiny` of
-`https://pokeapi.co/api/v2/pokemon/{id}`, read from `raw.githubusercontent.com/PokeAPI/sprites`
-(`sprites/pokemon/{id}.png`, `sprites/pokemon/shiny/{id}.png`). The JSON (300 KB per species) is not
-fetched; the sprite path is fixed by the id. All 1,025 National Dex numbers have both sprites; 1026
-returns 404. When a shiny sprite is missing, the normal one is shown.
+Pokemon images come from [PokeAPI](https://github.com/PokeAPI/sprites) and are downloaded on demand.
+Downloaded images are cached in `sprites/` in the app's data folder and remain available offline.
 
-| where | size |
-|---|---|
-| the trade picker, beside Species, shiny when Shiny is on | 96 px, the whole canvas |
-| FireRed/LeafGreen and Sword/Shield Mystery Gift presets with a fixed Pokemon species | 46 px tile |
-| Sword/Shield official event Pokemon cards, shiny when the card guarantees it | 46 px tile |
-| Build your own: Pokemon/egg preview beside the fields, matching the trade picker | 96 px |
-| Build your own: FR/LG card icon, updating as the Icon field changes | 46 px tile |
-| Session panel, Offering: each queued offer in trade order, its summary as a tooltip | 46 px tile |
-| Session panel, Received: each Pokemon file the run saved, read by PKHeX, with its summary | 46 px tile |
+Settings, Pokemon sprites disables downloads; cached images still appear. The same settings section
+has a button to clear the sprite cache.
 
-A 96 px sprite is the whole canvas at 1:1, nearest-neighbour. A 46 px tile crops the canvas around the
-visible pixels (`pokeldn.app.sprites.bounds`) and scales them, smoothed, until the longer side is
-40 px, so every tile shows its Pokemon at one size. Visible boxes run from 28 px (Togepi) to the full
-96 px width (Lugia); a fixed 1:1 or 1:2 choice drew a 50 px sprite at 50 px and a 56 px one at 28.
-
-The Received list matches files by the run's `{stamp}`, which every tool's output path carries; a
-launcher adds `-N` for trade N (`pokeldn.pokemon.trade_path`) or writes into a folder or prefix so
-named. A file still growing is read again on the next second. What the list holds is what the
-launcher wrote: some launchers write the console's offer when the console picks it, before the trade
-completes.
-
-Trade and gift editor previews follow species, form and shininess. Form choices come from PKHeX;
-`pokeldn/app/sprite_forms.py` maps its game indices to [PokeAPI sprite filenames](https://github.com/PokeAPI/sprites/tree/master/sprites/pokemon),
-using [PKHeX's form ordering](https://github.com/kwsch/PKHeX/blob/master/PKHeX.Core/PKM/Util/Conversion/FormConverter.cs).
-An unmapped form shows a placeholder. A missing shiny sprite falls back to the normal sprite of the
-same form. FRLG previews convert cartridge species numbers to National Dex numbers.
-
-The cache is `sprites/` in the app's data folder, one file per sprite under `normal/` and `shiny/`.
-Form sprites keep PokeAPI's distinct filenames, such as `10171.png` and `423-east.png`.
-A sprite downloads on first use and is read from disk afterwards, with no network access. Rules:
-
-| situation | behaviour |
-|---|---|
-| no network, nothing cached | the pixelarticons `circle-question` icon; no error; the next attempt waits 60 s |
-| HTTP 404 | a `{id}.none` marker; not asked again for 7 days |
-| reply that is not a PNG, or over 200 KB | not cached |
-| PNG with a colour profile, text or other extra chunks | saved and shown without them: only IHDR, PLTE, tRNS, IDAT and IEND are kept (26 of the 2,050 sprites, most of them Gen 9) |
-| damaged cached file | deleted, downloaded again |
-| data folder not writable | the sprite shows for the session and is not saved |
-| Settings, Pokemon sprites off | the cache is read, nothing is downloaded |
-
-Settings has the switch and a button that empties the cache. `POKELDN_SPRITE_BASE` replaces the sprite
-host, for tests (`tests/test_sprites.py`).
+An unavailable species or form shows a placeholder. If a shiny image is unavailable, the normal
+image of the same form is shown. Missing images do not prevent building or trading Pokemon.
 
 ## Raid events
 
