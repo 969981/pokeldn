@@ -32,6 +32,27 @@ conversion.
   needs `sudo usermod -aG dialout $USER` (`uucp` on Arch); log out and back in after changing groups.
   See [Linux serial ports](#linux-serial-ports) for missing ports and brltty conflicts.
 
+## Android setup requirements
+
+The Android GUI requires a guided USB setup flow. The [developer prototype](../examples/android/README.md)
+contains the current native USB frontend. On the tested OnePlus CPH2621, enabling
+the phone's OTG connection setting powered and enumerated the connected ESP32C6 without
+replugging the cable. The current Android prototype has a USB permission prompt; the full
+guided flow remains to be implemented.
+
+| detected state | required guidance |
+|---|---|
+| No compatible USB device | Check the data-capable cable and connection; show relevant USB host or OTG setting instructions for the phone, including OnePlus's OTG connection toggle. Device absence alone cannot identify which check failed. |
+| Device present, USB permission missing or denied | Explain the Android USB access prompt and provide an explicit retry. |
+| Permission granted, board handshake fails | Check the board connection and supported radio firmware; show the actual error. |
+| Board answers the handshake | Show the detected board and firmware, then allow the game workflow to continue. |
+| Board disconnects or the user returns from Settings | Refresh detection and permission state, update the guidance and resume setup when the board is ready. |
+
+Settings guidance uses verified manufacturer-specific paths or searchable setting names, with
+a Settings shortcut where Android supports it. The flow presents the relevant next action and
+keeps setup progress visible. Developer tooling such as ADB and wireless debugging remains
+separate from user setup.
+
 ## Your trainer
 
 Settings, Your trainer is the original trainer of every Pokemon the app builds: a name, a gender, a

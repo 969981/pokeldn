@@ -67,6 +67,7 @@ See [app setup](docs/gui.md), [first launch](docs/gui.md#first-launch),
 | Installing or writing plugins | [Plugins](docs/plugins.md) |
 | Boards, firmware and optional screens | [ESP32 radio](docs/hardware_esp32.md) |
 | Running and building the desktop app from source | [Desktop builds](docs/gui.md#run-from-source) |
+| Building the experimental Android USB host | [Android prototype](examples/android/README.md) |
 | Code layout, Pokémon legality and tests | [Code organization](docs/architecture.md) |
 | Wireless protocols and reverse engineering | [Documentation index](docs/index.md) |
 
