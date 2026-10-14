@@ -29,14 +29,17 @@ def test_choice_card_includes_help_for_the_saved_selection():
 
 
 def test_options_the_new_species_cannot_have_are_dropped_before_a_build():
+    shown = []
     picker = SimpleNamespace(value={"species": 132, "options": {"ability": 31, "ball": 2, "gender": 1,
-                                                                 "held_item": 236, "nature": 3, "form": 2}})
+                                                                 "held_item": 236, "nature": 3, "form": 2}},
+                             show_sprite=lambda: shown.append(dict(picker.value["options"])))
     options = OfferOptions(picker)
     options._form({"natures": [], "abilities": [{"id": 7, "name": "Limber"}], "gendered": False,
                    "forms": [{"id": 0, "name": ""}], "move_names": [],
                    "balls": [{"id": 2, "name": "Ultra Ball"}], "held": [{"id": 236, "name": "Light Ball"}],
                    "effort": {"kind": "evs", "max": 252, "total": 510}})
     assert picker.value["options"] == {"ball": 2, "held_item": 236, "nature": 3}
+    assert shown == [picker.value["options"]]
 
 
 FOUND = {"natures": [], "abilities": [], "gendered": True, "balls": [], "held": [], "forms": [], "move_names": []}
@@ -380,6 +383,7 @@ def test_a_pokemon_file_shows_its_own_species_and_shininess(monkeypatch, form):
     picker.sprite.show = lambda species, shiny, update=True, form=0: shown.append((species, shiny, form))
     asyncio.run(picker._use_file(None))
     assert shown == [(6, True, form)]
+    assert picker.options.label.value == "1 set"
     assert (saved[-1]["species"], saved[-1]["shiny"], picker.species.value, picker.shiny.value) == (6, True, "6", True)
 
 

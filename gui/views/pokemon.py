@@ -187,6 +187,7 @@ class PokemonPicker:
             self.species.value = str(info["species_id"])
         self.shiny.value = info["shiny"]
         self.options.chosen["form"] = info.get("form_id", 0)
+        self.options._label()
         self.show_sprite(update=False)
         self.options.species_changed()
         self.on_change(dict(self.value))
@@ -527,8 +528,9 @@ class OfferOptions:
                 self.chosen.pop(key)
         if not found["gendered"]:
             self.chosen.pop("gender", None)
-        if all(f["id"] != self.chosen.get("form", 0) for f in found["forms"]):
-            self.chosen.pop("form", None)
+        if "form" in self.chosen and all(f["id"] != self.chosen["form"] for f in found["forms"]):
+            self.chosen.pop("form")
+            self.picker.show_sprite()
         first = [t.labeled_control("Nature", self._choice("nature", found["natures"]), expand=True)]
         if len(found["forms"]) > 1:
             first.insert(0, t.labeled_control("Form", self._choice("form", found["forms"], reload=True),
