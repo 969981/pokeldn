@@ -66,6 +66,7 @@ class GiftBuilder:
         self.status = t.text("", 12, t.MUTED)
         self.save_button = t.secondary_button("Save gift file", self._save, "download")
         self.previews = []
+        self.forms = None
 
     # State
 
@@ -89,6 +90,8 @@ class GiftBuilder:
     # Cards
 
     def cards(self) -> list[ft.Control]:
+        self.previews = []
+        self.forms = None
         mode = self.value["mode"]
         modes = t.segmented(gift_builder.modes(self.game), mode, self._mode, wrap=True)
         body = {"preset": self.presets, "event": self.events, "build": self.editor, "file": self.file,
@@ -569,7 +572,12 @@ class GiftBuilder:
 
     def _load_forms(self) -> None:
         """Read game form choices off the UI thread; discard replies for an old editor or species."""
-        box, species = self.forms, _number(self.state.get("species"))
+        box, state = self.forms, self.state
+        species = _number(state.get("species"))
+        request = box.data = object()
+        if not species:
+            box.content = None
+            return
         box.content = ft.Row([PixelActivity("Loading forms"),
                               t.text("Reading what this species can have...", 12, t.MUTED)], spacing=8)
         try:
@@ -585,17 +593,19 @@ class GiftBuilder:
                 forms, error = [], str(exc) or type(exc).__name__
 
             def show():
-                if self.forms is not box or _number(self.state.get("species")) != species:
+                if (self.forms is not box or box.data is not request or self.state is not state
+                        or _number(state.get("species")) != species):
                     return
                 if error:
                     box.content = t.text(error, 12, t.RED, selectable=True)
-                elif len(forms) > 1:
-                    box.content = t.labeled_control("Form", t.dropdown(
-                        [(str(f["id"]), f["name"] or "Normal") for f in forms],
-                        str(_number(self.state.get("form"))),
-                        on_select=lambda e: self.edit("form", int(e.control.value))))
                 else:
-                    box.content = None
+                    if forms and _number(state.get("form")) not in {f["id"] for f in forms}:
+                        self.edit("form", forms[0]["id"])
+                    box.content = (t.labeled_control("Form", t.dropdown(
+                        [(str(f["id"]), f["name"] or "Normal") for f in forms],
+                        str(_number(state.get("form"))),
+                        on_select=lambda e: self.edit("form", int(e.control.value))))
+                        if len(forms) > 1 else None)
                 try:
                     box.update()
                 except RuntimeError:

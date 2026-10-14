@@ -351,7 +351,6 @@ returns 404. When a shiny sprite is missing, the normal one is shown.
 | where | size |
 |---|---|
 | the trade picker, beside Species, shiny when Shiny is on | 96 px, the whole canvas |
-| the card of a Species field (Sword/Shield Mystery Gift), shiny when the tool's Shiny switch is on | 46 px tile |
 | FireRed/LeafGreen and Sword/Shield Mystery Gift presets with a fixed Pokemon species | 46 px tile |
 | Sword/Shield official event Pokemon cards, shiny when the card guarantees it | 46 px tile |
 | Build your own: Pokemon/egg preview beside the fields, matching the trade picker | 96 px |
@@ -370,13 +369,11 @@ named. A file still growing is read again on the next second. What the list hold
 launcher wrote: some launchers write the console's offer when the console picks it, before the trade
 completes.
 
-Trade previews and Mystery Gift cards use the same sprite component and cache. Sword/Shield's gift
-editor obtains its Form choices from the same PKHeX service as the trade editor. Build your own and the
-trade picker share the preview-and-fields layout in `gui/views/pokemon.py`. Species and game form
-numbers are translated to PokeAPI filenames in `pokeldn/app/sprite_forms.py`, including Galarian forms
-and Pikachu caps. An unmapped form shows a placeholder instead of a different form's image. A missing
-shiny sprite can fall back to the normal sprite of that same form. FR/LG editor previews convert the
-cartridge's internal species numbers to National Dex numbers before requesting an image.
+Trade and gift editor previews follow species, form and shininess. Form choices come from PKHeX;
+`pokeldn/app/sprite_forms.py` maps its game indices to [PokeAPI sprite filenames](https://github.com/PokeAPI/sprites/tree/master/sprites/pokemon),
+using [PKHeX's form ordering](https://github.com/kwsch/PKHeX/blob/master/PKHeX.Core/PKM/Util/Conversion/FormConverter.cs).
+An unmapped form shows a placeholder. A missing shiny sprite falls back to the normal sprite of the
+same form. FRLG previews convert cartridge species numbers to National Dex numbers.
 
 The cache is `sprites/` in the app's data folder, one file per sprite under `normal/` and `shiny/`.
 Form sprites keep PokeAPI's distinct filenames, such as `10171.png` and `423-east.png`.

@@ -1,12 +1,15 @@
-"""Game form numbers -> PokeAPI sprite filenames (without .png).
-
-Source: https://github.com/PokeAPI/pokeapi/blob/master/data/v2/csv/pokemon.csv
-Cosmetic forms: https://github.com/PokeAPI/sprites/tree/master/sprites/pokemon
-These are game form indices, not PokeAPI's pokemon-form ids or form_order.
-Unknown forms deliberately have no image instead of showing a different Pokemon.
+"""Game form indices -> PokeAPI sprite filenames; unmapped forms have no image.
+PKHeX.Core/PKM/Util/Conversion/FormConverter.cs defines the indices; docs/gui.md, Pokemon sprites.
 """
 
 FORM_SPRITES = {
+    # Cosmetic forms use filenames, battle forms use pokemon.csv's alternate IDs.
+    **{(201, n): f"201-{name}" for n, name in enumerate(
+        (*"bcdefghijklmnopqrstuvwxyz", "exclamation", "question"), start=1)},
+    (351, 1): 10013, (351, 2): 10014, (351, 3): 10015,
+    (386, 1): 10001, (386, 2): 10002, (386, 3): 10003,
+    (412, 1): "412-sandy", (412, 2): "412-trash", (413, 1): 10004, (413, 2): 10005,
+    (483, 1): 10245, (484, 1): 10246, (492, 1): 10006,
     # Pikachu's game index 8 is the Let's Go partner, not the World Cap (9).
     (25, 1): 10094, (25, 2): 10095, (25, 3): 10096, (25, 4): 10097,
     (25, 5): 10098, (25, 6): 10099, (25, 7): 10148, (25, 9): 10160,
@@ -22,6 +25,13 @@ FORM_SPRITES = {
     (144, 1): 10169, (145, 1): 10170, (146, 1): 10171, (199, 1): 10172,
     (222, 1): 10173, (263, 1): 10174, (264, 1): 10175, (554, 1): 10176,
     (555, 2): 10177, (555, 3): 10178, (562, 1): 10179, (618, 1): 10180,
+    # Hisuian and Paldean forms shared by the native-title trade pickers.
+    (58, 1): 10229, (59, 1): 10230, (100, 1): 10231, (101, 1): 10232,
+    (157, 1): 10233, (211, 1): 10234, (215, 1): 10235, (503, 1): 10236,
+    (549, 1): 10237, (550, 2): 10247, (570, 1): 10238, (571, 1): 10239,
+    (628, 1): 10240, (705, 1): 10241, (706, 1): 10242, (713, 1): 10243,
+    (724, 1): 10244, (902, 1): 10248, (905, 1): 10249,
+    (128, 1): 10250, (128, 2): 10251, (128, 3): 10252, (194, 1): 10253,
     # Other alternate forms in the bundled Sword/Shield event cards.
     (423, 1): "423-east", (801, 1): 10147, (854, 1): "854-antique", (893, 1): 10192,
     # Remaining Sword/Shield form choices from the app's PKHeX Options response.
@@ -41,9 +51,11 @@ FORM_SPRITES = {
     (875, 1): 10185, (876, 1): 10186, (877, 1): 10187,
     (888, 1): 10188, (889, 1): 10189, (890, 1): 10190, (892, 1): 10191,
     (898, 1): 10193, (898, 2): 10194,
-    **{(773, n): f"773-{name}" for n, name in enumerate((
+    **{(s, n): f"{s}-{name}" for s in (493, 773) for n, name in enumerate((
         "fighting", "flying", "poison", "ground", "rock", "bug", "ghost", "steel", "fire",
         "water", "grass", "electric", "psychic", "ice", "dragon", "dark", "fairy"), start=1)},
+    **{(s, n): f"{s}-{name}" for s in (585, 586)
+       for n, name in enumerate(("summer", "autumn", "winter"), start=1)},
     # The gift builder leaves Alcremie's decoration at its default Strawberry Sweet.
     **{(869, n): f"869-{name}-strawberry-sweet" for n, name in enumerate((
         "ruby-cream", "matcha-cream", "mint-cream", "lemon-cream", "salted-cream",

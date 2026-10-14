@@ -359,11 +359,13 @@ def test_the_released_firmware_lands_only_when_every_image_matches_its_checksum(
         server.server_close()
 
 
-def test_a_pokemon_file_shows_its_own_species_and_shininess(monkeypatch):
+@pytest.mark.parametrize("form", [0, 1])
+def test_a_pokemon_file_shows_its_own_species_and_shininess(monkeypatch, form):
     import asyncio
     monkeypatch.setattr(pokemon.builder.SERVICE, "species", lambda game: [{"id": 25, "name": "Pikachu"}])
     monkeypatch.setattr(pokemon.builder.SERVICE, "import_file", lambda game, path: {
-        "file": path, "species": "Charizard", "species_id": 6, "level": 50, "shiny": True, "legal": True,
+        "file": path, "species": "Charizard", "species_id": 6, "form_id": form,
+        "level": 50, "shiny": True, "legal": True,
         "encounter": "", "moves": [], "report": ""})
 
     async def pick_files(**_):
@@ -377,7 +379,7 @@ def test_a_pokemon_file_shows_its_own_species_and_shininess(monkeypatch):
     shown = []
     picker.sprite.show = lambda species, shiny, update=True, form=0: shown.append((species, shiny, form))
     asyncio.run(picker._use_file(None))
-    assert shown == [(6, True, 0)]
+    assert shown == [(6, True, form)]
     assert (saved[-1]["species"], saved[-1]["shiny"], picker.species.value, picker.shiny.value) == (6, True, "6", True)
 
 
@@ -821,6 +823,62 @@ def test_trade_preview_keeps_the_selected_form_when_shiny_changes_and_resets_on_
     picker._shiny(SimpleNamespace(control=SimpleNamespace(value=True)))
     picker.options._clear(None)
     assert shown == [(25, False, 9), (25, True, 9), (25, True, 0)]
+
+
+def test_gift_form_replies_cannot_change_another_editor_or_a_newer_request(monkeypatch):
+    from gui.views import gifts as view_module
+    from pokeldn.swsh import gift_builder
+
+    monkeypatch.setattr(ft.BaseControl, "update", lambda self: None)
+    work, replies = [], []
+    monkeypatch.setattr(view_module.threading, "Thread", lambda target, daemon: SimpleNamespace(
+        start=lambda: work.append(target)))
+    monkeypatch.setattr(view_module.pokemon.SERVICE, "options", lambda *a: {
+        "forms": [{"id": 0, "name": "Kanto"}, {"id": 1, "name": "Galar"}]})
+    builder = view_module.GiftBuilder.__new__(view_module.GiftBuilder)
+    builder.game = "swsh"
+    builder.app = SimpleNamespace(settings=SimpleNamespace(trainer=lambda game: {}), ui=replies.append)
+    builder.value = {"build": gift_builder.blank(species=146, form=1)}
+    builder.forms, builder.previews = ft.Container(), []
+    builder.commit = lambda rebuild=False: None
+    builder._load_forms()
+    builder._load_forms()
+    work[0]()
+    work[1]()
+    loading = builder.forms.content
+    replies[0]()
+    assert builder.forms.content is loading
+    replies[1]()
+    dropdown = next(c for c in raid_controls(builder.forms) if isinstance(c, ft.Dropdown))
+    assert dropdown.value == "1"
+    dropdown.on_select(SimpleNamespace(control=SimpleNamespace(value="0")))
+    assert gift_builder.record(builder.state)[0x242] == 0
+
+    builder._load_forms()
+    work[-1]()
+    builder.value["build"] = gift_builder.blank(kind="items", species=146)
+    loading = builder.forms.content
+    replies[-1]()
+    assert builder.forms.content is loading
+
+
+def test_offline_gift_catalog_rebuilds_never_start_sprite_workers(monkeypatch, tmp_path):
+    from gui.views import gifts as view_module, sprites as sprite_view
+    from pokeldn.app.sprites import SpriteCache
+    from pokeldn.swsh import gift_builder
+
+    monkeypatch.setattr(sprite_view, "CACHE", SpriteCache(tmp_path, online=False))
+    def unexpected(*args, **kwargs):
+        pytest.fail("An offline sprite started a worker")
+    monkeypatch.setattr(sprite_view, "WORKERS", SimpleNamespace(submit=unexpected), raising=False)
+    monkeypatch.setattr(view_module.threading, "Thread", unexpected)
+    builder = view_module.GiftBuilder.__new__(view_module.GiftBuilder)
+    builder.app = SimpleNamespace(settings=SimpleNamespace(sprites=False))
+    builder.module = gift_builder
+    builder.value = {"event": ""}
+    for _ in range(3):
+        for card in gift_builder.OFFICIAL.load():
+            builder._event_tile(card)
 
 
 def test_a_pokemon_home_card_is_outlined_in_amber_and_says_why(monkeypatch):

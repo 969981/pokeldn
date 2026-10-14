@@ -1,4 +1,4 @@
-import threading
+from concurrent.futures import ThreadPoolExecutor
 
 import flet as ft
 
@@ -12,6 +12,7 @@ ICON = 48   # pixelarticons are drawn on a 24 px grid: 48 is a whole multiple
 MINI = 46   # a small tile: every Pokemon's visible pixels scaled to fill it, less PAD on each side
 EDGE = 1    # the frame's border sits outside the sprite: a 96 px frame would squeeze it to 94
 PAD = 3     # sprites run from 28 px (Togepi) to 96: a fixed scale left half of them twice the size of the rest
+WORKERS = ThreadPoolExecutor(4, thread_name_prefix="sprite")
 
 
 class Sprite:
@@ -46,11 +47,17 @@ class Sprite:
             if not shown:
                 self._set(self._placeholder("No sprite for this species."), update)
             return
+        if not CACHE.online:
+            if not shown:
+                self._set(self._placeholder(self._why()), update)
+            return
         if not shown:
             self._set(PixelActivity("Loading sprite"), update)
-        threading.Thread(target=self._load, args=(token, species, shiny, bool(shown)), daemon=True).start()
+        WORKERS.submit(self._load, token, species, shiny, bool(shown))
 
     def _load(self, token: int, species: int | str, shiny: bool, shown: bool) -> None:
+        if token != self.token:
+            return
         data = CACHE.get(species, shiny) or (CACHE.get(species) if shiny and not shown else None)
 
         def done():

@@ -203,7 +203,15 @@ def test_form_sprites_keep_separate_normal_and_shiny_cache_entries(host, tmp_pat
 
 @pytest.mark.parametrize("key", ["../25", "25/other", "25-../../secret", "25-east.png"])
 def test_form_sprite_names_cannot_escape_the_cache(host, tmp_path, key):
-    assert sprites.SpriteCache(tmp_path, host.url).get(key) is None
+    outside = tmp_path / "outside.png"
+    outside.write_bytes(b"keep this file")
+    cache = sprites.SpriteCache(tmp_path / "cache", host.url)
+    (cache.folder / "normal").mkdir(parents=True)
+    for bad in (key, "../../outside"):
+        assert cache.cached(bad) is None
+        assert cache.get(bad) is None
+        assert not cache.known_missing(bad)
+    assert outside.read_bytes() == b"keep this file"
     assert not host.requests
 
 

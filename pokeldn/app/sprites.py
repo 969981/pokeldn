@@ -194,8 +194,16 @@ class SpriteCache:
     def _path(self, species: int | str, shiny: bool) -> Path:
         return self.folder / ("shiny" if shiny else "normal") / f"{species}.png"
 
+    @staticmethod
+    def _valid_key(species: int | str) -> bool:
+        return ((type(species) is int and species > 0) or
+                (isinstance(species, str) and
+                 re.fullmatch(r"[1-9][0-9]*-[a-z][a-z0-9-]*", species) is not None))
+
     def cached(self, species: int | str, shiny: bool = False) -> bytes | None:
         """The sprite on disk, or None. Never touches the network; a damaged file is removed."""
+        if not self._valid_key(species):
+            return None
         key = (species, shiny)
         if self.memory.get(key):
             return self.memory[key]
@@ -215,6 +223,8 @@ class SpriteCache:
         return None
 
     def known_missing(self, species: int | str, shiny: bool = False) -> bool:
+        if not self._valid_key(species):
+            return False
         try:
             return time.time() - self._path(species, shiny).with_suffix(".none").stat().st_mtime < MISSING_TTL
         except OSError:
@@ -222,8 +232,7 @@ class SpriteCache:
 
     def get(self, species: int | str, shiny: bool = False) -> bytes | None:
         """The cached sprite, else one download. Blocks for at most TIMEOUT: call it from a worker thread."""
-        if not ((isinstance(species, int) and species > 0) or
-                (isinstance(species, str) and re.fullmatch(r"[1-9][0-9]*-[a-z][a-z0-9-]*", species))):
+        if not self._valid_key(species):
             return None
         data = self.cached(species, shiny)
         if data is not None or not self.online or self.known_missing(species, shiny):
@@ -231,6 +240,10 @@ class SpriteCache:
         if time.monotonic() < self.offline_until:
             return None
         with self.slots:
+            if (data := self.cached(species, shiny)) is not None or self.known_missing(species, shiny):
+                return data
+            if time.monotonic() < self.offline_until or not self.online:
+                return None
             return self._download(species, shiny)
 
     def _download(self, species: int | str, shiny: bool) -> bytes | None:
