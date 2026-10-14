@@ -981,8 +981,8 @@ non-zero). The facade's `main + 0x8D4AC` validates through `main + 0x8C6FC`, loc
 (`[facade + 0x30] + 0x2B8` through `main + 0x94B78`, so the facade holds the manager at `+0x30`),
 takes the value at the builder's `+8` (`main + 0xA3710`) and hands it to the manager's
 `main + 0x99C3C`, then records the transport at `[facade + 0x48]` and state 8 at `[facade + 0x40]`.
-That closes the write path from the game's `swi 0x47` record to the manager whose blob builder
-reaches `nn::ldn::SetAdvertiseData`.
+The manager passes the buffer on to the job's receive half (below), and the job's publish half
+reaches `nn::ldn::SetAdvertiseData` through the manager's blob builder.
 
 The object the component keeps at `[component + 0x3528]` is a `nn::pia::session::Session`: the
 class whose methods fill `main + 0xAF4F8` through `0xB23xx` (primary vtable `main + 0x1CE300`, a
@@ -1006,13 +1006,19 @@ derives from `nn::pia::net::NetBackgroundProcessJob` (vtable `main + 0x1CB928`) 
 `nn::pia::local::LocalConnectNetworkSetting` at `+0x320` (vtable `main + 0x1CA2D0`). Its base
 constructor `main + 0x875BC` stores the network manager at `+0xA8` and builds the sub-objects; its
 constructor builds the advertise-data builder at `+0x8C0` (`main + 0x87514`). The job's method
-`main + 0x84260` (vtable slot `+0x60`) validates a builder
-(`main + 0x8885C`: non-empty, the `+0x8` dirty bit set, the size within the holder's capacity),
-copies it into `+0x8C0` (`main + 0x87578`) and hands it to the manager's blob builder. That
-`+0x60` method has no caller in the image; the handoff that runs is the job's `+0x130` method
-(`main + 0x84360`), which passes the job's builder `+0x8C0` to the manager's slot `+0xD0` at
-`main + 0x8445C` and is called from eight sites in the `0xCBxxx` region (a state machine whose
-`+0x80` holds the job's holder). The job itself runs as a state machine: its `+0x38`/`+0x40` hold
+`main + 0x84260` (vtable slot `+0x60`) is the receive half: it locks the manager (`+0x2B8`),
+touches the holder (`main + 0x87374` on `[manager + 0x200] + 0xA8` and `[manager + 0x2D8]`),
+validates the incoming buffer through `main + 0x8885C` (the buffer's size `main + 0xA2C90` within
+the manager's slot `+0x100` limit, the buffer's `+0x8` bit 1 set, `[manager + 0x12D8]` zero, the
+`main + 0x879C0` check with `w2 = 8`, a timestamp at `[job + 0xA0]`), copies the buffer's
+`0x180`-byte advertise area (`+0x1C`) into the job's builder at `+0x8C0` (`main + 0x87578`) and
+sets the job's next step to slot `0x130`. It is reached through the job's vtable: the manager's
+`main + 0x99C3C` hands the buffer to the object it keeps at `+0x250` (a
+`StepSequenceJob::Step`-derived delegate, constructor `main + 0xA2824`, `0x98` bytes, a `0x38`-byte
+helper at `+0x88`, the manager at `+0x90`), whose `main + 0xA28E4` calls the job's slot `+0x60` as
+`(job, helper, buffer)`. The publish half is the job's `+0x130` (`main + 0x84360`), which passes
+the job's builder `+0x8C0` to the manager's slot `+0xD0` at `main + 0x8445C` and is called from
+eight sites in the `0xCBxxx` region (a state machine whose `+0x80` holds the job's holder). The job itself runs as a state machine: its `+0x38`/`+0x40` hold
 the current step (a vtable slot with a one-bit virtual flag, or a direct function) and the base
 method `main + 0x6EAA0` ("ExecuteCore", the job's slot `+0x20`) dispatches it; the steps seen are
 the vtable slots `0xB8`, `0xC8`, `0xD8`, `0xE8`, `0xF8`, `0x108`, `0x118`, `0x138`, `0x148` and
