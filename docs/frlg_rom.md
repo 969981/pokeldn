@@ -1188,16 +1188,16 @@ plus the mangled class names). The classes described above by their vtables only
 | the session class (the receive path) | `nn::pia::session::SessionProtocol` | `main + 0x1CE8E0` |
 | the packet object | `nn::pia::common::Packet::Header` | `main + 0x1CA100` |
 | the local receive stream | `nn::pia::local::LocalInputStream` | `main + 0x1CA540` |
-| the net receive stream | `nn::pia::net::NetInputStream` | `main + 0x1CC1C8` |
+| the net receive stream | `nn::pia::net::NetInputStream` | `main + 0x1CC1D0` |
 
-The transport classes' vtables are `PacketReader` `main + 0x1CF1A0`, `PacketWriter`
-`main + 0x1CF250`, `ProtocolManager` `main + 0x1CF398`, `ProtocolMessageReader` `main + 0x1CF450`,
-`ProtocolMessageWriter` `main + 0x1CF488`, `ReliableProtocol` `main + 0x1CF4C0`, `Station`
-`main + 0x1CF8C0`, `StationManager` `main + 0x1CF930`, `ReceiveThreadStream` `main + 0x1CFB18`,
-`SendThreadStream` `main + 0x1CFB60`; the session classes' are `Session` `main + 0x1CE2F8`,
-`SessionPacketReader` `main + 0x1CE740`, `SessionPacketWriter` `main + 0x1CE7F0`, `SessionStation`
-`main + 0x1CED18`; the local classes' are `LocalProtocol` `main + 0x1CB2C8`, `LocalService`
-`main + 0x1CB458`, `LocalFacade` `main + 0x1CB540`.
+The transport classes' vtables are `PacketReader` `main + 0x1CF1A8` (a second at `main + 0x1CE7E8`),
+`PacketWriter` `main + 0x1CF258`, `ProtocolManager` `main + 0x1CF3A0`, `ProtocolMessageReader`
+`main + 0x1CF458`, `ProtocolMessageWriter` `main + 0x1CF490`, `ReliableProtocol` `main + 0x1CF4C8`,
+`Station` `main + 0x1CF8C8`, `StationManager` `main + 0x1CF938`, `ReceiveThreadStream`
+`main + 0x1CFB20`, `SendThreadStream` `main + 0x1CFB68`; the session classes' are `Session`
+`main + 0x1CE300`, `SessionPacketReader` `main + 0x1CE748`, `SessionPacketWriter`
+`main + 0x1CE7F8`, `SessionStation` `main + 0x1CED20`; the local classes' are `LocalProtocol`
+`main + 0x1CA9B0`, `LocalService` `main + 0x1CB460`, `LocalFacade` `main + 0x1CB548`.
 
 **The packet.** The packet object is `0x1D18` bytes: the parsed header at `+8` through `+0x24`, the
 datagram buffer at `+0x30` (capacity `0x1C5C`, the bound in the append helpers `main + 0x75664`
