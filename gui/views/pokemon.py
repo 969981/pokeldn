@@ -14,6 +14,13 @@ VERSIONS = {"firered": "FR", "leafgreen": "LG"}
 ROW_GAP = SPRITE_SIZE + 2 * EDGE - 2 * t.CONTROL_HEIGHT   # the species and nickname boxes and the gap match the tile
 
 
+def pokemon_header(sprite: ft.Control, rows: list[ft.Control], spacing=ROW_GAP) -> ft.Row:
+    """A full-size preview beside the fields, below the first row's 20 px label."""
+    tile = ft.Container(sprite, margin=ft.Margin(0, 20, 0, 0))
+    return ft.Row([tile, ft.Column(rows, spacing=spacing, expand=True)], spacing=14,
+                  vertical_alignment=ft.CrossAxisAlignment.START)
+
+
 class PokemonPicker:
     """Pick a species and PKHeX builds a legal one for the game; or check a file someone brings."""
 
@@ -32,7 +39,8 @@ class PokemonPicker:
         self.level = t.field(value=str(self.value.get("level") or ""), hint="auto", mono=True, width=90,
                              digits=True, limit=3,
                              on_change=lambda e: self._set("level", e.control.value))
-        self.sprite = Sprite(app, int(self.value.get("species") or 0), bool(self.value.get("shiny")))
+        self.sprite = Sprite(app, int(self.value.get("species") or 0), bool(self.value.get("shiny")),
+                             form=int(self.value.get("options", {}).get("form") or 0))
         self.shiny = t.switch(bool(self.value.get("shiny")), self._shiny)
         self.nickname = t.field(value=self.value.get("nickname", ""), hint="Nickname (optional)", expand=True,
                                 limit=10 if game == "frlg" else 12,
@@ -40,7 +48,7 @@ class PokemonPicker:
         self.build_button = t.button("Build", self._build, disabled=True)
         self.options = OfferOptions(self)
         self.result = ft.Container()
-        form = ft.Column([
+        form = pokemon_header(self.sprite.control, [
             ft.Row([t.labeled_control("Species", self.species, expand=True),
                     t.labeled_control("Level", self.level),
                     t.labeled_control("Shiny", ft.Container(
@@ -49,11 +57,9 @@ class PokemonPicker:
                    spacing=10, vertical_alignment=ft.CrossAxisAlignment.START),
             ft.Row([self.nickname, self.build_button], spacing=10,
                    vertical_alignment=ft.CrossAxisAlignment.CENTER),
-        ], spacing=ROW_GAP, expand=True)
-        # The tile runs from the top of the species box to the bottom of the nickname box, below the 20 px label.
-        tile = ft.Container(self.sprite.control, margin=ft.Margin(0, 20, 0, 0))
+        ])
         self.body = ft.Container(ft.Column([
-            ft.Row([tile, form], spacing=14, vertical_alignment=ft.CrossAxisAlignment.START),
+            form,
             self.options.control,
             self.result,
             ft.Row([t.secondary_button("Or use a Pokemon file", self._use_file, "file"),
@@ -68,17 +74,21 @@ class PokemonPicker:
     def _set(self, key, value) -> None:
         self.value[key] = value
 
+    def show_sprite(self, update=True) -> None:
+        self.sprite.show(int(self.value.get("species") or 0), bool(self.value.get("shiny")),
+                         update=update, form=int(self.options.chosen.get("form") or 0))
+
     def _pick(self, e) -> None:
         self.value["species"] = int(e.control.value)
         # A form or moveset chosen for the previous species rarely fits this one.
         self.options.chosen.pop("form", None)
         self.options.chosen.pop("moves", None)
-        self.sprite.show(self.value["species"], bool(self.value.get("shiny")))
+        self.show_sprite()
         self.options.species_changed()
 
     def _shiny(self, e) -> None:
         self._set("shiny", e.control.value)
-        self.sprite.show(int(self.value.get("species") or 0), bool(e.control.value))
+        self.show_sprite()
 
     def _load_species(self) -> None:
         try:
@@ -176,7 +186,9 @@ class PokemonPicker:
         if self.species.options:
             self.species.value = str(info["species_id"])
         self.shiny.value = info["shiny"]
-        self.sprite.show(info["species_id"], info["shiny"], update=False)
+        self.options.chosen["form"] = info.get("form_id", 0)
+        self.options._label()
+        self.show_sprite(update=False)
         self.options.species_changed()
         self.on_change(dict(self.value))
         self._show_result()
@@ -261,7 +273,7 @@ class PokemonPicker:
         self.level.value = self.value["level"]
         self.shiny.value = found["shiny"]
         self.nickname.value = found["nickname"]
-        self.sprite.show(found["species_id"], found["shiny"], update=False)
+        self.show_sprite(update=False)
         self.options.reveal()
         self.on_change(dict(self.value))
         name = f"{found['species']}-{found['form']}" if found["form"] else found["species"]
@@ -516,8 +528,9 @@ class OfferOptions:
                 self.chosen.pop(key)
         if not found["gendered"]:
             self.chosen.pop("gender", None)
-        if all(f["id"] != self.chosen.get("form", 0) for f in found["forms"]):
-            self.chosen.pop("form", None)
+        if "form" in self.chosen and all(f["id"] != self.chosen["form"] for f in found["forms"]):
+            self.chosen.pop("form")
+            self.picker.show_sprite()
         first = [t.labeled_control("Nature", self._choice("nature", found["natures"]), expand=True)]
         if len(found["forms"]) > 1:
             first.insert(0, t.labeled_control("Form", self._choice("form", found["forms"], reload=True),
@@ -554,6 +567,8 @@ class OfferOptions:
                 self.chosen.pop(key, None)
             else:
                 self.chosen[key] = int(e.control.value)
+            if key == "form":
+                self.picker.show_sprite()
             self._label()
             if reload:      # a form has its own abilities
                 self._load()
@@ -628,6 +643,7 @@ class OfferOptions:
 
     def _clear(self, e) -> None:
         self.chosen.clear()
+        self.picker.show_sprite()
         species, self.loaded_for = self.loaded_for, None
         if species:
             self._load()
