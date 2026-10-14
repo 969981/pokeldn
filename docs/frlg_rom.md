@@ -768,9 +768,9 @@ target is `buffer_data + fold + 0xA`, the fold being the selected region's slot 
 With `fold = size - 0xB` (in range) the write pair is `(size-1, size)`: the region's last byte
 gets `0x01` and the first byte of the neighbouring allocation gets `0x80`. With
 `fold = size - 0xA` the pair is `(size, size+1)`: `0x01 0x80` onto the neighbour's first two
-bytes. One Mystery Gift session buys one chosen fold; the payload's branch into the patched site
-does not return, and the body loops afterwards with the same parked `r0`, re-writing the same
-pair.
+bytes. One Mystery Gift session buys one chosen fold; in every run measured the payload's branch
+into the patched site did not return, and the body loops afterwards with the same parked `r0`,
+re-writing the same pair.
 
 Window 4, the GBA IO registers, maps to a 0x400-byte region object that sits immediately behind
 its own backing allocation: the backing is at bus `+0x14C0`, the object at bus `+0x18C0`, and
@@ -793,6 +793,25 @@ one session buys one write, and both single-write states on the way kill the pro
 through the debugger instead, that pointer stayed in place for five minutes with the game
 running and the process alive. No code site in the image writes a wrapper object's header after
 init.
+
+On retail (a Switch Lite, English FireRed, the payloads delivered over LDN by a XIAO ESP32S3
+radio), the component plant and the in-range write are told apart by the link teardown, not by the
+screen. Every run returned to HOME with "The software was closed because an error occurred" about
+two seconds after the script, so the message is generic; the graceful Pia leave
+(`Session type 3`) is not:
+
+- with the fold one past the cartridge buffer (component, `r0 = 0x08FFFFF6`), the console left LDN
+  with no `Session type 3` (tags `pl01`, `pl04`) - the abrupt abort the emulator's dispatch shows,
+  now on hardware;
+- with the fold in range (`r0 = 0x08FFFFF0`, tag `pl03`, write at buffer `+0xFFFFFA`) and with the
+  EWRAM end-overrun that lands on VRAM (`r0 = 0x0203FFF6`, tag `pl02`), the console sent
+  `Session type 3` and left gracefully; ordinary card sessions (`scratchpad/re1_host.log`,
+  `rt02`..`rt04`) do the same.
+
+So the record-resolver store reaches a live wrapper object on retail when the fold crosses the ROM
+buffer's end, and the app aborts there; the same store kept in guest-visible memory does not. The
+branch into the site did not return in the tested runs on retail either: the payload re-triggers at
+the same site.
 
 ### Where the boundary stands
 
@@ -1017,6 +1036,25 @@ In `main` the list is written only through the fill family (`main + 0x58BB4`, `0
 owner class's vtable pointer `main + 0x1C3B30` is formed by no `main`-side idiom (adrp/add,
 movz/movk, literal pool, reloc addend all absent): owner-class objects are constructed
 outside `main`.
+
+### The Pia session-message dispatcher
+
+The wrapper's native Pia session receive is a type switch at `main + 0xB9FC0`. A queue of nodes is
+walked: `[node + 0x10]` is the message, `[node]` its first byte is the type. A node is dispatched
+when the manager object's `[x0 + 0xA0]` is non-zero and the type is at most `0x11`, and the switch
+is `adr x8, main + 0xB9FD0` (`main + 0xB9FCC`), `ldrb w9, [main + 0x180FC9 + type]` (`main +
+0xB9FC4`; `adr x27, main + 0x180FC9` at `main + 0xB9EFC`), `add x8, x8, w9, lsl #2`, `br x8`. The
+byte table at `main + 0x180FC9` has one entry per type; the eighteen case blocks sit at
+`main + 0xB9FD0 + index * 4`, each ending in an unconditional `b main + 0xB9F80` and each calling
+its handler (`main + 0xBCB60`, `main + 0xBE438`, `main + 0xBE8BC`, ...).
+
+Each handler bounds its read against the message before touching it: the type-1 handler
+`main + 0xBE438` opens `cmp w2, #0x15; b.ne` (only a `0x15`-byte message reaches the copy), and the
+per-type tests the audit decoded are type 2 `>= 4`, type 3 `== 0x16 or 0x22`, type 4 `== 0xf`,
+type 6 `>= 0xf`, type 9 `== 0x1e or 0x2a`, type 10 and 12 `== 0x15`, type 11 `>= 0xe`, type 13
+`== 0xa`, type 14 `>= 0x4d`, type 17 `>= 0xd`. The variable-length reader `main + 0xC0D90` derives
+its byte count from the bit count, compares it against the declared length, and refuses on short.
+No handler in this set was found to copy a message-controlled length into a fixed buffer.
 
 ## Repointing the console's outgoing message
 
