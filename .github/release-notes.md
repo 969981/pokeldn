@@ -1,19 +1,15 @@
-# pokeldn 0.24.0
+# pokeldn 0.24.1
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- Program API 1.4 exposes the Bank to external frontends: import saves and Pokemon files, browse
-  records, check destinations, prepare converted offers and apply confirmed trade completion.
-  The desktop app uses the same destination and completion code.
-- Bank deletion matches an exact record ID. Delayed completion callbacks from an earlier run
-  cannot remove Pokemon from a new run.
-- Mystery Gift - Simulated queues up to six official gift Pokemon in one session, with an event
-  browser for each slot and separate settings for each queued gift.
-- Mystery Gift cards and Pokemon builders show previews matching the selected species and form,
-  with responsive loading and matching form option counts.
+- The desktop header blends into the navigation rail, with a continuous background and no
+  visible app-name text. The checkerboard stays inside the workspace.
+- macOS keeps its native window buttons. Windows and Linux use close, minimize and maximize
+  buttons in the integrated header. Empty header space supports dragging and double-clicking
+  to maximize or restore.
 
 The radio firmware stays at 1.6.1 (its only change concerns the sniffer tool) and the controller
 firmware at 1.3.0; no board needs an update.
