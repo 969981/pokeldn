@@ -847,8 +847,13 @@ patch replaces a wait loop. The bad-word filter's two buffers are length-bounded
 dispatcher's own frame ([The bad-word filter](#the-bad-word-filter)); the flash-sector path's
 bounds are in [The flash sector path](#the-flash-sector-path).
 
-The next surface is the wrapper's own LDN parsing: the emulator is a Pia client of the ldn user
-service, and the other seat's advertisement bytes reach it in native form.
+The Pia side has both ends decoded: the guest's `RfuGameData` and username are re-packed into the
+advertisement record and base85-encoded ([The advertisement
+record](#the-advertisement-record)); the peer's `NetworkInfo` bytes reach the candidate list
+verbatim ([The wrapper's own scan pipeline](#the-wrappers-own-scan-pipeline)); the peer's session
+messages pass the per-type bounds before a handler reads them ([The Pia session-message
+dispatcher](#the-pia-session-message-dispatcher)). What remains is the Pia library's own wire
+parsing between the UDP socket and the session queue (statically linked, `PiaCommon-6_42_1`).
 
 #### The remaining syscalls
 
@@ -913,9 +918,52 @@ The per-candidate layout 0x45 writes is unsettled: the copy loop's byte count do
 `sizeof(struct RfuTgtData)`; read it live before depending on it.
 
 `component + 0x6050D8`, the 24 bytes `swi 0x47` copies ([main + 0x058694], a pre-indexed
-store from the guest's `r0` buffer), has no reader in the image. `component + 0x605360`'s
-readers are the activity diff `main + 0x058698` (through `component + 0x6050E0`) and
-`svc_SetActivity`'s setter `main + 0x058B40`; both compare or store the activity code.
+store from the guest's `r0` buffer), is read back by the same handler, which re-packs it into the
+advertisement record. `component + 0x605360`'s readers are the activity diff
+`main + 0x058698` (through `component + 0x6050E0`) and `svc_SetActivity`'s setter
+`main + 0x058B40`; both compare or store the activity code.
+
+#### The advertisement record
+
+The `swi 0x47` handler assembles the 24-byte RFU record the advertisement carries from the guest's
+own `RfuGameData` (16) and `gHostRfuUsername` (8) [include/link_rfu.h:103-115, src/sloopsvc.c:34-46]:
+
+| record | source |
+| --- | --- |
+| `[0:2]` | `RfuGameData[2:4]`, the trainer id (`compatibility.playerTrainerId`) |
+| `[2:10]` | the username |
+| `[10:12]` | the wrapper's RFU session id, `main + 0x3F2E0([component + 0x6050D0])` |
+| `[12:16]` | `RfuGameData[4:8]`, `partnerInfo` |
+| `[16:20]` | the search word, packed from `RfuGameData[0:2]` and `[8:12]` |
+| `[22:24]` | `RfuGameData[8:10]`, `tradeSpecies` |
+
+The search word's bits, from the two source words: 0-6 the activity (`RfuGameData` bits 16-22),
+7 the gender (bit 24), 8-10 the version (`RfuGameData[0:2]` bits 10-12), 11-14 the language (bits
+0-3), 15 `startedActivity` (bit 23), 16 `canLinkNationally` (bit 7), 17 `hasNationalDex` (bit 8),
+18-23 the `tradeType` (bits 10-15), 24 `gameClear` (bit 9), 25-31 the `tradeLevel` (bits 25-31).
+`hasNews` and `hasCard` (bits 4 and 5) are not copied. The two bytes at `[20:22]` are left as the
+frame held them.
+
+The encoder `main + 0x2A90` writes five characters per 4-byte group, low digit first, over an
+alphabet of `0x23` upward with `0x5C` skipped, and refuses when the output would pass the capacity
+it is given. The handler calls it with a capacity of `0x20` for the 24 bytes, so the 30 characters
+fit, and stores the text at `component + 0x6C0` with its `strlen` at `component + 0x700`
+(`main + 0x15FAE0` and `main + 0x15FB20`, the `strlen`/`memcpy` PLT stubs).
+
+The captured app data the host's beacon clones (`pokeldn/frlg/link/host_beacon.py`) is 122 bytes:
+`0x5C` of Pia system header and 30 characters reading back as trainer id `0x1050`, the name
+`GREEN`, RFU session id `0xac65` and search word `0x1584` (activity 4, version 5, language 2, bit 7
+set).
+
+The advertisement blob is built in the network-manager class (vtable `main + 0x1CA5B0`; its vtable
+pointer is formed at `main + 0x7E244` from the relocated slot `main + 0x1D1E98`). A buffer object
+at `[manager + 0x2D8]` holds the size at `+0x322` and the blob at `+0x324`; a method of the buffer
+object (its vtable slot `+0x68`) writes the `0x5C`-byte Pia system header, the app data is copied
+to `+0x380` (the blob's `+0x5C`) and the size is the app data plus `0x5C` (`main + 0x80C3C`
+refuses an app data stream of `0x125` bytes or more). Three manager methods call
+`nn::ldn::SetAdvertiseData` on that blob (`main + 0x80DAC`, `0x80E48`, `0x80EE4`); two more
+(`main + 0x7F990`, `0x81140`) advertise a second object's data (`[object + 0x18]`, the size its
+vtable slot `+0x38` plus `main + 0x8AC20`). The PLT stub is `main + 0x160A90`, GOT `0x1d3800`.
 
 `component + 0x2770` (through `[component + 0xD0]`) is read by `swi 0x53` (a boolean) and by
 `main + 0x0511CC` and `main + 0x0511F4`, which no syscall reaches. `main + 0x0511F4` compares it with
@@ -1057,9 +1105,12 @@ name, the parent id u16 (`0x59f1`).
 
 In `main` the list is written only through the fill family (`main + 0x58BB4`, `0x58BE4`,
 `0x58BF8`), all virtual; every other component-anchored access in the image is a read. The
-owner class's vtable pointer `main + 0x1C3B30` is formed by no `main`-side idiom (adrp/add,
-movz/movk, literal pool, reloc addend all absent): owner-class objects are constructed
-outside `main`.
+owner class's vtable pointer `main + 0x1C3B30` is formed in `main` by loading the relocated slot
+`main + 0x1D1B38` (value `main + 0x1C3B20`) and adding `0x10`: `main + 0x58558` stores it while it
+zeroes the candidate list at `component + 0x6050F0`, and `main + 0x58FD8`/`0x59054` in the two
+component initializers. The same idiom forms the manager class's pointer (slot `main + 0x1D1E98`;
+`main + 0x7E244`, `0x7E4D0`) and the session class's (slot `main + 0x1D2770`; `main + 0xB7D24`,
+`0xB7E78`).
 
 ### The Pia session-message dispatcher
 
@@ -1079,6 +1130,15 @@ type 6 `>= 0xf`, type 9 `== 0x1e or 0x2a`, type 10 and 12 `== 0x15`, type 11 `>=
 `== 0xa`, type 14 `>= 0x4d`, type 17 `>= 0xd`. The variable-length reader `main + 0xC0D90` derives
 its byte count from the bit count, compares it against the declared length, and refuses on short.
 No handler in this set was found to copy a message-controlled length into a fixed buffer.
+
+The receive path's owner is the session class (vtable base `main + 0x1CE8E0`; its vtable pointer is
+formed at `main + 0xB7D24`/`0xB7E78` from the relocated slot `main + 0x1D2770`, its constructor is
+`main + 0xB7E70`). The pump is that class's vtable slot `+0x50`, `main + 0xB9CA0`, which calls the
+walker `main + 0xB9DB0`; the list hangs off the queue object at `[session + 0xF8]`, whose head
+field is at `+0x70` (`main + 0xD6D68`). Message objects are constructed by `main + 0xD4430` (its
+vtable pointer comes from the relocated slot `main + 0x1D27B0`). The Pia library itself is
+statically linked in `main` (the image carries `SDK MW+Nintendo+PiaCommon-6_42_1-Release` and the
+session job names).
 
 ## Repointing the console's outgoing message
 
