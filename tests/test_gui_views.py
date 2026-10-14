@@ -1334,7 +1334,7 @@ GIFT_COPIES = {
 GIFT_TRAINER = {"ot": "ASH", "tid": 1, "sid": 2, "language": 2, "gender": 0}
 
 
-def gift_picker(monkeypatch):
+def gift_picker(monkeypatch, value=None, view=None):
     """The Mystery Gift - Simulated card the Games view draws, its events listed, over a stubbed builder:
     -> (card, a call that runs the worker it started last, the builder's requests, the values it saved)."""
     import flet as ft
@@ -1358,8 +1358,11 @@ def gift_picker(monkeypatch):
                           page=None, ui=lambda fn: fn())
     saved = []
     tool = next(t for game in GAMES for t in game.tools if t.key == "sv-gift-host")
-    view = SimpleNamespace(app=app, game=SimpleNamespace(key="sv"), values={},
-                           set_value=lambda field, value: saved.append(value))
+    view = view or SimpleNamespace(app=app, game=SimpleNamespace(key="sv"),
+                                   values={tool.fields[0].key: value},
+                                   set_value=lambda field, value: saved.append(value))
+    view.app = app
+    app.settings.save = lambda: saved.append(dict(view.values))
     control = GamesView.input(view, tool.fields[0])
     work.pop()()
     return control, lambda: work.pop()(), asked, saved
@@ -1400,7 +1403,7 @@ def test_the_mystery_gift_card_finds_an_event_pokemon_and_offers_a_fresh_copy(mo
     gift_tile(control, "Palafin").on_click(None)
     run()
     assert asked[-1] == ("sv", "0503-964-0-10", GIFT_TRAINER)
-    assert {k: saved[-1][k] for k in ("file", "event", "species", "legal", "your_ot")} == {
+    assert {k: saved[-1][0][k] for k in ("file", "event", "species", "legal", "your_ot")} == {
         "file": "palafin.pk9", "event": "0503-964-0-10", "species": 964, "legal": True, "your_ot": False}
     assert {"Legal", "Jet Punch, Wave Crash, Haze, Protect · OT Gavin"} <= set(gift_texts(control))
     assert gift_tile(control, "Palafin").border.top.color == t.BLUE
@@ -1421,6 +1424,89 @@ def test_a_gift_the_trainer_could_not_receive_says_why_and_is_not_picked(monkeyp
     run()
     assert asked[-1] == ("sv", "1501-25-0-2", GIFT_TRAINER) and saved == []
     assert f"Your trainer from Settings cannot receive this gift: {why}." in gift_texts(control)
+
+
+def remove_gift(control, at=0):
+    buttons = [c for c in raid_controls(control) if getattr(c, "tooltip", None) == "Remove this gift"]
+    buttons[at].on_click(None)
+
+
+def test_event_queue_restores_a_single_saved_gift_and_keeps_duplicates_in_trade_order(monkeypatch):
+    from pokeldn import pokemon as builder
+    legacy = dict(GIFT_COPIES["0503-964-0-10"], species=964, event="0503-964-0-10")
+    control, run, asked, saved = gift_picker(monkeypatch, legacy)
+    calls = []
+
+    def make(game, key, who):
+        calls.append(key)
+        return dict(GIFT_COPIES[key], file=f"copy-{len(calls)}.pk9")
+    monkeypatch.setattr(builder.SERVICE, "gift_event", make)
+    for name in ("Sprigatito", "Palafin", "Palafin", "Sprigatito", "Palafin"):
+        gift_tile(control, name).on_click(None)
+        run()
+    assert [v["file"] for v in saved[-1]] == ["palafin.pk9", *[f"copy-{n}.pk9" for n in range(1, 6)]]
+    assert "6 of 6 gifts queued, traded in this order · queue full" in gift_texts(control)
+    assert gift_tile(control, "Palafin").disabled
+    gift_tile(control, "Palafin").on_click(None)
+    assert len(calls) == 5
+    remove_gift(control, 2)
+    assert [v["file"] for v in saved[-1]] == ["palafin.pk9", "copy-1.pk9", "copy-3.pk9",
+                                              "copy-4.pk9", "copy-5.pk9"]
+    assert not gift_tile(control, "Palafin").disabled
+    gift_tile(control, "Sprigatito").on_click(None)
+    run()
+    assert saved[-1][-1]["file"] == "copy-6.pk9"
+    for _ in range(6):
+        remove_gift(control)
+    assert saved[-1] == [] and "Choose up to 6 gifts; they trade in this order." in gift_texts(control)
+
+
+def test_removing_a_gift_while_another_is_being_made_keeps_the_progress_visible(monkeypatch):
+    control, run, asked, saved = gift_picker(monkeypatch)
+    gift_tile(control, "Palafin").on_click(None)
+    run()
+    gift_tile(control, "Sprigatito").on_click(None)
+    remove_gift(control)
+    assert "Making a fresh copy..." in gift_texts(control)
+    assert gift_tile(control, "Palafin").disabled
+    run()
+    assert [v["event"] for v in saved[-1]] == ["9021-906-0-11"]
+    assert "Making a fresh copy..." not in gift_texts(control)
+
+
+def test_a_gift_build_finishing_after_navigation_saves_to_its_original_tool(monkeypatch):
+    original, other = {}, {"--trade-offer": {"file": "other.pk9"}}
+    view = SimpleNamespace(game=SimpleNamespace(key="sv"), values=original)
+    view.set_value = lambda field, value: view.values.__setitem__(field.key, value)
+    control, run, asked, saved = gift_picker(monkeypatch, view=view)
+    gift_tile(control, "Palafin").on_click(None)
+    view.values = other
+    run()
+    assert original["--trade-offer"][0]["event"] == "0503-964-0-10"
+    assert other == {"--trade-offer": {"file": "other.pk9"}}
+
+
+def test_a_gifts_form_reaches_its_browser_queue_and_session_preview(monkeypatch):
+    from gui.views import games, sprites
+    asked = []
+    monkeypatch.setattr(sprites.CACHE, "cached", lambda species, shiny=False: asked.append(species))
+    monkeypatch.setitem(GIFT_EVENTS[0], "species_id", 423)
+    monkeypatch.setitem(GIFT_EVENTS[0], "form_id", 1)
+    monkeypatch.setitem(GIFT_COPIES["0503-964-0-10"], "species_id", 423)
+    monkeypatch.setitem(GIFT_COPIES["0503-964-0-10"], "form_id", 1)
+    control, run, _, saved = gift_picker(monkeypatch)
+    assert "423-east" in asked
+    asked.clear()
+    gift_tile(control, "Palafin").on_click(None)
+    run()
+    assert saved[-1][0]["form_id"] == 1 and "423-east" in asked
+    panel = SimpleNamespace(offered_entries=lambda: saved[-1], offered=None, traded=0,
+                            offering=ft.Container(), app=SimpleNamespace(settings=SimpleNamespace(sprites=False)))
+    for entries in (saved[-1], saved[-1] * 2):
+        panel.offered_entries = lambda: entries
+        asked.clear()
+        games.SessionPanel.render_offering(panel)
+        assert asked == ["423-east"] * len(entries)
 
 
 @pytest.mark.parametrize("mode", ["empty", "made"])
@@ -1444,12 +1530,12 @@ def test_a_home_gift_shows_what_the_home_tracker_setting_gave_it(monkeypatch, tm
     assert "1 of 3 event Pokemon, newest first" in gift_texts(control)
     gift_tile(control, "Sprigatito").on_click(None)
     run()
-    assert (saved[-1]["legal"], saved[-1]["home_tracker"]) == (True, mode)
+    assert (saved[-1][0]["legal"], saved[-1][0]["home_tracker"]) == (True, mode)
     assert {"Legal", warning} <= set(gift_texts(control))
     copy = tmp_path / "sprigatito.pk9"
     copy.write_bytes(b"")
     tools = {t.key: t for game in GAMES for t in game.tools}
-    entry = dict(saved[-1], file=str(copy))
+    entry = dict(saved[-1][0], file=str(copy))
     assert command.missing_offer(tools["sv-gift-host"], {"--trade-offer": entry}) == ""
     entry["legal"] = False
     assert command.missing_offer(tools["sv-host"], {"--trade-offer": [entry]}) == "The Pokemon is not legal."

@@ -422,17 +422,21 @@ given; a hover shows the moves. Twenty-four show at a time, Show more adds as ma
 narrows them by any word a tile shows, the ball, a move or the card number. Ten tiles or fewer show
 whole; more scroll in a box of their own (`event_gifts.FIT`).
 
-A click makes a fresh copy for the trainer in Settings and keeps it with the built Pokemon. It becomes
-the trade's offer, shown under the list with its legality, moves and OT. A copy keeps the trainer it
-was made with: pick the gift again after changing the trainer. A gift that names its receiver but
+A click makes a fresh copy for the trainer in Settings and appends it to the queue above the list,
+with its legality, moves and OT. Up to six gifts trade in order in one hosted session. The same
+event can be picked several times; each pick makes its own copy. Remove a queued gift with its
+close button before Start. A full queue holds further picks off until a gift is removed.
+A copy keeps the trainer it was made with: remove it and pick the gift again after changing the trainer.
+A gift that names its receiver but
 never reached saves in the trainer's language, such as Let's Go's Chinese Meltan and Melmetal for any
 other, has an illegal tile that says why, and a click on it says so and keeps the offer
 ([Saves a card reached](gift_simulated.md#saves-a-card-reached)). With Made for the receiving player
 (Advanced tab) on, the default, the trade makes a gift that names its receiver again for the console's own save
 ([Made for the receiving player](gift_simulated.md#made-for-the-receiving-player)). A gift with its
-card's own trainer goes as made: picking it turns the switch off, disabled and faded, and the note
-under it names that trainer (`command.locked`). The launch then passes no `--for-receiver`. Picking a
-gift that names its receiver gives the switch back as it was set.
+card's own trainer goes as made. While every queued gift goes as made, the switch is off, disabled
+and faded, and the note under it says why (`command.locked`). The launch then passes no
+`--for-receiver`. A queue containing a gift that can name its receiver gives the switch back as it
+was set; the host applies it to each eligible card.
 
 A gift HOME gave, on any game but Let's Go, has the tracker the HOME tracker setting gives it
 ([The HOME tracker setting](#the-home-tracker-setting)). Its tile is outlined in amber and, as the

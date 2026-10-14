@@ -83,7 +83,7 @@ FOR_RECEIVER = Field("--for-receiver", "Made for the receiving player", "switch"
                           "console's save, read from the Pokemon the console offers or from its session data. "
                           "Off, or when neither names the save, it goes with your trainer from Settings.")
 GIFT_OFFER_BACK = ("Offer a Pokemon you caught in this save and confirm. The event Pokemon comes over; yours goes "
-                   "to Received.")
+                   "to Received. Trade again for each queued gift, then back out after the last trade.")
 CHANNEL_HELP = "The wireless channel of the network pokeldn hosts."
 CODE_HELP = "The same code the player enters on the console."
 
@@ -457,15 +457,15 @@ ZA = Game("za", "Legends Z-A", "PLZA", "za.md", (
 ))
 
 def simulated_gift(game: Game, host: Tool, steps: tuple[str, ...]) -> Tool:
-    """The trade host offering one of the game's Mystery Gift Pokemon, picked from PKHeX's event table, in
-    place of a built one, and made for the receiving player where the card names them
+    """The trade host offering up to a party's worth of the game's Mystery Gift Pokemon, picked from PKHeX's
+    event table, in place of built ones and made for the receiving player where each card names them
     (docs/gift_simulated.md)."""
     def gift(f: Field) -> tuple[Field, ...]:
         if f.kind != "pokemon":
             return f,
-        return (replace(f, label="Mystery Gift Pokemon", required=True, events=True, queue=1, more="", count="",
-                        help=f"Every Pokemon gift {game.name} gave, from PKHeX's event database. The console "
-                             "receives a fresh legal copy by trade."),
+        return (replace(f, label="Mystery Gift Pokemon", required=True, events=True, queue=QUEUE,
+                        help=f"Every Pokemon gift {game.name} gave, from PKHeX's event database. Add up to "
+                             f"{QUEUE}; one session trades them in order, each as a fresh legal copy."),
                 FOR_RECEIVER)
     return Tool(host.key.replace("-host", "-gift-host"), "Mystery Gift - Simulated", host.script,
                 "Trade an official Mystery Gift Pokemon to the console: a fresh legal copy, as your trainer "
@@ -520,7 +520,8 @@ GAMES = (
     with_online(with_gift(ZA, ("Choose the event Pokemon, then start the host.",
                                "X, Link Play, Link Trade, Nearby Players, the same code, then search.",
                                "Pick a Pokemon you caught in this save on the trade box, then trade. The event "
-                               "Pokemon comes over; yours goes to Received.", "Back out with B after the trade.")),
+                               "Pokemon comes over; yours goes to Received. Trade again for each queued gift.",
+                               "Back out with B after the last trade.")),
                 ("X, Link Play, Link Trade, Nearby Players, the same code, then search.",
                  "Pick on the trade box, offer, then trade.")),
 )
