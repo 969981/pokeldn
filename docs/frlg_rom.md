@@ -971,6 +971,17 @@ builder)`. The delivery takes `X = [session + 0x30]` and calls `X`'s vtable slot
 and `+0xE8` (must return false). The session's `+0x30` is set by `main + 0xAF760` from
 `[[session + 8] + 0xB8]`, the session owner's `+0xB8`.
 
+`X` has the facade classes' shape: `nn::pia::local::LocalFacade` (vtable `main + 0x1CB548`) and
+`nn::pia::net::NetFacade` (`main + 0x1CBE60`) share the implementation, and their slots are
+`+0xA8` = `main + 0x8D4AC`, `+0xD8` = `main + 0x8D84C` (true when the facade's `+0x28` is set and
+its `+0x30` non-null), `+0xE8` = `main + 0x8D920` (true when `[[facade + 0x30] + 0x12D8]` is
+non-zero). The facade's `main + 0x8D4AC` validates through `main + 0x8C6FC`, locks the manager
+(`[facade + 0x30] + 0x2B8` through `main + 0x94B78`, so the facade holds the manager at `+0x30`),
+takes the value at the builder's `+8` (`main + 0xA3710`) and hands it to the manager's
+`main + 0x99C3C`, then records the transport at `[facade + 0x48]` and state 8 at `[facade + 0x40]`.
+That closes the write path from the game's `swi 0x47` record to the manager whose blob builder
+reaches `nn::ldn::SetAdvertiseData`.
+
 The object the component keeps at `[component + 0x3528]` is a `nn::pia::session::Session`: the
 class whose methods fill `main + 0xAF4F8` through `0xB23xx` (primary vtable `main + 0x1CE300`, a
 second at `main + 0x1CE330`, constructor `main + 0xAF4F8`, which zeroes `+0x10` through `+0x100`
