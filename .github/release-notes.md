@@ -1,24 +1,19 @@
-# pokeldn 0.23.0
+# pokeldn 0.24.0
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- Mystery Gift - Simulated: Let's Go, Brilliant Diamond/Shining Pearl, Legends Arceus,
-  Scarlet/Violet and Legends Z-A trade an official gift Pokemon from PKHeX's event list, made for
-  the receiving console's own save by default. The last gift is offered again to a console that
-  trades on.
-- Sword/Shield's Official events add Pokemon HOME's gifts, and Sword/Shield gifts take a nature.
-- Settings, HOME tracker: "empty" (default) leaves the tracker unset, as HOME 3.1.0 and later
-  require; "made" keeps the previous behaviour.
-- Tera Raids: the raid card shows the boss's shield and scripted actions. With several consoles,
-  each console fights its own copy of the battle after the shared lobby.
-- Legends Arceus sends the trainer's gender from Settings, and the partner sees the matching look.
-- Programs and plugins can show pop-ups in the app; the plugin API (1.3) lists what a plugin or a
-  separate front end can rely on.
-- Gen 9 sprites with a colour profile, such as Sprigatito and Miraidon, now display.
-- Launchers print each packet only with `--print-packets`, which keeps the app's output readable.
+- Program API 1.4 exposes the Bank to external frontends: import saves and Pokemon files, browse
+  records, check destinations, prepare converted offers and apply confirmed trade completion.
+  The desktop app uses the same destination and completion code.
+- Bank deletion matches an exact record ID. Delayed completion callbacks from an earlier run
+  cannot remove Pokemon from a new run.
+- Mystery Gift - Simulated queues up to six official gift Pokemon in one session, with an event
+  browser for each slot and separate settings for each queued gift.
+- Mystery Gift cards and Pokemon builders show previews matching the selected species and form,
+  with responsive loading and matching form option counts.
 
 The radio firmware stays at 1.6.1 (its only change concerns the sniffer tool) and the controller
 firmware at 1.3.0; no board needs an update.

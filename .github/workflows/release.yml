@@ -139,7 +139,7 @@ jobs:
           key: unicorn-${{ runner.os }}-${{ hashFiles('requirements.txt', 'scripts/build_unicorn.py') }}
       # The app runs its own build of Flet's client, which takes files dropped on it (scripts/build_client.py).
       - name: Flutter version
-        if: steps.client.outputs.cache-hit != 'true'
+        if: steps.client.outputs.cache-hit != 'true' || runner.os == 'Linux'
         id: flet
         shell: bash
         run: |
