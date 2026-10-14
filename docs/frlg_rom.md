@@ -965,7 +965,8 @@ the used size and sets bit 1 of `+0x8`; its only caller is the handler (`main + 
 handler then delivers the builder to the session object at `[component + 0x3528]` through
 `main + 0xB1304` and `main + 0xD4DD0`.
 
-The session object (class vtable `main + 0x1CAC48`, `0xA60` bytes, factory `main + 0x7EED8`,
+The session object (`nn::pia::local::LdnBackgroundProcessJob`; class vtable `main + 0x1CAC48`,
+`0xA60` bytes, factory `main + 0x7EED8`,
 constructor `main + 0x83A88`) embeds its own builder at `+0x8C0` and holds the network manager at
 `+0xA8`. The component stores it at `[component + 0x3528]` (`main + 0x528F8`) and opens it with
 its callback `main + 0x52BB4` and itself as context (`main + 0xB14E0` stores them at `+0x88` and
@@ -973,8 +974,9 @@ its callback `main + 0x52BB4` and itself as context (`main + 0xB14E0` stores the
 (`main + 0x8885C`: non-empty, the `+0x8` dirty bit set, the size within the holder's capacity),
 copies it into `+0x8C0` (`main + 0x87578`) and hands it to the manager's blob builder.
 
-The manager class (vtable `main + 0x1CA5B0`, pointer formed at `main + 0x7E244` from the
-relocated slot `main + 0x1D1E98`) keeps its own `NetworkInfo` at `[manager + 0x2D8] + 0xB8`: the
+The manager class (`nn::pia::local::LdnProtocol`; vtable `main + 0x1CA5B0`, pointer formed at
+`main + 0x7E244` from the relocated slot `main + 0x1D1E98`) keeps its own `NetworkInfo` at
+`[manager + 0x2D8] + 0xB8`: the
 advertise size is `NetworkInfo + 0x26A` (`+0x322`), the blob `NetworkInfo + 0x26C` (`+0x324`),
 `NetworkInfo + 0x282` at `+0x33A`. Its method `main + 0x80C3C` (the only consumer of a builder's
 app data; `main + 0xA2C70` has this one caller) zeroes `+0x380` (`NetworkInfo + 0x2C8`), copies
@@ -1161,7 +1163,8 @@ then looks the source station up and calls `main + 0xC9B4C` on it. The type-2 ha
 `main + 0xBE8BC` accepts 4 bytes or more, gates on the manager's state byte (`+0x30 == 0xFD`),
 and switches on message byte 3 over 3 to 0x10.
 
-The receive path's owner is the session class (vtable base `main + 0x1CE8E0`; its vtable pointer is
+The receive path's owner is the session class (`nn::pia::session::SessionProtocol`; vtable base
+`main + 0x1CE8E0`; its vtable pointer is
 formed at `main + 0xB7D24`/`0xB7E78` from the relocated slot `main + 0x1D2770`, its constructor is
 `main + 0xB7E70`). The pump is that class's vtable slot `+0x50`, `main + 0xB9CA0`, which calls the
 walker `main + 0xB9DB0`; the list hangs off the queue object at `[session + 0xF8]`, whose head
@@ -1169,6 +1172,77 @@ field is at `+0x70` (`main + 0xD6D68`). Message objects are constructed by `main
 vtable pointer comes from the relocated slot `main + 0x1D27B0`). The Pia library itself is
 statically linked in `main` (the image carries `SDK MW+Nintendo+PiaCommon-6_42_1-Release` and the
 session job names).
+
+### The Pia library's own wire parsing
+
+`main` links the whole Pia 6.42.1 stack (the image carries the `SDK MW+Nintendo+...` release
+strings for `PiaCommon`, `PiaLocal`, `PiaNet`, `PiaSession`, `PiaTransport` and `Pia_ZStandard`,
+plus the mangled class names). The classes described above by their vtables only are:
+
+| earlier wording | class (mangled name at the vtable's typeinfo) | vtable |
+| --- | --- | --- |
+| the network manager | `nn::pia::local::LdnProtocol` | `main + 0x1CA5B0` |
+| the session object (builder at `+0x8C0`) | `nn::pia::local::LdnBackgroundProcessJob` | `main + 0x1CAC48` |
+| the session class (queue at `+0xF8`) | `nn::pia::session::SessionProtocol` | `main + 0x1CE8E0` |
+| the packet object | `nn::pia::common::Packet::Header` | `main + 0x1CA100` |
+| the local receive stream | `nn::pia::local::LocalInputStream` | `main + 0x1CA540` |
+| the net receive stream | `nn::pia::net::NetInputStream` | `main + 0x1CC1C8` |
+
+The transport classes' vtables are `PacketReader` `main + 0x1CF1A0`, `PacketWriter`
+`main + 0x1CF250`, `ProtocolManager` `main + 0x1CF398`, `ProtocolMessageReader` `main + 0x1CF450`,
+`ProtocolMessageWriter` `main + 0x1CF488`, `ReliableProtocol` `main + 0x1CF4C0`, `Station`
+`main + 0x1CF8C0`, `StationManager` `main + 0x1CF930`, `ReceiveThreadStream` `main + 0x1CFB18`,
+`SendThreadStream` `main + 0x1CFB60`; the session classes' are `Session` `main + 0x1CE2F8`,
+`SessionPacketReader` `main + 0x1CE740`, `SessionPacketWriter` `main + 0x1CE7F0`, `SessionStation`
+`main + 0x1CED18`; the local classes' are `LocalProtocol` `main + 0x1CB2C8`, `LocalService`
+`main + 0x1CB458`, `LocalFacade` `main + 0x1CB540`.
+
+**The packet.** The packet object is `0x1D18` bytes: the parsed header at `+8` through `+0x24`, the
+datagram buffer at `+0x30` (capacity `0x1C5C`, the bound in the append helpers `main + 0x75664`
+and `main + 0x75694`, the second of which records a footer size at `+0x14`), the received size at
+`+0x1C90` (the receive path stores it at `main + 0x7E40`). Its parse (`main + 0x752D4`, vtable slot
+`+0x18`; the entry `main + 0x752C8` supplies the object's own buffer and the constant `0x1C5C`)
+requires more than `0x1C` bytes and reads the `0x1D`-byte header:
+
+| at | size | meaning | lands at |
+| --- | --- | --- | --- |
+| 0x00 | 4 | magic `0x32AB9864`, big-endian | `+0x08` |
+| 0x04 | 1 | `0x80` (encrypted) or version | `+0x0C` |
+| 0x05 | 1 | one byte, kept as sent | `+0x0D` |
+| 0x06 | 2 | destination variable id, big-endian | `+0x0E` |
+| 0x08 | 2 | source variable id, big-endian | `+0x10` |
+| 0x0A | 2 | packet id, big-endian | `+0x12` |
+| 0x0C | 1 | footer size | `+0x14` |
+| 0x0D | 8 | nonce, as sent | `+0x15` |
+| 0x15 | 8 | GCM tag, as sent | `+0x1D` |
+
+The version this app speaks is `0x10` (16): the validity check `main + 0x75610` demands the magic,
+`([+0xC] & 0x7F) == 0x10` and `size - 0x1D < 0x1C40`. The payload pointer is `+0x4D` (the buffer
+past the header, `main + 0x75458`); `main + 0x7538C` returns `buffer + 0x1D + n` bounded by
+`0x1C5B`.
+
+**The socket and the receive stream.** The socket is a small holder (constructor `main + 0x6D93C`:
+fd `-1` at `+0`, a count at `+4`, the family at `+8`, the protocol at `+0xC`); `main + 0x6D95C`
+opens it (`nn::socket::Socket`, PLT `main + 0x160940`), `main + 0x6DBF4` closes it
+(`main + 0x160950`), `main + 0x6DCD0` binds it (`main + 0x160960`), and `main + 0x6DE6C`,
+`0x6DF44`, `0x6E00C`, `0x6E0F0` set options (`main + 0x160970`). The datagram calls are
+`main + 0x6E1D0` (`nn::socket::RecvFrom`, PLT `main + 0x160980`, flags `0x80`, the source address
+converted back by `main + 0x6E9D0`) and `main + 0x6E538` (`nn::socket::SendTo`,
+`main + 0x160990`). The local receive stream (variable id at `+0x88`, a lock at `+0x68`, the
+socket holder pointer at `+0x18`) runs the pump `main + 0x7DD10` (vtable slot `+0x10`): it receives
+into a packet's buffer and parses the header into it (`main + 0x7DDEC`; `main + 0x6E1C8` is the
+thunk); the packet filter `main + 0x91280` (slot `+0x20`) then decides admission: a valid packet,
+`([+0xC] & 0x7F) >= 7`, a non-zero footer size and a destination variable id of at most 1; when
+`([+0xC] & 0x7E) >= 6` and the destination is 2 or more, it must equal the stream's own `+0x88`.
+
+**The threads.** The transport's receive and send loops are `nn::os` threads named "Pia
+ReceiveThreadStream" (started at `main + 0xE9020`, the name via `adr` at `main + 0xE9034`) and "Pia
+SendThreadStream" (`main + 0xEA758`), created through `main + 0xF6010` (`nn::os::CreateThread`,
+PLT `main + 0x15FDF0`, and `StartThread`, `main + 0x15FE00`).
+
+Which code enqueues a received session message into the SessionProtocol's queue
+(`[session + 0xF8]`, head getter `main + 0xD6D68`, consumed by the walker `main + 0xB9DB0`) is
+still open.
 
 ## Repointing the console's outgoing message
 
