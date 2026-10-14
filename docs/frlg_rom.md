@@ -1017,8 +1017,12 @@ sets the job's next step to slot `0x130`. It is reached through the job's vtable
 `StepSequenceJob::Step`-derived delegate, constructor `main + 0xA2824`, `0x98` bytes, a `0x38`-byte
 helper at `+0x88`, the manager at `+0x90`), whose `main + 0xA28E4` calls the job's slot `+0x60` as
 `(job, helper, buffer)`. The publish half is the job's `+0x130` (`main + 0x84360`), which passes
-the job's builder `+0x8C0` to the manager's slot `+0xD0` at `main + 0x8445C` and is called from
-eight sites in the `0xCBxxx` region (a state machine whose `+0x80` holds the job's holder). The job itself runs as a state machine: its `+0x38`/`+0x40` hold
+the job's builder `+0x8C0` to the manager's slot `+0xD0` at `main + 0x8445C`. It is called from
+eight sites in the steps of Pia's own session jobs (`main + 0xCB0CC`-`0xCC738`:
+`nn::pia::session::LeaveMeshJob`, vtable `main + 0x1CEB70`, `nn::pia::session::ProcessHostMigrationJob`,
+`main + 0x1CEBA0`, and the classes at construction slots `main + 0x1D26F8`-`0x1D2728`), each gated
+by its state byte at `+0x90` and reading its holder at `+0x80`, whose `+0x30` is the job (only the
+job's vtable slot `main + 0x1CAD78` holds `+0x130`). The job itself runs as a state machine: its `+0x38`/`+0x40` hold
 the current step (a vtable slot with a one-bit virtual flag, or a direct function) and the base
 method `main + 0x6EAA0` ("ExecuteCore", the job's slot `+0x20`) dispatches it; the steps seen are
 the vtable slots `0xB8`, `0xC8`, `0xD8`, `0xE8`, `0xF8`, `0x108`, `0x118`, `0x138`, `0x148` and
