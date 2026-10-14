@@ -960,8 +960,10 @@ vtable `main + 0x1CB8C8`, constructor `main + 0x87514`): a `0x180`-byte Pia adve
 `+0x1C`, the used size at `+0x18` starting at the `0x5C` header, the app data pointer
 `main + 0xA2C70` = `+0x78`, the app data size `main + 0xA2C90` = used minus `0x5C`, clamped to
 `0x124` (slot `+0x28`, `main + 0x875AC`; the header offset `0x5C` is slot `+0x30`,
-`main + 0x875A4`). `main + 0xA3480` appends the 30 characters at the app data offset, adds 30 to
-the used size and sets bit 1 of `+0x8`; its only caller is the handler (`main + 0x58838`). The
+`main + 0x875A4`). `main + 0xA3480` appends the 30 characters at the app data offset through the
+buffer object it holds at `+8` (its capacity is the buffer's vtable slot `+0x28`, its used size at
+the buffer's `+0x18`, and the append sets bit 1 of the buffer's `+8`); its only caller is the
+handler (`main + 0x58838`). The
 handler then delivers the builder at `main + 0x58854`: `x0 = [component + 0x3528]`,
 `main + 0xB1304`. That method calls a method on `[session + 0xD0]`, passes it on as an argument,
 zeroes the u32 at `+0xD8` and calls
