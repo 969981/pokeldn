@@ -951,6 +951,17 @@ touches it, the thread-local page behind `tpidrro_el0` is a stand-in whose `+0x1
 thread, and SVCs 0x10, 0x11, 0x12, 0x1a, 0x1b, 0x1d and 0x1e return 0. Eleven replayed rounds
 equalled, byte for byte, the bodies the console then built itself; a round touched 159 to 353 pages.
 
+`pokeldn.sv.battle` is a Python port of the server, one function per game function, keyed by its
+offset from main. The builder `0x113c8a0` runs in Python for message kinds 1, 5, 17 and 21: the
+round driver `0x113e3d0` with move selection, damage `0xf7c344`, fainting `0x1144df8` and end of
+turn `0x114a094`, and the battle start `0x113dca8` with its send-out, item, ability and entry
+handlers. Over 86 halted consoles (49 rounds, 5 battle starts) the port leaves the same body and
+the same memory pages as the game's own code, with no call handed back to it. The heap it allocates
+from is the SDK's `nn::mem::StandardAllocator` over a thread cache, ported with the cache's creation
+and its TinyMT32 key (`0x525f448`). The battle-state build steps `0x2892ac0`, `0x2d381a4` and
+`0x2891748` also match; five calls in them still run the game's code, all first-time construction
+of function-local statics.
+
 ## Joining
 
 `bin/sv_join.py --raid-pokemon FILE` joins a scene-7 network and takes part as a guest. The
