@@ -404,6 +404,14 @@ reads both (`0.15829`); a retail host draws a new `randSeed` at each start and w
 of n or more) and taken out of the pool, so in the full pool the bounds run 18, 17, 16. The empty
 slots take the draws in slot order (`0.4455`): one empty slot takes the first, wherever it sits.
 
+A partner's record takes three xoroshiro128+ draws from the same `randSeed`, and both partners
+share them: draw 0 is the encryption constant, draw 1 is TID | SID << 16, draw 2 is the PID. IVs are
+31/10/31/31/10/31 (HP Atk Def Spe SpA SpD), EVs 252 HP, 128 Def, 128 SpD; nature 0, scale 128, ball
+4, language 2. Species, form, ability slot, moves, Tera type and gender come from the trainer's entry.
+These rules reproduce all ten partner records of five sessions byte for byte, given each one's height
+and weight. Height and weight are not among the first 80 draws, and their source is unknown. The
+battle-start body does not depend on them.
+
 The u32 at 0x3e0 picks the pool, the data table field `difficulty_0`*N+1* (`0.7797`), its trainers
 and their Pokemon (the table below): 0 and 1 the first 16 trainers, 2 all 18, 3 and 4 all 18. A
 partner's Pokemon is built at level int(0.8 × the level of the Pokemon in battle slot 0, the
@@ -987,6 +995,26 @@ bytes; entry i is file record i, and its hash is the u64 at main `0x3c61260 + 8 
 come out of `arc/data.trpfs` (`tools/switch/trpfs_read.py`; Oodle entries through the game's own
 `OodleLZ_Decompress` at `0xcc8750`), and every byte of them held by 97 halted consoles equals the
 extracted file.
+
+The battle start also runs with no halted console. From the static image and the romfs alone, the
+port builds the game heap (`pokeldn.sv.battle.engine.arena`), the "Application" counted allocator
+(`0x3b78d3d`, limit 0xa0000000, over the GlobalHeap allocator 0x4763918), the weak-handle table
+(`0x165dd08`) and the five data tables (personal `0x164498c`, id-hash `0x1730f6c`). The server object
+N then comes from a 1633-byte session template plus the bootstrap. After that, the four build steps
+and the builder with type 0x11 run. The battle-start bodies of five sessions (268, 345, 328, 422 and
+268 bytes) equal the console's, and so do nine later rounds' 20576-byte command queues once each
+round is given its 0x238-byte request block. A changed battle seed leaves the start body unchanged
+and changes 123 bytes of a round. Neither heap addresses nor weak-handle ids reach a body: the
+console's ids are 0x1b5xx of generation 3, and the port's are 0..0x58 with all its objects at other
+addresses.
+
+The data system's init `0x1641afc` runs `0x1643a48` (personal, growth), `0x1641cf0` (moves) and
+`0x1641d78` (abilities). Each table is created from the allocator, reset into its static (`0x1643e68`)
+and appended through `0xf0ba9c` to the registry at 0x4763a18 (count u32 0x4765a18, at most 0x400).
+Inserting a file's records in file order, after reserving their count, gives the console's node list.
+A weak-handle entry is 0x20 bytes: u64 id (u32 index | u32 generation << 32), +8 the resolved value,
++0x10 the object, u16 +0x18 weak count, u16 +0x1a strong count, u32 +0x1c state (-1 freed, -2 live).
+Blocks hold 0x400 entries (`0xc1adec`); freed ids go to a `deque<u32>` grown by `0xb44724`.
 
 ## Joining
 

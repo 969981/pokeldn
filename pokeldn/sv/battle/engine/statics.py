@@ -84,10 +84,21 @@ def static_4765a30(m, *_):
 
 @lifted(0x2D1FF04)
 def static_46dcd58(m, *_):
-    """A function-local static (guard and storage reached through the GOT); read only once built."""
-    if m.u8(m.u64(m.main + 0x46DCD50)) & 1 == 0:
-        raise UnliftedCall("static 0x46dcd58 not built")
+    """The Pokemon parameter class's static [0x46dcd58] (guard [0x46dcd50]), built from 0x19f5520 on
+    first use; returns its address."""
+    guard = m.u64(m.main + 0x46DCD50)
+    if m.u8(guard) & 1 == 0 and m.call(m.main + 0x343CF10, guard) & M32:
+        m.put(m.u64(m.main + 0x46DCD58), 8, m.call(m.main + 0x19F5520))
+        m.call_void(m.main + 0x343CF20, guard)
     return m.u64(m.main + 0x46DCD58)
+
+
+@lifted(0x19F5520)
+def static_19f5520(m, *_):
+    """A four-level static chain (guards 0x46d3ca8, 0x46d3aa8, 0x46d39b0, 0x46d39c0); its outer slot."""
+    _static_chain(m, ((0x46D3CA8, 0x46D3CB0), (0x46D3AA8, 0x46D3AB0), (0x46D39B0, 0x46D39B8),
+                      (0x46D39C0, 0x46D39C8)))
+    return m.u64(m.main + 0x46D3CB0)
 
 
 def _static_46d3f08(m):

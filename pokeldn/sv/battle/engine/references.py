@@ -3,7 +3,7 @@
 
 from pokeldn.sv.battle.engine.calls import _need, _tail, _vtail
 from pokeldn.sv.battle.engine.containers import _bucket_pc, _hash_find_u32
-from pokeldn.sv.battle.machine import UnliftedCall, lifted
+from pokeldn.sv.battle.machine import FUNCTIONS, UnliftedCall, lifted
 
 
 @lifted(0x114ACBC)
@@ -759,7 +759,12 @@ def handle_free(m, o, p, *_):
         cap = 0 if me == mp else ((me - mp) * 128 - 1) & 0xFFFFFFFFFFFFFFFF
         back = (m.u64(o + 0x50) + m.u64(o + 0x58)) & 0xFFFFFFFFFFFFFFFF
         if cap == back:
-            raise UnliftedCall("free deque grows (0xb44724)")
+            if 0xB44724 not in FUNCTIONS:
+                raise UnliftedCall("free deque grows (0xb44724)")
+            m.put(lock, 8, cur); m.put(lock + 8, 8, 0)
+            m.call_void(m.main + 0xB44724, o + 0x10)
+            mp, me = m.u64(o + 0x18), m.u64(o + 0x20)
+            back = (m.u64(o + 0x50) + m.u64(o + 0x58)) & 0xFFFFFFFFFFFFFFFF
         t = _tls_stack_built(m)
     m.put(lock, 8, cur); m.put(lock + 8, 8, 0)
     if live:
