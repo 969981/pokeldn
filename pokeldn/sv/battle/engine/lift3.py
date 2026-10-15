@@ -10318,9 +10318,9 @@ def do_rehash_f7bedc(m, table, n, *_):
     return _do_rehash(m, table, n, 0x171987C)
 
 
+@lifted(0xF785A8)
 def _map_u8_slot_inline(m, table, key_ptr, *_):
-    """0xf785a8, called directly: registering it un-guards lift0's 0x127e2b8, which then fails on
-    0x1153868's missing return value (ch2_init). unordered_map<u32, u8>::operator[] with the node build inlined (0x18-byte node from the allocator
+    """0xf785a8: unordered_map<u32, u8>::operator[] with the node build inlined (0x18-byte node from the allocator
     [table+0x38], pushed on the thread's object stack while its key and zero value are written) and the
     rehash inlined (tail 0xf7bedc)."""
     import math
@@ -10398,7 +10398,7 @@ def place_in_battle(m, o, client, idx, dest, w, *_):
     with m.frame(0x10) as k:
         m.put(k, 4, ident)
         m.put(table + 8 * (pos & 0xFF) + 8, 4, ident)
-        m.put(_map_u8_slot_inline(m, table + 0x60, k), 1, pos)       # 0xf785a8, see the note above
+        m.put(_map_u8_slot_inline(m, table + 0x60, k), 1, pos)       # 0xf785a8
     m.call_void(m.main + 0x114EAB4, table, pc, pos, m.u64(pc + 0x30))
     return _tail(m, m.main + 0x114EB70, o, b)
 
