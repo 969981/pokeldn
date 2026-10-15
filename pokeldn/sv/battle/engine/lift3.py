@@ -4373,22 +4373,33 @@ def do_rehash_u8(m, table, n, *_):
     return _do_rehash(m, table, n, 0x176A354)
 
 
-def _do_rehash(m, table, n, free):
+def _free_bucket_array(m, table, old, free, align):
+    if free is not None:
+        return m.call_void(m.main + free, table + 8, old)
+    size, alloc = m.u64(table + 8) * 8, m.u64(table + 0x10)
+    if _frees_deferred(m, alloc):
+        return m.call_void(m.main + 0xB48FE8, alloc, old, size, align)
+    m.vcall_void(alloc, 0x18, old, size, align)
+
+
+def _do_rehash(m, table, n, free, align=4, key=4):
+    """`free` is the bucket free's address, or None for the free inlined with `align`; `key` is the
+    key's width at node +0x10."""
     old = m.u64(table)
     if old and _frees_deferred(m, m.u64(table + 0x10)) and 0xB48FE8 not in FUNCTIONS:
         raise UnliftedCall("main+0xb48fe8")
     if n == 0:
         m.put(table, 8, 0)
         if old:
-            m.call_void(m.main + free, table + 8, old)
+            _free_bucket_array(m, table, old, free, align)
         m.put(table + 8, 8, 0)
         return
-    arr = m.vcall(m.u64(table + 0x10), 0x10, n * 8, 4)
+    arr = m.vcall(m.u64(table + 0x10), 0x10, n * 8, align)
     if not arr:
         raise UnliftedCall("allocator out of memory")
     m.put(table, 8, arr)
     if old:
-        m.call_void(m.main + free, table + 8, old)
+        _free_bucket_array(m, table, old, free, align)
     m.put(table + 8, 8, n)
     for i in range(n):
         m.put(arr + 8 * i, 8, 0)
@@ -4411,13 +4422,74 @@ def _do_rehash(m, table, n, free):
             pp, phash = cp, chash
         else:
             np = cp
-            while m.u64(np) and m.u32(cp + 0x10) == m.u32(m.u64(np) + 0x10):
+            while m.u64(np) and m.read(cp + 0x10, key) == m.read(m.u64(np) + 0x10, key):
                 np = m.u64(np)
             m.put(pp, 8, m.u64(np))
             head = m.u64(arr + 8 * chash)
             m.put(np, 8, m.u64(head))
             m.put(head, 8, cp)
         cp = m.u64(pp)
+
+
+@lifted(0xFAF460)
+def do_rehash_u16(m, table, n, *_):
+    """__do_rehash of the u16-keyed command-format map: 0xf8001c's shape with the bucket free inlined
+    and alignment 2."""
+    return _do_rehash(m, table, n, None, align=2, key=2)
+
+
+@lifted(0xFAF09C)
+def format_slot(m, table, key_ptr, *_):
+    """operator[] of the queue's command-format map (u16 key at node +0x10, u8 value at +0x12): the
+    value of the key's node, inserting a zero one (0x18-byte node from [table+0x38], align 2, pushed on
+    the thread's object stack while built) and growing through 0xfaf460 when the load allows."""
+    import math
+    import struct
+    from pokeldn.sv.battle.engine.containers import find_u16, _bucket
+    from pokeldn.sv.battle.engine.lift0 import _tls_stack
+    key = m.u16(key_ptr)
+    node = find_u16(m, table, key)
+    if node:
+        return node + 0x12
+    n = m.u64(table + 8)
+    node = m.vcall(m.u64(table + 0x38), 0x10, 0x18, 2)
+    if not node:
+        raise UnliftedCall("allocator out of memory")
+    alloc = m.u64(table + 0x38)
+    t = _tls_stack(m)
+    if t:
+        depth = m.u64(t + 0x80)
+        if depth >= 0x10:
+            raise UnliftedCall("abort: object stack full")
+        m.put(t + 8 * depth, 8, alloc)
+        m.put(t + 0x80, 8, depth + 1)
+    m.put(node + 0x10, 2, m.u16(key_ptr)); m.put(node + 0x12, 1, 0)
+    if t:
+        m.put(t + 0x80, 8, m.u64(t + 0x80) - 1)
+    m.put(node, 8, 0); m.put(node + 8, 8, key)
+    size1 = _f32(float(m.u64(table + 0x58) + 1))
+    load = struct.unpack("<f", m.read(table + 0x60, 4))[0]
+    if n == 0 or _f32(load * _f32(float(n))) < size1:
+        grow = (n << 1) | int(n < 3 or not _pow2(n))
+        need = math.ceil(_f32(size1 / load))
+        _rehash(m, table, max(grow, need), 0xFAF460)
+        n = m.u64(table + 8)
+    b = _bucket(key, n)
+    buckets = m.u64(table)
+    prev = m.u64(buckets + 8 * b)
+    if prev == 0:
+        head = table + 0x30
+        m.put(node, 8, m.u64(head))
+        m.put(head, 8, node)
+        m.put(buckets + 8 * b, 8, head)
+        nxt = m.u64(node)
+        if nxt:
+            m.put(buckets + 8 * _bucket(m.u64(nxt + 8), n), 8, node)
+    else:
+        m.put(node, 8, m.u64(prev))
+        m.put(prev, 8, node)
+    m.put(table + 0x58, 8, m.u64(table + 0x58) + 1)
+    return node + 0x12
 
 
 @lifted(0xF7C240)
