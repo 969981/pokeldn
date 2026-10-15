@@ -1,6 +1,6 @@
 """The memory and call model the house engine runs on: the server state laid out as Scarlet 4.0.0 lays
 it out, addressed by u64, and the engine's functions keyed by the address of the game function each one
-reproduces (docs/sv_raid.md, The house engine). Every load and store truncates to its width.
+reproduces (docs/sv_raid.md, Reproducing a round). Every load and store truncates to its width.
 """
 
 import contextlib

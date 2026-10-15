@@ -1,6 +1,6 @@
 """The battle-state build steps: the server construction 0x2891748 (the main module pair at N+0x150 and
 N+0x170) and the steps 0x2892ac0, 0x2d381a4 and 0x2892dd4 that fill the battlers, copy the state and
-finish it, with the game functions they run (docs/sv_raid.md, The house engine). N is the battle
+finish it, with the game functions they run (docs/sv_raid.md, Reproducing a round). N is the battle
 network object (vtable 0x44ff468)."""
 
 import math
