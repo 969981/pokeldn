@@ -22,6 +22,7 @@ Layout, as the code reads it:
     +0 u16 pages per span, +2 u16 object size
 """
 
+from pokeldn.sv.battle.engine.calls import _need, _tail, _vtail
 from pokeldn.sv.battle.machine import FUNCTIONS, MASK, Machine, UnliftedCall, lifted
 
 M64 = MASK[8]
@@ -156,8 +157,6 @@ def _release_descriptor(t, heap, d):
         _push(t, heap + 0x50, page)
 
 
-# --- nn::os ----------------------------------------------------------------------------------------
-
 def _cancel_state(t):
     """0x51882f0 (pthread_setcancelstate): nothing to do while no cancellation key exists."""
     if t.u32(t.main + CANCEL_KEY) != M32:
@@ -193,8 +192,6 @@ def _unlock(t, mutex):
         _refuse("mutex with waiters")
     t.put(mutex + 0x18, 4, 0)
 
-
-# --- the page heap ---------------------------------------------------------------------------------
 
 def _find_run(t, heap, n):
     """0x518bcf8: the free run for `n` pages: the first non-empty exact-or-larger list below 0xff;
@@ -391,8 +388,6 @@ def _free_span(t, heap, span):
     _coalesce(t, heap, span)
 
 
-# --- spans of small objects ------------------------------------------------------------------------
-
 def _take_objects(t, span, tc, most):
     """0x518ec30: up to `most` objects off a span's raw free list, relinked under the cache's key.
     Returns (count, first link, last object)."""
@@ -565,8 +560,6 @@ def _release(t, heap, tc, chain):
     _unlock(t, heap + 0x30)
 
 
-# --- the thread cache ------------------------------------------------------------------------------
-
 def _large(t, tc, size):
     """0x5189fc8: whole pages from the heap under its lock."""
     if size >= t.u64(tc + 0x48) >> 2:
@@ -682,8 +675,6 @@ def _tc_free(t, tc, p):
     t.put(tc + 0x58, 4, best)
     return 0
 
-
-# --- making a thread's cache ----------------------------------------------------------------------
 
 RANDOM_LOCK = 0x5B13248         # SDK data: nn::os::Mutex over the generator below
 RANDOM_READY = 0x5BD9430        # SDK data: u8, bit 0 once the generator is seeded
@@ -863,8 +854,6 @@ def thread_cache_free(m, tc, p, *_):
     return _transaction(m, _tc_free, tc, p)
 
 
-# --- the game's side -------------------------------------------------------------------------------
-
 def _guarded(m):
     """The allocator pair behind the guarded static 0x4740f88; its first construction is not
     reproduced."""
@@ -934,8 +923,6 @@ def counted_free(m, this, p, size, align, *_):
     m.put(this + 0x38, 8, 0 if old < n else old - n)
     return r
 
-
-# --- objects made on the heap ----------------------------------------------------------------------
 
 def _scope_push(t, owner):
     """Push `owner` on the thread's allocator-scope stack (TLS slot [0x4765a30], count +0x80, at most
@@ -1010,3 +997,66 @@ def make_fa19f8(m, owner, pa, pb, *_):
     vtable [0x46e2728] (+0x10, +0x838, +0x888, +0x8e0 at +0, +0x20, +0x28, +0x40), +8 the owner, +0x10
     itself, u32 +0x18 0x80720, +0x710..+0x720 cleared."""
     return _transaction(m, _make_fa19f8, owner, pa, pb)
+
+
+def _allocator_free(m, alloc, block, size):
+    if m.vcall(alloc, 0xF8) & 1 and m.s(m.call(m.main + 0xB4E600) + 0x12C8, 4) >= 1:
+        m.call_void(m.main + 0xB48FE8, alloc, block, size, 4)
+    else:
+        m.vcall_void(alloc, 0x18, block, size, 4)
+
+
+def _dealloc(m, alloc, block, size, align):
+    """Give a block back to an allocator: 0xb48fe8 when vf 0xf8 defers frees and the thread block's
+    +0x12c8 is positive, else vf 0x18. Returns the callee's result."""
+    if m.vcall(alloc, 0xF8) & 1 and m.s(m.call(m.main + 0xB4E600) + 0x12C8, 4) >= 1:
+        return _tail(m, m.main + 0xB48FE8, alloc, block, size, align)
+    return _vtail(m, alloc, 0x18, block, size, align)
+
+
+# The allocator's size classes between 0x221 and 0xaa0 (the constants compared in 0xee5860).
+_SIZE_CLASSES = (0x240, 0x260, 0x270, 0x280, 0x2A0, 0x2D0, 0x2E0, 0x300, 0x330, 0x360, 0x380, 0x3B0, 0x400,
+                 0x450, 0x490, 0x4C0, 0x550, 0x600, 0x660, 0x6D0, 0x800, 0x990, 0xAA0)
+
+
+@lifted(0xEE5860)
+def size_class(m, size, align, *_):
+    """The allocation size for `size` at alignment `align` (clamped to 0x10..0x1000): rounded up to the
+    alignment, then above 0x1e0 to the first size class the alignment divides, else to a page."""
+    M = 0xFFFFFFFFFFFFFFFF
+    a = align if align < 0x1000 else 0x1000
+    a = a if a > 0x10 else 0x10
+    r = size % a
+    n = ((a - r if r else 0) + size) & M
+    if a == 0x1000 or n < 0x1E1:
+        return n
+    if n == 0x1F0:
+        return 0x200
+    if n < 0x221:
+        return n
+    for c in _SIZE_CLASSES:
+        if n <= c and c % a == 0:
+            return c
+    return ((0x1000 - (n & 0xFFF) if n & 0xFFF else 0) + n) & M
+
+
+@lifted(0xB4E600)
+def thread_block(m, *_):
+    """The calling thread's 0x12d0-byte block in TLS slot u32 0x4759408, allocated zeroed through the
+    allocator at 0x4759430 (vf 0x10) on first use."""
+    if m.u8(m.main + 0x4759410) & 1 == 0:
+        raise UnliftedCall("static 0x4759408 not built")
+    slot = m.u32(m.main + 0x4759408)
+    if m.call(m.main + 0x343DA20, slot) == 0:
+        if m.u8(m.main + 0x4759438) & 1 == 0:
+            raise UnliftedCall("static 0x4759430 not built")
+        block = m.vcall(m.u64(m.main + 0x4759430), 0x10, 0x12D0, 8)
+        m.write(block, bytes(0x12D0))
+        m.call_void(m.main + 0x343DA30, m.u32(m.main + 0x4759408), block)
+    return m.call(m.main + 0x343DA20, m.u32(m.main + 0x4759408))
+
+
+def _need_free(m, alloc, first):
+    if m.u64(first):
+        a = m.u64(alloc)
+        _need(m, m.u64(m.u64(a) + 0xF8)); _need(m, m.u64(m.u64(a) + 0x18)); _need(m, m.main + 0xB48FE8)
