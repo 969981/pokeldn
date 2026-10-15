@@ -1,7 +1,7 @@
 """Fainting: marking a battler fainted, the faint pass after an action and the raid's case of it."""
 
 from pokeldn.sv.battle.engine.actions import _standing_by_speed
-from pokeldn.sv.battle.engine.calls import M32, _need, _tail
+from pokeldn.sv.battle.engine.calls import M32, _need, _tail, _vtail
 from pokeldn.sv.battle.engine.damage import _HIT_KEY, _per_hit
 from pokeldn.sv.battle.engine.statics import _raid_class
 from pokeldn.sv.battle.machine import lifted
@@ -400,3 +400,156 @@ def change_raid_form_queued(m, o, ident, form, flag, *_):
     """0x187fe98([o+0x20], ...), then command 0x57 (ident, form, flag & 1)."""
     m.call_void(m.main + 0x187FE98, m.u64(o + 0x20), ident, form, flag & 1)
     return _tail(m, m.main + 0x119AFF0, m.u64(o + 0x18), 0x57, ident & M32, form & 0xFFFF, flag & 1)
+
+
+@lifted(0x2887C60)
+def replace_fainted(m, o, out, reqp, *_):
+    """For each slot 0..4 of the request block [reqp] whose action count byte +0x230+i is set and whose
+    first action's kind (low 4 bits of +0x70i) is 8: 0x2887d7c(o, i); out[0] = whether they total above 0."""
+    total = 0
+    for i in range(5):
+        req = m.u64(reqp)
+        if m.u8(req + 0x230 + i) and m.u32(req + 0x70 * i) & 0xF == 8:
+            total = (total + m.call(m.main + 0x2887D7C, o, i)) & M32
+    m.put(out, 1, int(0 < total < 0x80000000))
+
+
+@lifted(0x2887D7C)
+def replace_slot(m, o, slot, *_):
+    """0x2887de4 for each member of the slot's party list (0x114e498); the member count."""
+    lst = m.call(m.main + 0x114E498, o, slot)
+    n = m.call(m.main + 0xE7E274, lst) & 0xFF
+    for i in range(n):
+        m.call_void(m.main + 0x2887DE4, o, lst, i)
+    return n
+
+
+@lifted(0x2885C98)
+def init_replace_record(m, r, *_):
+    """The 0x58-byte record of 0x2885cdc: u64 0, u16 +8 0, two 0x24-byte messages at +0xc and +0x30, +0x54 1."""
+    m.put(r, 8, 0); m.put(r + 8, 2, 0)
+    m.call_void(m.main + 0x1146154, r + 0xC)
+    m.call_void(m.main + 0x1146154, r + 0x30)
+    m.put(r + 0x54, 1, 1)
+
+
+@lifted(0x2887DE4)
+def replace_member(m, o, lst, i, *_):
+    """Member i of the list: a record (0x2885c98) with its id (vf 0x98) at +4 and vf 0x110 at +8; when it
+    holds a battle position (0xfe161c), message +0xc gets head 1 and the id; then 0x2885cdc on
+    [[o+0x78]+0xf00]."""
+    b = m.call(m.main + 0x114E4C0, lst, i)
+    with m.frame(0x90) as sp:
+        rec, done = sp + 8, sp + 0x78
+        m.put(done, 1, 0)
+        m.call_void(m.main + 0x2885C98, rec)
+        m.put(rec + 4, 4, m.vcall(b, 0x98))
+        m.put(rec + 8, 2, m.vcall(b, 0x110))
+        pos = m.call(m.main + 0xFE161C, m.call(m.main + 0x13813EC, m.call(m.main + 0x1482534, o)), m.u32(rec + 4))
+        if pos & 0xFF != 0xA:
+            m.call_void(m.main + 0x2843244, rec + 0xC, 2, 1)
+            m.call_void(m.main + 0x284325C, rec + 0xC, m.u32(rec + 4))
+        x = m.call(m.main + 0x2885CD4, m.call(m.main + 0x1361214, o))
+        return _tail(m, m.main + 0x2885CDC, x, done, rec)
+
+
+@lifted(0x2885CDC)
+def replace_if_fainted(m, o, out, rec, *_):
+    """rec from 0x2885c98. When the battler rec+4 is down (vf 0x200): command 3 (0x2887000), its id joins
+    0x113f5b0's list (0x287b4b0), message +0xc dispatched when set (0x114b0ac), and with rec+0x54 and a
+    battle position, the member at that position sent in (0x2887044) and its entry steps run (0x2887088);
+    out[0] = 1. Otherwise message +0x30 dispatched when set."""
+    ident = m.u32(rec + 4)
+    b = m.call(m.main + 0x13813F4, o, ident)
+    if not m.vcall(b, 0x200) & 1:
+        msg = rec + 0x30
+        r = m.call(m.main + 0x17CE3AC, msg)
+        if not r & 1:
+            return r
+        return _tail(m, m.main + 0x114B0AC, m.call(m.main + 0x1143584, o), m.u32(rec), msg)
+    m.call_void(m.main + 0x2887000, m.call(m.main + 0x1143584, o), m.u32(rec + 4), m.u16(rec + 8))
+    x = m.call(m.main + 0x113F5B0, m.call(m.main + 0x1482534, o))
+    m.call_void(m.main + 0x287B4B0, x, m.u32(rec + 4))
+    if m.call(m.main + 0x17CE3AC, rec + 0xC) & 1:
+        m.call_void(m.main + 0x114B0AC, m.call(m.main + 0x1143584, o), m.u32(rec), rec + 0xC)
+    if m.u8(rec + 0x54):
+        pos = m.call(m.main + 0xFE161C, m.call(m.main + 0x13813EC, m.call(m.main + 0x1482534, o)), m.u32(rec + 4))
+        if pos & 0xFF != 0xA:
+            client = m.call(m.main + 0x1589A40, o, m.u32(rec + 4))
+            index = m.call(m.main + 0x2002A34, m.call(m.main + 0x13813EC, m.call(m.main + 0x1482534, o)), pos & M32)
+            ident = m.call(m.main + 0x2887044, o, client & M32, index & M32, index & M32)
+            m.call_void(m.main + 0x2887088, o, ident & 0xFF)
+    m.put(out, 1, 1)
+
+
+@lifted(0x2887000)
+def heal_and_queue_3(m, c, ident, v, *_):
+    """0x288cde8([c+0x20], ident, v), then command 3 (ident, v as u16)."""
+    m.call_void(m.main + 0x288CDE8, m.u64(c + 0x20), ident, v)
+    return _tail(m, m.main + 0x119AFF0, m.u64(c + 0x18), 3, ident & M32, v & 0xFFFF)
+
+
+@lifted(0x288CDE8)
+def heal_battler(m, o, ident, v, *_):
+    """The battler `ident`'s vf 0x2e8(v), then its vf 0x488 (x1 then holds the method's own address)."""
+    b = m.call(m.main + 0xF21C94, m.u64(m.u64(o + 0x10) + 0x30), ident)
+    m.vcall_void(b, 0x2E8, v & M32)
+    b = m.call(m.main + 0xF21C94, m.u64(m.u64(o + 0x10) + 0x30), ident)
+    f = m.u64(m.u64(b) + 0x488)
+    return _tail(m, f, b, f)
+
+
+@lifted(0x2002A34)
+def index_of_position(m, o, pos, *_):
+    """How many earlier positions the client holding `pos` holds (0x1153868)."""
+    with m.frame(0x20) as sp:
+        m.call_void(m.main + 0x1153868, o, pos, sp + 0xC, sp + 8)
+        return m.u8(sp + 8)
+
+
+@lifted(0x2887044)
+def send_in_of(m, o, client, index, place, *_):
+    """0x11482a0 on [[o+0x78]+0x13c0] with bytes {client, index, place, 1}: the id it answers."""
+    with m.frame(0x20) as sp:
+        m.put(sp + 8, 1, client); m.put(sp + 9, 1, index); m.put(sp + 0xA, 1, place); m.put(sp + 0xB, 1, 1)
+        x = m.call(m.main + 0x1148260, m.call(m.main + 0x1361214, o))
+        m.call_void(m.main + 0x11482A0, x, sp, sp + 8)
+        return m.u32(sp)
+
+
+@lifted(0x2887088)
+def entry_steps_for(m, o, ident, *_):
+    """The entry steps 0x114673c (on [[o+0x78]+0xa0]) for an id set holding `ident`."""
+    with m.frame(0x70) as sp:
+        ids = sp + 8
+        m.call_void(m.main + 0x11466DC, ids)
+        m.call_void(m.main + 0x114E224, ids, ident & 0xFF)
+        m.put(sp + 0x58, 8, ids)
+        x = m.call(m.main + 0x1146734, m.call(m.main + 0x1361214, o))
+        m.call_void(m.main + 0x114673C, x, sp, sp + 0x58)
+
+
+@lifted(0x287B630)
+def in_sent_list(m, o, ident, *_):
+    """Whether any of the 30 u32 at o+0x268 is `ident`."""
+    ident &= M32
+    return int(any(m.u32(o + 0x268 + 4 * k) == ident for k in range(30)))
+
+
+@lifted(0x287B4B0)
+def note_sent(m, o, ident, *_):
+    """Clear `ident`'s byte in the u32-keyed map o+0x2f0 when present, and append it to the list o+0x268
+    (count byte +0x2ea, at most 30) unless 0x287b630 finds it."""
+    with m.frame(0x20) as sp:
+        key = sp + 0x1C
+        m.put(key, 4, ident)
+        if m.call(m.main + 0x287B530, o + 0x2F0, key):
+            m.put(m.call(m.main + 0x1589BC0, o + 0x2F0, key), 1, 0)
+            ident = m.u32(key)
+    if m.call(m.main + 0x287B630, o, ident) & 1:
+        return
+    n = m.u8(o + 0x2EA)
+    if n > 0x1D:
+        return
+    m.put(o + 0x2EA, 1, n + 1)
+    m.put(o + 0x268 + 4 * n, 4, ident)

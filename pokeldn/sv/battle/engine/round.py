@@ -373,6 +373,41 @@ def build_round_message(m, o, out, size, count, *_):
     m.put(req + 0x234, 1, 0); m.put(req + 0x230, 4, 0)
 
 
+@lifted(0x288D734)
+def replace_fainted_of(m, o, req, *_):
+    """0x2887c60 on [[o+0x18]+0x1d80] with the request block `req`; its answer is dropped."""
+    with m.frame(0x10) as sp:
+        m.put(sp + 8, 8, req)
+        m.put(sp, 1, 0)
+        x = m.call(m.main + 0x288D768, m.u64(o + 0x18))
+        m.call_void(m.main + 0x2887C60, x, sp, sp + 8)
+
+
+@lifted(0x1153350)
+def build_replace_message(m, o, out, size, count, *_):
+    """Message kind 35: as kind 37 (0x114c220) with 0x288d734 in place of 0x114c390: the fainted slots'
+    members replaced by the request block of [o+0x40]."""
+    q = m.u64(o + 0x10)
+    m.put(q + 0x68, 8, 0)
+    for i, fmt in enumerate(_ROUND_FORMATS):
+        m.put(m.call(m.main + 0xFAF09C, q, m.main + 0x3C6ABE4 + 4 * i), 1, fmt)
+    buf = o + 0x58
+    m.write(buf, bytes(0x5060))
+    req = m.u64(o + 0x40)
+    m.write(buf, m.read(req, 0x238))
+    m.call_void(m.main + 0x288D734, m.u64(o + 8), req)
+    q = m.u64(o + 0x10)
+    n = m.u32(q + 0x68)
+    m.put(o + 0x290, 4, n)
+    m.write(o + 0x294, m.read(q + 0x70, n))
+    m.put(out, 8, buf); m.put(size, 4, 0x5060)
+    m.put(count, 8, m.u64(count) + 1)
+    req = m.u64(o + 0x40)
+    for off in range(0, 0x230, 0x10):
+        m.put(req + off, 8, 0)
+    m.put(req + 0x234, 1, 0); m.put(req + 0x230, 4, 0)
+
+
 @lifted(0x113C8A0)
 def build_message(m, o, out, size, count, kind, *_):
     """The server's per-kind message builder: *out / *size get the message (0 when none). Kind 21 runs a

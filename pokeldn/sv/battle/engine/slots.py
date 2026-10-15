@@ -823,3 +823,65 @@ def position_of_entry(m, o, client, idx, *_):
         idx = (idx - 5) & M32
         return 9 if idx & 0xFF == 0 else 10
     return 10
+
+
+@lifted(0x1148430)
+def party_member(m, parties, client, i, *_):
+    """Member i of client slot `client` (0..4) in the parties table (0x38 bytes a slot, count +0x58), or 0."""
+    client &= 0xFF; i &= 0xFF
+    if client > 4 or m.u8(parties + 0x38 * client + 0x58) <= i:
+        return 0
+    return m.u64(parties + 0x38 * client + 0x28 + 8 * i)
+
+
+@lifted(0x1148380)
+def party_member_of(m, o, client, i, *_):
+    return _tail(m, m.main + 0x1148430, m.u64(m.u64(o + 0x10) + 0x30), client, i)
+
+
+@lifted(0x11483F4)
+def send_out_id(m, o, a, b, c, *_):
+    """0x114e268 on [[o+0x78]+0x13e0] with bytes {a, b, c}: the id it answers."""
+    with m.frame(0x20) as sp:
+        m.put(sp + 8, 1, a); m.put(sp + 9, 1, b); m.put(sp + 0xA, 1, c)
+        x = m.call(m.main + 0x114E21C, m.call(m.main + 0x1361214, o))
+        m.call_void(m.main + 0x114E268, x, sp, sp + 8)
+        return m.u32(sp)
+
+
+@lifted(0x11483CC)
+def queue_98(m, c, a, b, d, e, *_):
+    return _tail(m, m.main + 0x119AFF0, m.u64(c + 0x18), 0x98, a & 0xFF, b & 0xFF, d & 0xFF, e & 1)
+
+
+@lifted(0x114838C)
+def fire_trigger_of(m, o, kind, v, *_):
+    """Trigger 0x121bdb0 on [0x1361214(o)+0x1d40] with the event {u32 kind, u32 v, zeros}."""
+    with m.frame(0x30) as sp:
+        ev = sp + 0x10
+        m.put(ev + 8, 2, 0); m.put(ev + 0xA, 1, 0); m.put(ev + 0xC, 2, 0)
+        m.put(ev, 4, kind); m.put(ev + 4, 4, v)
+        m.put(sp + 8, 1, 0)
+        x = m.call(m.main + 0x114E520, m.call(m.main + 0x1361214, o))
+        return _tail(m, m.main + 0x121BDB0, x, sp + 8, ev)
+
+
+@lifted(0x11482A0)
+def send_in(m, o, out, args, *_):
+    """Send in entry args[1] of client slot args[0] at place args[2] (0x11483f4; *out = the id), command
+    0x98 with args[0..3], triggers 0xc, 0x16 and 0x20 for the id; when flag 0 of 0x113df30's object is
+    set and the member exists, 0x1148470 with it and 0x12."""
+    a0, a1, a2 = m.u8(args), m.u8(args + 1), m.u8(args + 2)
+    ident = m.call(m.main + 0x11483F4, o, a0, a1, a2) & 0xFF
+    m.put(out, 4, ident)
+    m.call_void(m.main + 0x11483CC, m.call(m.main + 0x1143584, o), m.u8(args), m.u8(args + 1),
+                m.u8(args + 2), m.u8(args + 3))
+    for kind in (0xC, 0x16, 0x20):
+        m.call_void(m.main + 0x114838C, o, kind, m.u32(out))
+    x = m.call(m.main + 0x113DF30, m.call(m.main + 0x1482534, o))
+    if not m.call(m.main + 0x147992C, x, 0) & 1:
+        return
+    b = m.call(m.main + 0x1148380, o, m.u8(args), m.u8(args + 1))
+    if not b:
+        return
+    return _tail(m, m.main + 0x1148470, m.call(m.main + 0x1143584, o), b, 0x12)

@@ -1236,6 +1236,30 @@ def count_and_queue_4c(m, c, a, b, *_):
     return _tail(m, m.main + 0x119AFF0, m.u64(c + 0x18), 0x4C, a & 0xFF, b & M32)
 
 
+@lifted(0x2888AD0)
+def queue_99(m, c, v, *_):
+    return _tail(m, m.main + 0x119AFF0, m.u64(c + 0x18), 0x99, v & 0xFF)
+
+
+@lifted(0x2888AE0)
+def weather_event_none(m, o, *_):
+    """0x114bf24 on 0x114bf1c([o+0x78]) with kind 0."""
+    with m.frame(0x10) as sp:
+        m.put(sp + 8, 1, 0)
+        x = m.call(m.main + 0x114BF1C, m.u64(o + 0x78))
+        return _tail(m, m.main + 0x114BF24, x, sp, sp + 8)
+
+
+@lifted(0x2888B10)
+def weather_request_of(m, o, kind, *_):
+    """0x1149ed0 on 0x113e064([o+0x78]) with the request {kind, 0xff, 0xff, u32 0, u16 0 at +8}."""
+    with m.frame(0x20) as sp:
+        req = sp + 0x10
+        m.put(req + 8, 2, 0); m.put(req, 1, kind); m.put(req + 1, 2, 0xFFFF); m.put(req + 4, 4, 0)
+        x = m.call(m.main + 0x113E064, m.u64(o + 0x78))
+        return _tail(m, m.main + 0x1149ED0, x, sp + 8, req)
+
+
 def _reserve_c9(m, o):
     """Reserve a group 0xcf (placeholder command 0xc9) in [[o+0x28]+8] and note it in the current
     0xc4-byte entry of [[o+0x40]+8] (index +0x938) at +0xa."""

@@ -379,6 +379,37 @@ def end_of_turn_residual(m, o, out, *_):
     m.put(out, 1, m.call(m.main + 0x1143030, o) & 1)
 
 
+@lifted(0x1150144)
+def timer_expired(m, o, kind, *_):
+    """The timer of 0x114309c ran out with `kind`: command 0x99 (kind), the timer reset with command 0x54
+    (0x2883060), 0x114beb0(0), 0x2888ae0; when setup byte 0x113e058 is set, 0x2888b10 with it."""
+    m.call_void(m.main + 0x2888AD0, m.call(m.main + 0x1143584, o), kind & M32)
+    m.call_void(m.main + 0x2883060, m.call(m.main + 0x1143584, o))
+    m.call_void(m.main + 0x114BEB0, m.call(m.main + 0x1143584, o), 0)
+    m.call_void(m.main + 0x2888AE0, o)
+    v = m.call(m.main + 0x113E058, m.call(m.main + 0x114E480, o))
+    if v & 0xFF:
+        return _tail(m, m.main + 0x2888B10, o, v)
+    return v
+
+
+@lifted(0x2883060)
+def reset_timer_queue_54(m, c, *_):
+    m.call_void(m.main + 0x288CFE0, m.u64(c + 0x20))
+    return _tail(m, m.main + 0x119AFF0, m.u64(c + 0x18), 0x54)
+
+
+@lifted(0x288CFE0)
+def reset_running_timer(m, o, *_):
+    """0x288cfec on the timer [[o+0x10]+0x70]."""
+    return _tail(m, m.main + 0x288CFEC, m.u64(m.u64(o + 0x10) + 0x70))
+
+
+@lifted(0x288CFEC)
+def stop_timer(m, t, *_):
+    m.put(t + 0x19, 1, 0); m.put(t + 8, 4, 0); m.put(t + 0x10, 8, 0)
+
+
 @lifted(0x1142F98)
 def end_of_turn_residual_of(m, o, *_):
     """0x1142fd0 on 0x1142fc8([o+0x78]); its out byte."""

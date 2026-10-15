@@ -389,6 +389,12 @@ def _hash_find_u32(m, table, key):
     return 0
 
 
+@lifted(0x287B530)
+def find_u32_287b530(m, table, key_ptr, *_):
+    """The node holding the u32 at key_ptr, or 0."""
+    return find(m, table, m.u32(key_ptr), 4)
+
+
 @lifted(0x287B8E0)
 def map_at_u32_14(m, table, key_ptr, *_):
     """unordered_map<u32, ...>::at: the value (node+0x14) for the u32 at key_ptr; a missing key throws."""
