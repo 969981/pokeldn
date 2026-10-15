@@ -966,9 +966,27 @@ of the guard to 2 when neither byte 0 nor byte 1 is set.
 A Hex round reads 16838 bytes it did not write: 1496 from the static image, 5372 from the
 command-format map and 2926 from the server object (both made by `0x2d381a4`), 2414 from the
 battlers and their Pokemon (made by `0x2892ac0`), 1756 from the main module family (made by
-`0x2891748`), 2278 from the data tables (personal, growth, moves, flags and id-hash, each a u16 to
-record map at +0x68 into a FlatBuffers file, held in function-local statics) and 576 from the
-round's action blocks.
+`0x2891748`), 2278 from the data tables and 576 from the round's action blocks.
+
+The data tables are romfs files held by function-local statics:
+
+| static | file | object |
+|---|---|---|
+| `0x47420b8` | `avalon/data/personal_array.bin` | map, key species * 10000 + form (u32) |
+| `0x47420d8` | `avalon/data/growTable.bin` | the FlatBuffers root, through vf +0x70 of [T+0x30] |
+| `0x4742568` | `avalon/data/waza_array.bin` | map, key move (u16) |
+| `0x4742548` | `avalon/data/tokusei_array.bin` | map, key ability (u16) |
+| `0x4734e50` | `world/data/battle/battle_item_conversion/battle_item_conversion_array.bin` | array |
+
+A map is a libc++ `unordered_map` at +0x68: buckets +0x68, bucket count +0x70 (the next prime at
+or above the record count), first node +0x98, size +0xc0, load factor +0xc8 (1.0), default record
++0xd0 (the record for key 0). A node is {next, hash = key, key, record pointer into the loaded
+file}; +0x30 is the file resource (FNV hash +0x48, path +0x50). The item array (filled by
+`0x1821674`) holds 0x18-byte entries from +0x28: u32 index, u32 0, u64 hash, u16 item, 6 zero
+bytes; entry i is file record i, and its hash is the u64 at main `0x3c61260 + 8 * index`. The files
+come out of `arc/data.trpfs` (`tools/switch/trpfs_read.py`; Oodle entries through the game's own
+`OodleLZ_Decompress` at `0xcc8750`), and every byte of them held by 97 halted consoles equals the
+extracted file.
 
 ## Joining
 
