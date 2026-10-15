@@ -404,16 +404,46 @@ reads both (`0.15829`); a retail host draws a new `randSeed` at each start and w
 of n or more) and taken out of the pool, so in the full pool the bounds run 18, 17, 16. The empty
 slots take the draws in slot order (`0.4455`): one empty slot takes the first, wherever it sits.
 
-A partner's record takes three xoroshiro128+ draws from the same `randSeed`, and both partners
-share them: draw 0 is the encryption constant, draw 1 is TID | SID << 16, draw 2 is the PID. IVs are
-31/10/31/31/10/31 (HP Atk Def Spe SpA SpD), EVs 252 HP, 128 Def, 128 SpD; nature 0, scale 128, ball
-4, language 2. Species, form, ability slot, moves, Tera type and gender come from the trainer's entry.
-These rules reproduce all ten partner records of five sessions byte for byte, given each one's height
-and weight. Height and weight are not among the first 80 draws, and their source is unknown. The
-battle-start body does not depend on them.
+A partner's record takes five xoroshiro128+ draws from the same `randSeed`, and every partner of a
+battle shares them (`raid_partners.identity`): draw 0 is the encryption constant (redrawn while
+0xffffffff), draw 1 TID | SID << 16, draw 2 the PID (bit 28 flipped when it would be shiny), draw 3
+the height and draw 4 the weight, each 0x30 + next_int(0xa0). Everything else comes from the
+trainer's entry (below), with language 2 and the species' base friendship. From the seed, the stage
+and the level alone, these rules give all ten partner records of five emulated raid battles, 0x148
+bytes each.
+
+The raid start (`0.4455` -> `0.4459` -> `0.4901`) hands each partner's `poke1` table, its level and
+`randSeed` to the Lua binding `f92C18AA6` (`0x1905a10`). It builds a pml InitialSpec whose seed is
+`randSeed` (`0x1905ce0`), converts the table into it (`0x160ffd0`) and creates the PokemonParam
+(`0xdebe4c` -> `0xdec698` -> `0xdef2b8`). A seeded `0xdef2b8` takes every draw from its own
+xoroshiro128+ (`0xdf78bc`, `next_int` `0xdf78d8`), for the fields the spec leaves unset, in this
+order: EC, ID, PID, IVs, ability, gender, nature, height, weight, scale (`0xdf011c`). The binding's
+third argument is true, so the converter turns a height, weight or scale left random into size class
+M (SizeType 3, `0x1611cc4`), which `0xdf011c` draws as 0x30 + next_int(0xa0); a random one would be
+next_int(0x81) + next_int(0x80). Executed under unicorn, `0xdef2b8` reproduces the ten records' EC,
+PID, height and weight with size class M and with no other class.
+
+The converter sets the gender of an entry whose `sex` is 0 before the encryption constant is drawn,
+from that unset field: female when the species' percent female is at least (2^64 - 1) mod 100 = 15,
+male below 15 and at 50 (where the binding's fourth argument, 0, decides); a one-gender or genderless
+species keeps its own (`0x1611d1c`). Growlithe and Arcanine are female, Magnemite, Magneton and
+Bronzong genderless, the other partners male. A `gemType` of 0 leaves the Tera type to a
+per-species table `0xe78418` reads, keyed by species x 10000 + form; Haxorus takes Dragon and
+Clodsire Ground.
 
 The u32 at 0x3e0 picks the pool, the data table field `difficulty_0`*N+1* (`0.7797`), its trainers
-and their Pokemon (the table below): 0 and 1 the first 16 trainers, 2 all 18, 3 and 4 all 18. A
+and their Pokemon (the table below): 0 and 1 the first 16 trainers, 2 all 18, 3 and 4 all 18. The
+pools are the RomFS tables `world/data/raid/raid_trainer_01` (16 rows, stages 0 and 1), `_02` (18,
+stage 2) and `_03` (18, stages 3 and 4). A row holds `raidTrainerInfo`, the trainer id
+`raid_assist_NPC_1` to `_52`, `npcPresetIndex` (the row's index, which `0.4459` passes to the
+trainer's model) and `nameTextLabel` (`TRNAME_RAID_ASSIST_01` for row 0 onwards in every pool). The
+trainer's one Pokemon is `poke1` of its entry in `world/data/trainer/trdata/trdata_array`, a
+`PokeDataBattle`: species, form, level 16, 40 or 80, `tokusei` 2 to 4 (ability slot 1, 2 or hidden),
+three moves, `gemType` (2 + the Tera type), IVs 31/10/31/31/10/31 (HP Atk Def Spe SpA SpD), EVs 252
+HP, 128 Def, 128 SpD, Hardy, Poke Ball, not shiny, `sex` 0, scale 128 and no held item.
+`raid_trainer_04` to `_07` list field trainers (`area04_trainer_*`, `area05_trainer_*`); what reads
+them is unknown. `scripts/gen_sv_partner_data.py` decodes the pools into
+`pokeldn/sv/data/raid_partners.json` (`raid_partners.game_pool`). A
 partner's Pokemon is built at level int(0.8 × the level of the Pokemon in battle slot 0, the
 host's), not its preset's (`0.4455`, `0.4901`), so Serebii's levels 16, 40 and 80 are those of Lv
 20, 50 and 100 hosts. In a pokeldn raid slot 0 holds `--raid-pokemon`. Retail Scarlets showed Eli's
@@ -456,7 +486,9 @@ radio. The host takes the seed's first draws to fill the empty slots left to rig
 misses the start leaves one more empty slot, which a further draw fills. Two retail Scarlets joining
 `--raid-players 2 --raid-partner Eli` showed Eli's Gardevoir in the one empty slot, the fourth.
 
-The pool, in draw-index order, from Serebii's Tera Raid Battle partners page:
+The pool, in draw-index order. The game's tables give the species, abilities and moves Serebii's Tera
+Raid Battle partners page lists, and Henry's Tera type is Steel in every pool where Serebii says
+random:
 
 | # | trainer | 0x3e0 0, 1 | 2 | 3, 4 |
 |---|---|---|---|---|

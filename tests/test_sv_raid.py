@@ -188,6 +188,33 @@ def test_partners_take_four_fifths_of_the_host_pokemon_s_level_whatever_the_stag
     assert [raid_partners.level_for(host) for host in (20, 50, 100, 37, 12)] == [16, 40, 80, 29, 9]
 
 
+# Partner seed, then the encryption constant, TID, SID, PID, height and weight both partners' records
+# held in an emulated Scarlet 4.0.0's memory during five raid battles (docs/sv_raid.md, Partners).
+PARTNER_RECORDS = [
+    (0xB040669FFB23783B, 0x1DC0E296, 20321, 19657, 0xAB3F81C5, 106, 198),
+    (0x89F4C84C70AD570C, 0x934AC167, 61641, 52925, 0x7BB08914, 88, 136),
+    (0x8AF9920EC9C3F0CA, 0xEC615B25, 53888, 50857, 0x86C6240B, 110, 71),
+    (0xAB3BCF8D691DC958, 0x8BBB33B3, 30677, 58200, 0x4BA16A7D, 151, 195),
+    (0xC39985CC37F43B70, 0x5A91A5CB, 24528, 23528, 0x76D0FABB, 87, 172)]
+
+
+@pytest.mark.parametrize("record", PARTNER_RECORDS)
+def test_a_partner_seed_gives_the_identity_and_size_a_scarlet_gave_its_partners(record):
+    assert raid_partners.identity(record[0]) == record[1:]
+
+
+def test_the_partner_table_is_the_game_s_raid_trainer_tables():
+    """raid_partners.json is the game's raid_trainer_01..03 and trdata entries; Serebii's text agrees
+    with it, with Steel for Henry, and Dylan and Luke take their species' default Tera type."""
+    for stage in range(len(raid_partners.LEVELS)):
+        game, ours = raid_partners.game_pool(stage), raid_partners.pool(stage)
+        assert [g["species"] for g in game] == [p.species for p in ours]
+        assert {g["level"] for g in game} == {raid_partners.LEVELS[stage]}
+        assert [raid_encounter.TERA_TYPES[g["tera"]] if g["tera"] is not None else p.trainer
+                for g, p in zip(game, ours)] == [p.trainer if p.trainer in ("Dylan", "Luke") and stage > 2
+                                                  else p.tera for p in ours]
+
+
 def test_a_partner_seed_draws_the_trainers_asked_for_in_slot_order():
     for names in ([], ["Luke"], ["Dylan", "Luke"], ["ava", " Eli "]):
         wanted = [raid_partners.trainer(name) for name in names]
