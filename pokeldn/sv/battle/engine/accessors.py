@@ -401,7 +401,6 @@ def f_f7bb74(m, o, *_): return m.u(o + 0x30, 2)
 def f_fa01f0(m, o, *_): return m.u(o + 0x1b0, 8)
 
 
-
 @lifted(0x801224)
 def f_801224(m, *_): return 0x3b886bc
 
@@ -556,4 +555,3 @@ def f_2d3eb10(m, o, *_): return m.u(o + 0x6f2, 2)
 
 @lifted(0x2D3EB98)
 def f_2d3eb98(m, o, *_): return m.u(o + 0x3c1, 1)
-
