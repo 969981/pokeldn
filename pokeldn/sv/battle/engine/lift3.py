@@ -4311,20 +4311,6 @@ def collect_target_flags(m, o, _x, r, *_):
         lst = m.u64(r + 0x10)
 
 
-def _mark_needs_node(m, o, user):
-    """Refuse up front when 0x157bf90 would allocate a node for the user (the allocator may refuse after
-    this function has written)."""
-    from pokeldn.sv.battle.engine.containers import find
-    try:
-        x = m.u64(m.call(m.main + 0x1143584, o) + 0x20)
-        table = m.u64(m.u64(x + 0x10) + 0x170) + 8
-        found = find(m, table, m.vcall(user, 0x98) & M32, 4)
-    except Exception:       # a replay maps only the pages the native run touched
-        found = 0
-    if not found:
-        raise UnliftedCall("0x157bf90 would insert into its u32 map")
-
-
 @lifted(0x157BA2C)
 def drop_immune_targets(m, o, _x, r, *_):
     """r = (user, move, lst, end, byte): drop each target that neither 0x157d2e4 nor 0x157ef78 keeps
@@ -4333,8 +4319,6 @@ def drop_immune_targets(m, o, _x, r, *_):
     lst = m.u64(r + 0x10)
     if not m.u8(lst + 0xA6) or (m.u8(lst + 0xA7) == 1 and m.u64(lst) == m.u64(r)):
         return
-    if m.u64(r + 0x18):
-        _mark_needs_node(m, o, m.u64(r))
     with m.frame(0x10) as flag:
         for t in _walk_pre(m, m.u64(r + 0x10)):
             user, mv = m.u64(r), m.u64(r + 8)
@@ -6405,7 +6389,6 @@ def filter_targets(m, o, out, r, *_):
     0x15804d0 / 0x157e9fc / 0x157ba2c by move kind (field 3), the kind-9 speed check (texts 0x4a / 0x49,
     0x282e5d8), and the kind-0x3d1 redirection pass (0x282d99c). An emptied list ends the move: 0x157a95c
     or 0x15800cc, then 0x157fd40 and out = 1."""
-    _mark_needs_node(m, o, m.u64(r + 0x10))      # 0x157ba2c's insert, reached after this function writes
     m.put(out, 1, 0)
     lst = m.u64(r + 0x18)
     tab = m.u64(m.u64(o + 0x10) + 0xF0)
