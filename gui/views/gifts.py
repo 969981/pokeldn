@@ -262,7 +262,24 @@ class GiftBuilder:
                        "the community's cards of the gifts Pokemon HOME gave. Each one passed the game's own card "
                        "check.", 12, t.MUTED)
         listing = ft.Container(ft.Column([tiles], scroll=ft.ScrollMode.AUTO), height=440)
-        return ft.Column([intro, search, groups, count, listing], spacing=10)
+        return ft.Column([intro, search, groups, count, listing, self._event_card_id()], spacing=10)
+
+    def _event_card_id(self) -> ft.Control:
+        """The chosen card's id: a save takes a once-only card once per id, so cards sharing one need
+        their own [docs/swsh_gift.md, Cards that share an id]."""
+        key, official = self.value["event"], self.module.OFFICIAL
+        ids = self.value["event_ids"]
+        shown = ids.get(key, official.card_id(official.by_key()[key]["record"]))
+
+        def changed(e):
+            ids[key] = _number(e.control.value)
+            self.commit()
+
+        box = t.field(value=str(shown), mono=True, width=96, digits=True, on_change=changed)
+        return ft.Row([t.labeled_control("Card id", box),
+                       t.text("Change it to receive a card that shares its id with one the save already took.",
+                              12, t.MUTED, expand=True)], spacing=10,
+                      vertical_alignment=ft.CrossAxisAlignment.END)
 
     def _event_tile(self, card) -> ft.Control:
         raw = card["record"]
@@ -706,10 +723,18 @@ class GiftBuilder:
         elif mode == "save":
             when, lines = self.save_summary()
         elif mode == "event":
-            record = self.module.OFFICIAL.by_key()[self.value["event"]]["record"]
-            when, lines = self.module.OFFICIAL.describe(record, self.name)
-            if self.module.OFFICIAL.from_home(record):
-                warnings = [f"{pokemon.HOME_TRACKER_WARNINGS['empty']}. {self.module.OFFICIAL.HOME_WHY}"]
+            official, key = self.module.OFFICIAL, self.value["event"]
+            try:
+                record = official.record(key, self.value["event_ids"].get(key))
+            except ValueError:
+                record = None                   # the status line says what to fix
+            when, lines = official.describe(record, self.name) if record else ("", [])
+            if record and official.from_home(record):
+                warnings = [f"{pokemon.HOME_TRACKER_WARNINGS['empty']}. {official.HOME_WHY}"]
+            if record and (shared := official.sharing(key, official.card_id(record))):
+                names = ", ".join(shared[:3]) + (f" and {len(shared) - 3} more" if len(shared) > 3 else "")
+                warnings.append(f"Shares card id {official.card_id(record)} with {names}. A save that took one "
+                                "of them refuses this card: give it another card id.")
         else:
             when, lines = "", []
         problem = gift_builder.problem(self.tool, self.value)
