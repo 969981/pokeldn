@@ -1,18 +1,20 @@
-# pokeldn 0.24.1
+# pokeldn 0.25.0
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- The desktop header blends into the navigation rail, with a continuous background and no
-  visible app-name text. The checkerboard stays inside the workspace.
-- macOS keeps its native window buttons. Windows and Linux use close, minimize and maximize
-  buttons in the integrated header. Empty header space supports dragging and double-clicking
-  to maximize or restore.
+- Sword/Shield Mystery Gift: in official events mode, each card takes a card id of its own.
+  Official cards that share an id (the 2022 shiny Galarian birds, the Ball Guy tees, the Pokemon
+  Center Eevee, Pikachu and Milcery cards) can now all be received on one save; the app names
+  the cards that share the chosen id.
+- A board that stops answering over USB now ends the session within 3 s with a message asking
+  to unplug and reconnect it, instead of hanging.
 
-The radio firmware stays at 1.6.1 (its only change concerns the sniffer tool) and the controller
-firmware at 1.3.0; no board needs an update.
+The radio firmware moves to 1.6.2: the ESP32-S3 build gains the USB watch the C6 already had.
+Updating is recommended for S3 boards; other boards need no update. The controller firmware stays
+at 1.3.0.
 
 pokeldn is an unofficial fan project, not affiliated with Nintendo or The Pokemon Company. It is not
 meant for commercial or promotional use; see the License section of the README.
