@@ -880,9 +880,10 @@ Many round functions inline the step instead of calling these.
 
 ### Actions
 
-A round's action header is five 0x70-byte blocks, one per client slot, each up to seven 16-byte
-actions (a u64 action word, then the actor's battler id as a u64), and at +0x230 a byte per slot
-counting the actions in its block. The server decodes them in slot order into 0x8c-byte action
+A round's action header (the request block, 0x238 bytes) is five 0x70-byte blocks, one per client
+slot, each up to seven 16-byte actions (a u64 action word, a u32 actor battler id, 4 bytes no code
+writes), and at +0x230 a byte per slot counting the actions in its block. The server decodes them in
+slot order into 0x8c-byte action
 entries (`0x1145e40`, decoder `0x11461b4`). The action word's low four bits are the kind:
 
 | kind | entry kind | fields of the word |
@@ -900,6 +901,30 @@ entries (`0x1145e40`, decoder `0x11461b4`). The action word's low four bits are 
 
 A word whose bits 0..3 are 3 and bit 12 is set is skipped, as are kinds 0, 8, 14 and 15. A recorded
 player action `41 67 03 00 ...` is a move (kind 1) at target position 4, move 871 (Torch Song).
+
+Battler ids in a raid: 1 the Pokemon in slot 0, 2 the boss, 3 slot 2, 4 slot 3, 5 slot 4. A station's
+type-0x06 command is 0xe8 bytes: the 0x20-byte header (+0x19 the slot), a count byte at +0x20, then
+(u64 word, u64 actor) pairs from +0x28. It carries the slot's own action and the boss's reply to that
+slot: a guest's command for slot 2 held `move 871 at position 4 by battler 3` and `move 204 at position 1
+by battler 2`. The station chooses the boss's move against its own Pokemon.
+
+The server fills one round's request block per acting slot:
+
+| step | code |
+|---|---|
+| a 0x240-byte block on the poster's stack: every action's word and actor zeroed, the counts zeroed, the kind (0x15) at +0x238 | `0xf6e6a8` in the per-slot reader's step `0xf6df44`; `0xf71d10` for other kinds |
+| the slot's type-6 message (reader +0x30 the store, u32 +0x38 the slot) copied in: count byte cleared, each pair's u64 word and the actor's low u32 appended, the count raised; no bound, a count over 7 runs into the next slot | `0xf702ec` -> `0xf7065c` (key 6, 0xe8-byte messages); key 0x10 goes to `0xf72038` (0x30-byte messages of one action, taken while the slot holds at most six) |
+| the 0x240 bytes posted as a job of type hash `0xae1b39fccfd09053` | `0xf6ffb8`, job class vtable `0x4494198` (constructor `0x17b52a4` copies the 0x240 bytes to job +0x78) |
+| the job copies the block to the server object's +0x210 (the builder's [o+0x40]) | `0x16e4f84` -> `0x113bac0` |
+| the step counter +0x198 raised; a body already received for that step (`0xe63734` over the deque at [[server+0x448]+0x38]) replaces the build; otherwise the builder with kind 0x15 | `0x113bad8` -> `0x113c8a0` |
+
+A round's block therefore holds one slot's actions. The 4 unwritten bytes of each action and bytes
+0x235..0x237 come from the poster's stack and reach the type-0x15 body unchanged; the round reads
+none of them. Each type-0x15 record between two emulated Scarlet 4.0.0 equals, outside those bytes,
+the block built from the type-6 command of its acting slot (10 of 10 records whose command was on the
+wire; the boss's own slot-1 blocks have none). The rounds of four emulated sessions run from their
+actions alone (`pokeldn.sv.battle.engine.requests.run_round`) give the console's 20576-byte bodies
+outside those bytes.
 
 ### The server command queue
 
@@ -1003,8 +1028,8 @@ port builds the game heap (`pokeldn.sv.battle.engine.arena`), the "Application" 
 the server object N then come from the game's own creators (below), with the raid start's setup
 fields from the bootstrap. After that, N's start states run the four build steps, and the builder
 with type 0x11 runs. The battle-start bodies of five sessions (268, 345, 328, 422 and
-268 bytes) equal the console's, and so do nine later rounds' 20576-byte command queues once each
-round is given its 0x238-byte request block. A changed battle seed leaves the start body unchanged
+268 bytes) equal the console's, and so do nine later rounds' 20576-byte bodies, each round built from
+its acting slot's two actions ([Actions](#actions)), outside the request block's unwritten stack bytes. A changed battle seed leaves the start body unchanged
 and changes 123 bytes of a round. Neither heap addresses nor weak-handle ids reach a body: the
 console's ids are 0x1b5xx of generation 3, and the port's are 0..0x58 with all its objects at other
 addresses.
