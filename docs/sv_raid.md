@@ -1052,13 +1052,13 @@ During a round, an empty list is filled from the HP triggers (`0x11425b0`); with
 the actions run in that round (`0x1145be0`). After a round, the result's byte `0xc4a5` (8 when `0xc4a4`
 is set) picks the next step (`0x16e4ff0`, jump table `0x3c61c38`): 0 none, 4 an empty round
 (`0x16e5cac`), 6 the round's list when it holds a shield (`0x16e5ad0`), 7 the battle's end
-(`0x16e56a0`). A raid action (`0x18c92a8`, payload copied by `0x17b5f3c`) runs in four states:
+([The battle's end](#the-battles-end)). A raid action (`0x18c92a8`, payload copied by `0x17b5f3c`) runs in four states:
 
 | state | the server |
 |---|---|
-| 0 | sends message 0x47 to every station; `0x18c9a68` on the battle timer |
+| 0 | sends message 0x47 to every station; pauses the battle timer for reason 0 (`0x18c9a68`) |
 | 1 | waits until every seated slot sent a message of that step (`0xe63380`) |
-| 2 | `0xe63ac4` on the battle timer; a request block whose slot 1 holds the actions (count byte +0x231), sent as a round (0x15) |
+| 2 | a request block whose slot 1 holds the actions (count byte +0x231); the battle timer resumed for reason 0 (`0xe63ac4`); the block sent as a round (0x15) |
 | 3 | the round's result's next step, the list cleared (`0xfaf024`), each slot's 0x47 and its answer 0x48 erased |
 
 A list without a shield starts at state 2. The per-frame machine checks the profile's time triggers on a
@@ -1071,11 +1071,76 @@ Between two emulated Scarlet 4.0.0, a 4-star boss with the profile (3 Sunny Day 
 kind 4 value 0 alone (no 0x47, a 0x51 sent with it), then after a guest's attack 0x47 and kind 1 with kind
 4 value 2, then 0x47 and kind 1 again. The 75 percent action ran inside the slot-0 round that crossed it.
 
+### The battle timer
+
+The battle timer is a 0x28-byte object at the server context's +0x38 (the per-frame machine's and every
+job's `[+0x40]`, which also holds N at +8, the server's module at +0x10 and the server at +0x18):
+
+| offset | field |
+|---|---|
+| +0x00 | u64 start, ns of `nn::os::GetSystemTick`; 0 while paused |
+| +0x08 | u64 ns accumulated before the last pause |
+| +0x10 | u64 the last pause's time |
+| +0x18 | u8 started |
+| +0x19, +0x1a | u8 pause reasons; the timer runs while both are 0 |
+| +0x20 | the limit it was made with |
+
+| event | code |
+|---|---|
+| made, started and at once paused for reason 0, with the battle's first job when the limit N+0x8a is not 0 | `0xf70864`, `0xf70a58` |
+| resumed for reason 0 when Wild::Setup ends (a timer never started starts there) | `0x2a1fbfc`, the steps of `0xe63a6c` |
+| paused for reason 0 from a raid action's message 0x47 until its round | `0x18c9a68`, `0xe63ac4` |
+| read: the limit plus the i16 at `[[module+0x1b0]+8]`, minus the whole seconds run since the start and the whole seconds accumulated; while paused, the limit minus the accumulated seconds; 1 for a zero limit | `0xf91070` |
+
+The per-frame machine checks the time triggers only once the timer has started (+0x18) and with setup
++0x499 bit 2 set (`0xf6d538`). A trigger at P percent of the time fires when 100 x time left / limit, in
+integer division, is P or less: on a 300 s timer the 80 percent trigger fires with 242 s left, after 58 s
+of running time. In the served battle below the timer started when the last station's answer to message
+0x11 reached the server, and the 80 percent action went out 58.1 s later.
+
+### The battle's end
+
+After a round whose result byte is 7 (`0x16e4ff0`), the server runs, in order:
+
+| step | code |
+|---|---|
+| a Pokemon joining at the end: the source `[[N+0x48]+0x138]` asked through its vf 0x90 with {N, module}; the raid's source (vtable `0x4492e58`) answers 0 | `0x16e56a0`, `0x16e59a4`, `0x2a0fb40`; ServerCommandIntrudePokeIn (`0x2017b2c`) on a yes |
+| the result judged and kept in N+0x90 (u32) and N+0x94 (u8) while N+0x90 is 7 (none yet) | `0x16e5120`, `0xe7d58c`, `0xe7d570` |
+| the 0x29 body at server+0x208: u16 N's own slot, u16 the outcome, u8 N+0x94 | `0xe7d4c8`, `0x166882c` |
+| AddExpBattleEnd: a zeroed request block into the server and message 0x25, a round built from it; every seated slot's answer awaited | `0x18826d8` (made by `0x17b5b0c` for request hash `0x23607a0597b3a656`) |
+| the exit message by setup kind +0x30: kind 0 0x29 for outcome 1, 0x2b for 0 or 2, 0x2d for 6; kind 1 0x31, 2 0x33, 3 0x2f; 0x35 for none | `0x1882b14` |
+| ExitBattleEnd: that message, every answer awaited | `0x20185ac` |
+| with setup +0x498 bit 0x400 and message 0x29, RaidCapture: message 0x49, every answer awaited; then the fade-out, which sends nothing | `0x186d680`, `0x1934808`, ExitFadeOut `0x186db48` |
+
+Result byte 8 makes the same AddExpBattleEnd, which goes on through `0x1882e24` instead. The judge
+`0xe7d58c` counts over every seated slot's party, by side (a slot's side by battle mode, table
+`0x3c6a450`: mode 0 (0, 1, 2, 2, 2), mode 1 (0, 1, 0, 1, 2), mode 2 (0, 1, 0, 0, 0)), the able members,
+the members, and with N+0x8c set the slots whose u16 at `[module+0x1b0]+0xa+2 slot` is 0 (`0xe7de94`).
+The first test that decides gives the winning side:
+
+| test | code | N+0x94 |
+|---|---|---|
+| with setup +0x49c bit 1: side 1 while it has an able member, else side 0 | | 0 or 1 |
+| a side with no able member loses; both or neither, undecided | `0xe7d748` | 1 |
+| with N+0x8c and no setup +0x710: the side with fewer empty slots | `0xe7e520` | 2 |
+| setup kinds 2 and 3 only: with no able member on either side, the rule value of `[module+0x110]` | `0xe7d738`, `0xe7ecd8`, `0x2823b34` | 1 |
+| then the side that lost fewer members, the larger HP share, the larger HP | `0xe7f160`, `0x282361c`, `0x28239ac`, `0x2823a5c` | 2 |
+
+The result is 1 when the winning side is N's own slot's (N+0x95), 0 when it is the other, 2 undecided.
+The outcome `0x166882c` (also kept at `[N+0x40]+0x30`) is 1 for setup kind 4, 5 with N+0x9e bit 0, the
+listed slots' verdict when `[[N+0x150]+0x230]` names any (`0x16688c8`), else N+0x90 with 7 read as 1.
+Between two emulated consoles the guest received 0x25 (an empty queue) 40 ms after the round that knocked
+the boss out, 0x29 with the body `00 00 01 00 01 00` once every station answered 0x25, and 0x49 once every
+station answered 0x29.
+
 ### The server's flow
 
-On the console the steps are jobs: ServerRequest (`0x138d178`, message 5 to one slot), ServerCommand
-(`0x16e4f10`, a posted request block as a round, then its result's next step), RaidAction, and the
-battle's end. A per-frame machine (`0xf6d538`) steps five per-slot readers (`0xf6df44`) and the boss's
+On the console the steps are jobs: Wild::Setup first, ServerRequest (`0x138d178`, message 5 to one
+slot), ServerCommand (`0x16e4f10`, a posted request block as a round, then its result's next step),
+RaidAction, and the battle's end. Wild::Setup (`0x2a1f54c`, eleven states, jump table `0x3c61c1e`) sends
+message 1, waits for every slot's answer, sends 0x11 (setup kind 4 takes `0x2017ba4` instead), waits for
+every answer, clears what each seated slot sent (`0xe0f5f8`), sends message 3 when the 0x11 result byte is
+1 (then 0x13 after its answers), erases each seated slot's 3 and 4, and starts the battle timer. A per-frame machine (`0xf6d538`) steps five per-slot readers (`0xf6df44`) and the boss's
 list. A reader for a player's slot on the server's side:
 
 | reader state | when | then |
@@ -1093,14 +1158,17 @@ back was not located.
 
 `pokeldn.sv.battle.engine.server.Server` runs this flow over a session the engine built, with the
 lifted steps above; the job scheduler, the per-frame machine and the readers' objects are stand-ins.
-From the emulated host's own bootstrap (message 0x2f in the capture) and the stations' messages the
-capture holds (the guest's frames, the host's local clients' frames as the host relayed them), it sends
-the guest the console's 21 frames up to the last round in the same order: type 1, 0x11, four requests,
-13 rounds of which three are the boss's, two 0x47. Twenty are byte for byte the console's outside the
-header's unwritten bytes and the request blocks' ([Actions](#actions)), with the battle timer started 60 s
-before the boss's timed action; one request carries step 24 where the console's carried 27, because the
-console's local clients answered rounds 22 and 23 before the host relayed those answers. Under unicorn, the game's own code for
-every lifted step leaves the same pages through the whole served battle.
+The host relays every message its server receives, its local clients' and the guest's alike, to the
+guest through one queue (address x 3, one frame every 0.05 to 0.15 s, the guest's own messages
+included), so that queue's order is the order the server read them in: a guest's answer sent 0.5 s
+before a local client's can reach the server after it. From the emulated host's own bootstrap (message
+0x2f in the capture) and the stations' messages in that relayed order, each at its capture time on the
+machine's clock, the server sends the guest all 24 of the console's frames in the same order: type 1,
+0x11, four requests, 13 rounds of which three are the boss's, two 0x47, then 0x25, 0x29 and 0x49. Every
+one is byte for byte the console's outside the header's unwritten bytes and the request blocks'
+([Actions](#actions)); the boss's timed action fires at the console's frame from the timer's own start.
+Under unicorn, the game's own code for every lifted step leaves the same pages through the whole served
+battle. `tests/test_sv_battle_served.py` serves it from the recorded messages.
 
 ### Reproducing a round
 
@@ -1243,7 +1311,6 @@ the host start; its Pokemon stayed in the battle.
 - The code that drains a server link's deque (`[link+0x48]`) onto the network, and what holds the
   server's per-slot readers back while a job runs.
 - How the per-frame machine's boss list (+0xf8) receives the actions of a timed check (message 0x51).
-- The battle's end on the server (`0x16e56a0`: messages 0x25, 0x29, 0x49).
 - Whether a retail console's reward screen follows the Lua filter for subjects 2 to 4; subjects 1
   and 5 are measured on a retail guest, the rest on an emulated one.
 - Whether the five-star catch-once records go in the save's list as the seven-star ones do.

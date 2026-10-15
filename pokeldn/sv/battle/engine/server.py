@@ -483,6 +483,29 @@ def erase_at(m, d, _block, it, *_):
         m.put(d + 0x10, 8, m.u64(d + 0x10) - 8)
 
 
+@lifted(0xE0F5F8)
+def clear(m, d, *_):
+    """libc++ deque<T*>::clear at d (map +0..+0x18, start +0x40, size +0x48, block allocator +0x50): every
+    element released in order, size 0, blocks freed from the front while three or more remain, start then
+    0x100 with one block left and 0x200 with two."""
+    begin, end = m.u64(d + 8), m.u64(d + 0x10)
+    if end != begin:
+        start, size = m.u64(d + 0x40), m.u64(d + 0x48)
+        for i in range(start, start + size):
+            slot = m.u64(begin + 8 * (i >> 9)) + 8 * (i & 0x1FF)
+            if m.u64(slot):
+                with m.frame(0x10) as h:
+                    m.put(h, 8, m.u64(slot))
+                    _release(m, h)
+    m.put(d + 0x48, 8, 0)
+    while (m.u64(d + 0x10) - m.u64(d + 8)) >> 3 >= 3:
+        _free_block(m, m.u64(d + 0x50), m.u64(m.u64(d + 8)))
+        m.put(d + 8, 8, m.u64(d + 8) + 8)
+    n = (m.u64(d + 0x10) - m.u64(d + 8)) >> 3
+    if n in (1, 2):
+        m.put(d + 0x40, 8, 0x100 * n)
+
+
 @lifted(0xF6FD7C)
 def erase_type(m, q, key, *_):
     """The first message of type `key` (u32) erased from q's deque (0x131be1c)."""
@@ -582,6 +605,62 @@ def time_left(m, timer, limit, offset, *_):
     return (limit + offset - sec(s((now - m.u64(timer)) & 0xFFFFFFFFFFFFFFFF)) - sec(acc)) & 0xFFFFFFFFFFFFFFFF
 
 
+def _now(m):
+    return m.call(m.main + 0x343D5B0, m.call(m.main + 0x343C280))
+
+
+@lifted(0xF70A58)
+def create_timer(m, timer, limit, *_):
+    """A battle timer: zeroed, `limit` at +0x20, started (+0x18) and at once paused for reason 0 (0x18c9a68's
+    steps)."""
+    m.put(timer + 8, 8, 0); m.put(timer + 0x10, 8, 0); m.put(timer, 8, 0)
+    m.put(timer + 0x20, 8, limit)
+    m.put(timer + 0x18, 1, 0)
+    m.put(timer, 8, _now(m))
+    m.put(timer + 0x18, 1, 1)
+    if not m.u8(timer + 0x19) and not m.u8(timer + 0x1A):
+        now = _now(m)
+        acc = (now - m.u64(timer) + m.u64(timer + 8)) & 0xFFFFFFFFFFFFFFFF
+        m.put(timer, 8, 0)
+        m.put(timer + 8, 8, acc); m.put(timer + 0x10, 8, now)
+    m.put(timer + 0x19, 1, 1)
+
+
+@lifted(0x18C9A68)
+def pause_timer(m, timer, reason, *_):
+    """Pause for `reason` (byte +0x19 + reason): a running timer adds now - start (+0) to its accumulated ns
+    (+8), keeps the pause time (+0x10) and clears its start."""
+    if not m.u8(timer + 0x19) and not m.u8(timer + 0x1A):
+        now = _now(m)
+        acc = (now - m.u64(timer) + m.u64(timer + 8)) & 0xFFFFFFFFFFFFFFFF
+        m.put(timer, 8, 0)
+        m.put(timer + 8, 8, acc); m.put(timer + 0x10, 8, now)
+    m.put(timer + 0x19 + (reason & 0xFF), 1, 1)
+
+
+@lifted(0xE63AC4)
+def resume_timer(m, timer, reason, *_):
+    """A paused timer's `reason` cleared; with no reason left it runs again from now (+0), pause time 0."""
+    if not m.u8(timer + 0x19) and not m.u8(timer + 0x1A):
+        return
+    m.put(timer + 0x19 + (reason & 0xFF), 1, 0)
+    if m.u8(timer + 0x19) or m.u8(timer + 0x1A):
+        return
+    m.put(timer, 8, _now(m))
+    m.put(timer + 0x10, 8, 0)
+
+
+@lifted(0xE63A6C)
+def start_timer(m, timer, reason, *_):
+    """A timer never started (+0x18) starts now; a paused one resumes for `reason` (0xe63ac4)."""
+    if not m.u8(timer + 0x18):
+        m.put(timer, 8, _now(m))
+        m.put(timer + 0x18, 1, 1)
+        return
+    if m.u8(timer + 0x19) or m.u8(timer + 0x1A):
+        return _tail(m, m.main + 0xE63AC4, timer, reason)
+
+
 # --- the server's request flow ----------------------------------------------------------------------
 # The console runs it as jobs of a scheduler and a per-frame state machine (0xf6d538) over five per-slot
 # readers (0xf6df44); neither exists in a session built without the battle scene. Server reproduces their
@@ -605,9 +684,9 @@ class Server:
         self.jobs = []
         self.ended = False
         self.timed = True               # sm +0x118: the timed check armed
-        self.timer = None
         self.seen = {s: 0 for s in range(5)}
         self.log = []
+        self.origin = None              # (seconds, ticks) when `at` was first given
         alloc = m.u64(self.c + 8)
         self.boss = m.vcall(alloc, 0x10, 0x80, 8)           # sm +0xf8: the boss's action list
         m.write(self.boss, m.read(self.round_boss, 0x80))
@@ -618,6 +697,20 @@ class Server:
             m.write(r, bytes(0x40))
             m.put(r + 0x30, 8, self.c)
             m.put(r + 0x38, 4, s)
+        # the jobs' context stand-in: N +8, the server's module [server+0x38] +0x10, the server +0x18, the
+        # battle timer +0x38, made as 0xf70864 makes it (0xf70a58, started and paused) for a nonzero limit
+        self.ctx = m.vcall(alloc, 0x10, 0x40, 8)
+        m.write(self.ctx, bytes(0x40))
+        m.put(self.ctx + 8, 8, n); m.put(self.ctx + 0x10, 8, m.u64(self.c + 0x38)); m.put(self.ctx + 0x18, 8, self.c)
+        self.timer = 0
+        if m.u16(n + 0x8A):
+            self.timer = m.vcall(alloc, 0x10, 0x28, 8)
+            m.write(self.timer, bytes(0x28))
+            m.call_void(m.main + 0xF70A58, self.timer, m.u16(n + 0x8A))
+        m.put(self.ctx + 0x38, 8, self.timer)
+        self.job = m.vcall(alloc, 0x10, 0x98, 8)           # a job stand-in: its context at +0x40
+        m.write(self.job, bytes(0x98))
+        m.put(self.job + 0x40, 8, self.ctx)
 
     # --- in and out --------------------------------------------------------------------------------
 
@@ -658,27 +751,74 @@ class Server:
         m = self.m
         return struct.pack("<HIIII", 0x7B, m.u32(m.u64(self.n + 0x38) + 0x2C), 1, slot, len(msg)) + msg
 
-    def clock(self, left):
-        """The battle timer at `left` seconds (a paused stand-in timer, 0xf91070)."""
+    def clock(self, at):
+        """The console's clock at `at` seconds: the machine's tick counter (19.2 MHz) moved forward to it,
+        counted from the first time given."""
         m = self.m
-        if self.timer is None:
-            self.timer = m.vcall(m.u64(self.c + 8), 0x10, 0x20, 8)
-            m.write(self.timer, bytes(0x20))
-            m.put(self.timer + 0x18, 1, 1)
-            m.put(self.timer + 0x19, 1, 1)
-        limit = m.u16(self.n + 0x8A)
-        m.put(self.timer + 8, 8, (limit - left) * 1000000000)
+        if self.origin is None:
+            self.origin = (at, m.ticks)
+        t = self.origin[1] + int(round((at - self.origin[0]) * 19200000))
+        if t > m.ticks:
+            m.ticks = t
 
-    def handle(self, messages, left=None, stations=(2,)):
-        """Serve: the battle timer at `left` seconds (when given), each (slot, message) received in turn
-        with the flow run after it; returns the frames queued for each slot in `stations`."""
-        if left is not None:
-            self.clock(left)
+    def handle(self, messages, at=None, stations=(2,)):
+        """Serve: the clock at `at` seconds (when given), each (slot, message) received in turn with the
+        flow run after it; returns the frames queued for each slot in `stations`."""
+        if at is not None:
+            self.clock(at)
         self.run()
         for slot, raw in messages:
             self.receive(slot, raw)
             self.run()
         return {s: [self.frame(s, msg) for msg in self.sent(s)] for s in stations}
+
+    def setup(self):
+        """Wild::Setup (0x2a1f54c) as the battle's first job: message 1, then 0x11 once every slot
+        answered; when every slot answered 0x11, what each seated slot sent cleared (0xe0f5f8); message 3
+        when the 0x11 result is 1 (not lifted); then each seated slot's 3 and 4 erased and the battle timer
+        started (0xe63a6c), the end of the job."""
+        job = {"state": 0}
+        self.jobs.append(lambda: self._setup(job))
+
+    def _setup(self, job):
+        m = self.m
+        while True:
+            st = job["state"]
+            if st in (0, 3):
+                job["result"], job["step"] = self._send(1 if st == 0 else 0x11)[:2]
+            elif st in (1, 4):
+                if not all(m.call(m.main + 0xE63380, self.c, job["step"], s) & 1 for s in range(5)):
+                    return "wait"
+                if st == 4:
+                    for s in range(5):
+                        if not _seated(m, self.c, s):
+                            continue
+                        with m.frame(0x10) as f:
+                            m.call_sret(m.main + 0xE634C8, f, self.c, s)
+                            m.call_void(m.main + 0xE0F5F8, m.u64(f) + 0x40)
+                            if m.u64(f):
+                                _release(m, f)
+                    if job["result"] == 1:
+                        raise UnliftedCall("0x2a20094: Wild::Setup's message 3")
+                    job["state"] = 10
+                    continue
+            elif st == 2:
+                if m.u32(m.u64(self.n + 0x38) + 0x30) == 4:
+                    raise UnliftedCall("0x2017ba4: Wild::Setup for setup kind 4")
+            else:
+                for s in range(5):
+                    if not _seated(m, self.c, s):
+                        continue
+                    for getter, k in ((0xF6F324, 3), (0xE634C8, 4)):
+                        with m.frame(0x10) as f:
+                            m.call_sret(m.main + getter, f, self.c, s)
+                            if m.u64(f):
+                                m.call_void(m.main + 0xF6FD7C, m.u64(f), k)
+                                _release(m, f)
+                if self.timer:
+                    m.call_void(m.main + 0xE63A6C, self.timer, 0)
+                return
+            job["state"] += 1
 
     # --- the flow ----------------------------------------------------------------------------------
 
@@ -719,7 +859,8 @@ class Server:
             self._post_raid_action(self.boss)
             self.timed = True
             return True
-        if self.timed and self.timer is not None and m.u32(self.boss + 0x7C) == 0 and self._timed_check():
+        if self.timed and self.timer and m.u8(self.timer + 0x18) and m.u32(self.boss + 0x7C) == 0 \
+                and self._timed_check():
             return True
         moved = False
         for s in range(5):
@@ -812,10 +953,66 @@ class Server:
             if m.call(m.main + 0x1142804, obj) & 1 and m.u8(obj + 0x5C) == 1:
                 self._post_raid_action(obj)
             return
-        if k == 7:                              # the battle's end: capture and results (0x16e56a0)
-            self.ended = True
+        if k == 7:
+            if m.call(m.main + 0x16E56A0, self.job) & 1:
+                return
+            m.call_void(m.main + 0x16E5120, self.job)
+            m.call_void(m.main + 0xE7D4C8, m.call(m.main + 0x16E4FE4, self.job))
+            self._then(self._exp_end, {"kind": 7})
             return
         raise UnliftedCall(f"0x16e4ff0 case {k}")
+
+    # --- the battle's end (docs/sv_raid.md, The battle's end): each job sends its message to every station
+    # and waits until every seated slot sent one of that step (0xe63380) ------------------------------------
+
+    def _then(self, fn, job):
+        job["state"] = 0
+        self.jobs.append(lambda: fn(job))
+
+    def _send_and_wait(self, job, kind):
+        """States 0 and 1 of the end jobs: the message sent, then the wait for every slot's answer; True once
+        every slot answered."""
+        m = self.m
+        if job["state"] == 0:
+            job["step"] = self._send(kind)[1]
+            job["state"] = 1
+        if not all(m.call(m.main + 0xE63380, self.c, job["step"], s) & 1 for s in range(5)):
+            return False
+        job["state"] = 2
+        return True
+
+    def _exp_end(self, job):
+        """AddExpBattleEnd (0x18826d8): a zeroed request block into the server (0x113bac0), message 0x25;
+        after the answers, the exit message (0x1882b14, 0x35 for none) for ExitBattleEnd; case 8 goes on
+        through 0x1882e24 instead."""
+        m = self.m
+        if job["state"] == 0:
+            with m.frame(0x240) as b:
+                m.write(b, requests.posted(0))
+                m.call(m.main + 0x113BAC0, self.c, b)
+        if not self._send_and_wait(job, 0x25):
+            return "wait"
+        if job["kind"] == 8:
+            raise UnliftedCall("0x1882e24: the end after case 8")
+        self._then(self._exit_end, {"kind": m.call(m.main + 0x1882B14, self.job) & 0xFFFFFFFF or 0x35})
+
+    def _exit_end(self, job):
+        """ExitBattleEnd (0x20185ac): its message; after the answers (0x186d680), RaidCapture when setup
+        +0x498 holds 0x400 (0xfa9b4c) and the message is 0x29, else the fade-out (0x186d934)."""
+        m = self.m
+        if not self._send_and_wait(job, job["kind"]):
+            return "wait"
+        if m.call(m.main + 0xFA9B4C, m.call(m.main + 0x1397D84, self.job), 0x400) & 1 and job["kind"] == 0x29:
+            self._then(self._capture, {})
+        else:
+            self.ended = True
+
+    def _capture(self, job):
+        """RaidCapture (0x1934808): message 0x49; after the answers the fade-out (0x1934910, 0x186d934),
+        where the server sends nothing more."""
+        if not self._send_and_wait(job, 0x49):
+            return "wait"
+        self.ended = True
 
     def _post_raid_action(self, obj):
         """0x16e5ad0 / 0xf6d8d4: a RaidAction of the list's actions (0x114fb2c), from its state 0 (message
@@ -830,15 +1027,18 @@ class Server:
         self.jobs.append(lambda job=job: self._raid_action(job))
 
     def _raid_action(self, job):
-        """RaidAction (0x18c92a8): 0 message 0x47 to every station; 1 wait until every seated slot sent a
-        message of that step (0xe63380); 2 the slot-1 block of the actions (0xf6fc54, count +0x231), the
-        round to every station; 3 its result's case, the list cleared (0xfaf024), and after a 0x47 every
-        seated slot's 0x47 and 0x48 erased."""
+        """RaidAction (0x18c92a8): 0 message 0x47 to every station, the battle timer paused (0x18c9a68);
+        1 wait until every seated slot sent a message of that step (0xe63380); 2 the slot-1 block of the
+        actions (0xf6fc54, count +0x231), the timer resumed (0xe63ac4), the round to every station; 3 its
+        result's case, the list cleared (0xfaf024), and after a 0x47 every seated slot's 0x47 and 0x48
+        erased."""
         m = self.m
         while True:
             st = job["state"]
             if st == 0:
                 job["step"] = self._send(0x47)[1]
+                if self.timer:
+                    m.call_void(m.main + 0x18C9A68, self.timer, 0)
             elif st == 1:
                 if not all(m.call(m.main + 0xE63380, self.c, job["step"], s) & 1 for s in range(5)):
                     return "wait"
@@ -850,6 +1050,8 @@ class Server:
                         for i in range(job["count"]):
                             m.call(m.main + 0xF6FC54, b + 0x70 + 0x10 * i, a + 0x10 * i)
                     m.put(b + 0x231, 1, job["count"])
+                    if self.timer:
+                        m.call_void(m.main + 0xE63AC4, self.timer, 0)
                     m.call(m.main + 0x113BAC0, self.c, b)
                 r = self._send(0x15)
                 job["result"] = 8 if r[2] else r[0]
