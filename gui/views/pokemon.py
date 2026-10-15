@@ -3,6 +3,7 @@ from pathlib import Path
 
 import flet as ft
 
+from pokeldn import meta
 from pokeldn import pokemon as builder
 from pokeldn.app.command import offers
 from pokeldn.lgpe.session import CODE_PICKER, code_picks
@@ -64,6 +65,8 @@ class PokemonPicker:
             self.result,
             ft.Row([t.secondary_button("Or use a Pokemon file", self._use_file, "file"),
                     t.secondary_button("Import paste", self._paste, "bulletlist"),
+                    *([t.secondary_button("Browse Meta", self._browse_meta, "search")]
+                      if self.game in meta.FORMATS else []),
                     *([t.text("or drop either here", 12, t.FAINT)] if drop.AVAILABLE else [])],
                    spacing=10, wrap=True, vertical_alignment=ft.CrossAxisAlignment.CENTER),
         ], spacing=10), border_radius=12)
@@ -261,8 +264,44 @@ class PokemonPicker:
         if text.strip():
             submit(None)
 
+    def _browse_meta(self, e) -> None:
+        # Imported lazily: the ordinary file and paste paths do not need the dialog module.
+        from gui.views.meta import MetaBrowser
+        MetaBrowser(self.app, self.game, self._use_meta).open()
+
+    def _use_meta(self, build: dict, finished) -> None:
+        """Resolve a source set's alternatives, then accept only a PKHeX-built legal record."""
+        trainer = self.trainer or self.app.settings.trainer(self.game)
+
+        def work():
+            try:
+                accepted = meta.build_legal(builder.SERVICE, self.game, build, trainer,
+                                            VERSIONS.get(self.version, ""))
+                error = ""
+            except Exception as exc:
+                accepted, error = None, str(exc)
+
+            def done():
+                if accepted is None:
+                    finished(error)
+                    return
+                found, info, choices = accepted
+                self._apply_set(found, [])
+                self.value.update(file=info["file"], summary=builder.summary(info), legal=True,
+                                  encounter=info["encounter"], moves=info["moves"], report="",
+                                  home_tracker=info.get("home_tracker", ""),
+                                  meta_note=(f"Source: {build['source']} · {build['format']} · {build['role']}. "
+                                             + ("Resolved alternatives: " + ", ".join(choices) + "."
+                                                if choices else "No source alternatives needed.")))
+                self.on_change(dict(self.value))
+                self._show_result()
+                self.control.update()
+                finished()
+            self.app.ui(done)
+        threading.Thread(target=work, daemon=True).start()
+
     def _apply_set(self, found: dict, notes: list[str]) -> None:
-        for key in ("file", "summary", "legal", "encounter", "moves", "report", "home_tracker"):
+        for key in ("file", "summary", "legal", "encounter", "moves", "report", "home_tracker", "meta_note"):
             self.value.pop(key, None)
         self.value.update(species=found["species_id"], level=str(found["level"]), shiny=found["shiny"],
                           nickname=found["nickname"])
@@ -306,6 +345,8 @@ class PokemonPicker:
             lines.append(t.badge(warning, t.AMBER, "warning-diamond"))
         if self.value.get("report"):
             lines.append(t.text(self.value["report"], 12, t.RED, selectable=True))
+        if self.value.get("meta_note"):
+            lines.append(t.text(self.value["meta_note"], 12, t.MUTED, selectable=True))
         self.result.content = ft.Column(lines, spacing=4)
 
 

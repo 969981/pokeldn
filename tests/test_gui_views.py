@@ -21,6 +21,18 @@ def test_saved_pokemon_offer_keeps_its_card_description():
     assert GamesView.description(view, field) == field.help
 
 
+def test_browse_meta_button_is_on_each_requested_games_shared_picker(monkeypatch):
+    monkeypatch.setattr(pokemon.PokemonPicker, "_load_species", lambda self: None)
+    app = SimpleNamespace(settings=SimpleNamespace(sprites=False), ui=lambda fn: None)
+    labels = {}
+    for game in ("frlg", "bdsp", "za", "sv"):
+        picker = pokemon.PokemonPicker(app, game, {}, lambda value: None)
+        labels[game] = [control.content for control in picker.body.content.controls[-1].controls
+                        if isinstance(control, ft.Button)]
+    assert all("Browse Meta" in labels[game] for game in ("frlg", "bdsp", "za"))
+    assert "Browse Meta" not in labels["sv"]
+
+
 def test_choice_card_includes_help_for_the_saved_selection():
     field = Field("--mode", "Mode", "choice", help="Choose a mode.",
                   choice_help=(("trade", "Trades Pokemon."),))

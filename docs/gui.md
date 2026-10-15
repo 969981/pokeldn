@@ -14,6 +14,13 @@ chosen in Settings; the folder button beside Output opens it. An install detects
 its bundled image; an image from a file is checked against that chip before writing. Connect an S3,
 C3 or C6 through native USB Serial/JTAG. S2 chips are refused.
 
+The shared Pokemon picker offers Browse Meta for FireRed/LeafGreen and Brilliant Diamond/Shining
+Pearl. It downloads the corresponding public Smogon sets processed by pkmn.cc, caches them for a day,
+and searches by Pokemon or role. A selected set still goes through the ordinary Showdown parser and
+PKHeX builder; alternatives are tried in source order and a set is accepted only when PKHeX marks the
+built record legal for the selected game. Legends Z-A shows why no set is offered: the source has no
+verified Z-A format. A stale cached copy remains usable when a refresh fails.
+
 Mystery Gift tools share one builder: use a preset, build your own, or open a `.pokegift` file;
 Sword/Shield also opens `.wc8` cards. Save gift file exports the selected gift without a board, as
 a `.pokegift` or, by its extension, a `.wc3` (FireRed/LeafGreen) or `.wc8` (Sword/Shield).
