@@ -958,9 +958,17 @@ turn `0x114a094`, and the battle start `0x113dca8` with its send-out, item, abil
 handlers. Over 86 halted consoles (49 rounds, 5 battle starts) the port leaves the same body and
 the same memory pages as the game's own code, with no call handed back to it. The heap it allocates
 from is the SDK's `nn::mem::StandardAllocator` over a thread cache, ported with the cache's creation
-and its TinyMT32 key (`0x525f448`). The battle-state build steps `0x2892ac0`, `0x2d381a4` and
-`0x2891748` also run in Python and match, function-local statics included: `__cxa_guard_acquire`
-(`0x53c49a0`) returns 1 and sets byte 1 of the guard to 2 when neither byte 0 nor byte 1 is set.
+and its TinyMT32 key (`0x525f448`). In the battle-state build steps `0x2891748`, `0x2892ac0`,
+`0x2d381a4` and `0x2892dd4` every ported callee matches; the entries themselves and 244 of their
+callees are still the game's code. `__cxa_guard_acquire` (`0x53c49a0`) returns 1 and sets byte 1
+of the guard to 2 when neither byte 0 nor byte 1 is set.
+
+A Hex round reads 16838 bytes it did not write: 1496 from the static image, 5372 from the
+command-format map and 2926 from the server object (both made by `0x2d381a4`), 2414 from the
+battlers and their Pokemon (made by `0x2892ac0`), 1756 from the main module family (made by
+`0x2891748`), 2278 from the data tables (personal, growth, moves, flags and id-hash, each a u16 to
+record map at +0x68 into a FlatBuffers file, held in function-local statics) and 576 from the
+round's action blocks.
 
 ## Joining
 
