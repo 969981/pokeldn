@@ -1,6 +1,6 @@
 """The setup's rule value per battler and the rule records moves and effects run."""
 
-from pokeldn.sv.battle.engine.calls import M32, _need, _tail
+from pokeldn.sv.battle.engine.calls import M32, _need, _tail, m_s32
 from pokeldn.sv.battle.machine import UnliftedCall, lifted
 
 
@@ -291,6 +291,67 @@ def rule_case_40(m, o, rule, *_):
                 m.call_void(m.main + 0x1380C5C, x, sp + 8, r)
 
 
+@lifted(0x1873FD4)
+def battler_vf_388(m, o, ident, *_):
+    """vf 0x388 of the battler `ident` (x1 then holds the method's own address)."""
+    b = m.call(m.main + 0xF21C94, m.u64(m.u64(o + 0x10) + 0x30), ident)
+    f = m.u64(m.u64(b) + 0x388)
+    return _tail(m, f, b, f)
+
+
+@lifted(0x1873F8C)
+def rule_mark_queued(m, o, ident, *_):
+    """0x1873fd4([o+0x20], ident) & 1 (x1 passes through), then command 0xf with `ident` on the queue
+    [o+0x18]."""
+    r = m.call(m.main + 0x1873FD4, m.u64(o + 0x20), ident)
+    m.call_void(m.main + 0x119AFF0, m.u64(o + 0x18), 0xF, ident & M32)
+    return r & 1
+
+
+@lifted(0x1873F14)
+def rule_mark(m, o, out, ident, *_):
+    """out[0] = 0; for the battler u32 [ident] when it is not out (vf 0x200): 0x1873f8c with its id."""
+    m.put(out, 1, 0)
+    b = m.call(m.main + 0x13813F4, o, m.u32(ident))
+    if m.vcall(b, 0x200) & 1:
+        return
+    q = m.call(m.main + 0x1143584, o)
+    m.put(out, 1, m.call(m.main + 0x1873F8C, q, m.vcall(b, 0x98) & M32) & 1)
+
+
+@lifted(0x18FFC04)
+def rule_kind_1(m, o, rule, *_):
+    """0x1873f14 on [0x1361214(o)+0xe40] for each member 0x18ffcd0 matches."""
+    with m.frame(0x50) as sp:
+        ids, cell = sp + 8, sp + 0x48
+        n = m_s32(m.call(m.main + 0x18FFCD0, o, rule, ids))
+        for i in range(max(n, 0)):
+            m.put(cell, 4, m.u32(ids + 4 * i))
+            x = m.call(m.main + 0x283E624, m.call(m.main + 0x1361214, o))
+            m.call_void(m.main + 0x1873F14, x, sp, cell)
+
+
+@lifted(0x17CDE54)
+def rule_kind_2(m, o, rule, *_):
+    """0x17cdf14 on [0x1361214(o)+0xae0] with the request {u32 [rule], 0x32, the 0x18ffcd0 members,
+    their count at +0x30, +0x35 = 1}."""
+    with m.frame(0xA0) as sp:
+        req = sp + 0x40
+        m.write(req, bytes(0x31))
+        m.put(req + 0x32, 4, 0)
+        m.put(req + 4, 4, 0x31)
+        m.call_void(m.main + 0x1146154, req + 0x38)
+        m.put(req, 4, m.u32(rule))
+        n = m.call(m.main + 0x18FFCD0, o, rule, sp + 0x18) & M32
+        if 1 <= n < 0x80000000:
+            m.write(req + 8, m.read(sp + 0x18, 4 * n))
+        m.put(req + 4, 4, 0x32)
+        m.put(req + 0x30, 1, n)
+        m.put(req + 0x35, 1, 1)
+        x = m.call(m.main + 0x17CDF0C, m.call(m.main + 0x1361214, o))
+        return _tail(m, m.main + 0x17CDF14, x, sp + 8, req)
+
+
 # u16 rule+0x30 -> handler (jump table 0x3c6a4c0 for 1..8): 1 and 2 are tail calls to other functions.
 _RULE_CASES = {1: 0x18FFC04, 2: 0x17CDE54, 4: 0x2880128, 8: 0x2880194, 0x10: 0x2880274, 0x20: 0x28802C4,
                0x40: 0x2880358}
@@ -401,6 +462,54 @@ def run_rule_kinds(m, o, _x1, rule, *_):
 def move_rule_outcome(m, o, mv, b, *_):
     """Event 0xca (b, u16 [mv]): yes runs 0x157a950, no queues 0x157a95c with b's id."""
     if m.call(m.main + 0x2836708, m.call(m.main + 0x1146E90, o), b, m.u16(mv)) & 1:
+        return _tail(m, m.main + 0x157A950, m.call(m.main + 0x139B698, o) + 0x10)
+    q = m.call(m.main + 0x1143584, o)
+    return _tail(m, m.main + 0x157A95C, q, m.vcall(b, 0x98) & M32)
+
+
+@lifted(0x288B4B4)
+def weather_request_for(m, o, kind, turns, src, *_):
+    """The weather request {kind, turns + the setup value 0x46e2708 (vf 0x68 of 0x114acbc(o)), turns,
+    src} through 0x1149ed0 on [0x1361214(o)+0x1c0]: its answer (0 when set)."""
+    add = m.vcall(m.call(m.main + 0x114ACBC, o, kind), 0x68, m.u64(m.main + 0x46E2708))
+    with m.frame(0x20) as sp:
+        r = sp + 0x10
+        m.put(r + 8, 2, 0)
+        m.put(r, 1, kind); m.put(r + 1, 1, add + turns); m.put(r + 2, 1, turns)
+        m.put(r + 4, 4, src)
+        x = m.call(m.main + 0x113E064, m.call(m.main + 0x1361214, o))
+        m.call_void(m.main + 0x1149ED0, x, sp + 8, r)
+        return m.u8(sp + 8)
+
+
+# Messages 0x307, 0x308, 0x30a for weathers 5..7, 0x237 otherwise: the game shifts this constant by 16 per
+# step and passes the low 32 bits on.
+_WEATHER_LOCK_MESSAGES = 0x30A03080307
+
+
+@lifted(0x288B538)
+def weather_locked_message(m, o, b, *_):
+    """Record 0x1146154 headed by the message for the current weather (0x114a08c), sent for b through
+    0x114b0ac."""
+    with m.frame(0x30) as sp:
+        m.call_void(m.main + 0x1146154, sp)
+        w = m.call(m.main + 0x114A08C, m.call(m.main + 0x148253C, m.call(m.main + 0x1482534, o)))
+        i = (w - 5) & 0xFF
+        msg = (_WEATHER_LOCK_MESSAGES >> (16 * i)) & M32 if i < 3 else 0x237
+        m.call_void(m.main + 0x2843244, sp, 1, msg)
+        q = m.call(m.main + 0x1143584, o)
+        return _tail(m, m.main + 0x114B0AC, q, m.vcall(b, 0x98) & M32, sp)
+
+
+@lifted(0x288B370)
+def move_weather_rule(m, o, b, kind, *_):
+    """Set weather `kind` from b's move: turns from event 0xa0; on success 0x157a950, when the weather
+    is locked (2) the message 0x288b538, else 0x157a95c with b's id."""
+    turns = m.call(m.main + 0x2835CF0, m.call(m.main + 0x1146E90, o), kind, b) & M32
+    r = m.call(m.main + 0x288B4B4, o, kind, turns, m.vcall(b, 0x98) & M32) & 0xFF
+    if r == 2:
+        return _tail(m, m.main + 0x288B538, o, b)
+    if r == 0:
         return _tail(m, m.main + 0x157A950, m.call(m.main + 0x139B698, o) + 0x10)
     q = m.call(m.main + 0x1143584, o)
     return _tail(m, m.main + 0x157A95C, q, m.vcall(b, 0x98) & M32)

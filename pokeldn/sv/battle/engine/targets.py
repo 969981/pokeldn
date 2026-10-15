@@ -363,15 +363,61 @@ def pick_targets(m, o, a1, a2, *args):
     return _tail(m, m.main + target, o, a1, a2, *args)
 
 
+# Side class per battle mode 0, 1, 2 and opposing position 0..4 (0x3c6a450, 0x3c6a455, 0x3c6a45a).
+_OPPOSING_SIDE = ((0, 1, 2, 2, 2), (0, 1, 0, 1, 2), (0, 1, 0, 0, 0))
+
+
+def _add_opposing(m, o, pokecon, parties, ident, pos, lst):
+    """Kind 5 for a non-raid attacker: every position of the side class the attacker's opposing client
+    (0x1365b00) maps to, its member (0x173da74) appended."""
+    from pokeldn.sv.battle.engine.flow import add_member
+    st = m.u64(pokecon + 0x290)
+    p = m.call(m.main + 0x10E2DD4, m.u64(m.u64(st + 8) + 0x50), ident)
+    v = m.s(p, 4) if p else 0
+    k = v & 0xFF if v < 5 else 0
+    setup = m.u64(st + 8)
+    r = m.call(m.main + 0x1365B00, m.u32(setup + 0x36C), m.u8(setup + 0x370), k, 0) & 0xFF
+    setup = m.u64(st + 8)
+    mode = m.u32(setup + 0x36C)
+    side = _OPPOSING_SIDE[mode][r] if mode <= 2 and r <= 4 else 2
+    n = m.call(m.main + 0x113AA70, mode, m.u8(setup + 0x370), side) & M32
+    for j in range(n):
+        e = m.call(m.main + 0x173DA74, o, parties, pos, j)
+        if e:
+            add_member(m, lst, e)
+
+
+@lifted(0x173DB04)
+def nth_position_off_side(m, st, pos, nth, *_):
+    """The nth position (0x113a588) on the side opposite position pos's (0x3b72710: class 0 <-> 1, else 2)."""
+    setup = m.u64(st + 8)
+    mode, rule = m.u32(setup + 0x36C), m.u8(setup + 0x370)
+    c = m.call(m.main + 0xC9C750, mode, rule, pos) & 0xFF
+    side = (1, 0)[c] if c <= 1 else 2
+    x = m.call(m.main + 0x113AF40, mode, rule, side, 0)
+    return _tail(m, m.main + 0x113A588, mode, rule, x, nth)
+
+
+@lifted(0x173DA74)
+def nth_member_off_side(m, o, parties, pos, nth, *_):
+    """The party member at the position 0x173db04 gives, or 0."""
+    st = m.u64(m.u64(o + 0x10) + 0x290)
+    q = m.call(m.main + 0x173DB04, st, pos, nth)
+    with m.frame(0x10) as out:
+        m.call_void(m.main + 0x1153868, m.u64(m.u64(o + 0x10) + 0x290), q, out + 4, out + 8)
+        client, idx = m.u8(out + 4), m.u8(out + 8)
+    if client > 4 or idx >= m.u8(parties + client * 0x38 + 0x58):
+        return 0
+    return m.u64(parties + client * 0x38 + idx * 8 + 0x28)
+
+
 @lifted(0x173F110)
 def pick_targets_raid(m, o, a1, pokecon, attacker, a4, move, other, lst, done, *_):
     """The target list of a move in a raid: *done = 0, then by the move's target kind (u8 move+0xa,
     jump table 0x3c6a58c) members go into lst through the member-list append (at most 11, once each);
-    kinds 0/3, 9 and 13 set *done. Kinds 5 and 8 are not lifted and refuse before any write."""
+    kinds 0/3, 9 and 13 set *done."""
     from pokeldn.sv.battle.engine.flow import add_member
     kind = m.u8(move + 0xA)
-    if kind in (5, 8):
-        raise UnliftedCall(f"0x173f110 target kind {kind}")
     if kind in (1, 2) and 0xFF6F54 not in __import__("pokeldn.sv.battle.machine", fromlist=["x"]).FUNCTIONS:
         raise UnliftedCall("main+0xff6f54")
     if m.u8(m.u64(m.main + 0x46D7940)) & 1 == 0 or (kind == 7 and m.u8(m.u64(m.main + 0x46D3F00)) & 1 == 0):
@@ -395,7 +441,7 @@ def pick_targets_raid(m, o, a1, pokecon, attacker, a4, move, other, lst, done, *
                 m.put(k + 8, 2, m.u16(move))
                 flag = int(m.call(m.main + 0x179412C, k) & 0xFFFF != 0)
     w28 = m.call(m.main + 0x173F034, o, a1, move, attacker, a4 & 0xFFFFFFFF) & 0xFFFFFFFF
-    m.call(m.main + 0xFE161C, m.u64(pokecon + 0x290), aid())
+    pos = m.call(m.main + 0xFE161C, m.u64(pokecon + 0x290), aid()) & 0xFF
     if kind in (0, 3):
         with m.frame(0x10) as out:
             m.call_void(m.main + 0x1153868, m.u64(m.u64(parties + 0x18) + 0x290), w28, out, out + 8)
@@ -417,7 +463,9 @@ def pick_targets_raid(m, o, a1, pokecon, attacker, a4, move, other, lst, done, *
         p = m.call(m.main + 0xFF6F54, parties, w28)
         if p and m.vcall(p, 0x98) & 0xFFFFFFFF != aid():
             add_member(m, lst, p)
-    elif kind == 4:
+    elif kind == 5 and raid() != aid():
+        _add_opposing(m, o, pokecon, parties, aid(), pos, lst)
+    elif kind in (4, 5):
         if raid() != aid():
             for p in _standing_of(m, a1, pokecon):
                 if flag:
@@ -440,6 +488,18 @@ def pick_targets_raid(m, o, a1, pokecon, attacker, a4, move, other, lst, done, *
                 if r and m.vcall(p, 0x98) & 0xFFFFFFFF == aid():
                     add_member(m, lst, p)
             elif p and r:
+                add_member(m, lst, p)
+    elif kind == 8:
+        for p in _standing_of(m, a1, pokecon):
+            if raid() == aid():
+                t = m.call(m.main + 0x2886D48, o)
+                if t:
+                    add_member(m, lst, t)
+                add_member(m, lst, attacker)
+            elif flag:
+                if m.vcall(p, 0x98) & M32 == aid() or not m.call(m.main + 0x17D5D98, o, attacker, p) & 1:
+                    add_member(m, lst, p)
+            elif p:
                 add_member(m, lst, p)
     elif kind == 7:
         if other & 0xFFFFFFFF == 0:

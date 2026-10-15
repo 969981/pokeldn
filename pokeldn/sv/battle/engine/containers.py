@@ -92,6 +92,12 @@ def data_record(m, table, key, *_):
     return m.u64(node + 0x18) if node else m.u64(table + 0xD0)
 
 
+@lifted(0x114C668)
+def find_u32_node(m, table, key_ptr, *_):
+    """The node holding the u32 at key_ptr, or 0."""
+    return find(m, table, m.u32(key_ptr), 4)
+
+
 @lifted(0x20049F4)
 def value_u64_key(m, owner, key_ptr, *_):
     """The u32 value for the u64 key at key_ptr in the map at owner+0x40 (the key must be present)."""

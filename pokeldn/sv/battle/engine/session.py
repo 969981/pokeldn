@@ -1357,8 +1357,9 @@ def raid_setup(m, alloc, setup, bootstrap, partners):
     """The raid start's setup fields: RAID_SETUP; per participant p and entry e (0x1c bytes from +0x18 of
     +0xc8 + 0xc0 * p) u16 +0x10 30 (26 for the boss, p = 1) and u8 +0xd 1 for the host's entries 1..5 and
     the guest's 0..5; from the bootstrap (0xaa0 plaintext) the RaidPoint's randSeed at +0x718, its
-    raidTimeData limits at +0x48a/+0x48c/+0x48e, its boss action profile as u16 at +0x514, and the five
-    party holders (our Pokemon, the boss, the guest, the two NPC partners' records from `partners`)."""
+    raidTimeData limits at +0x48a/+0x48c/+0x48e (300, 0, 60 when inactive), its boss action profile as
+    u16 at +0x514, and the five party holders (our Pokemon, the boss, the guest, the two NPC partners'
+    records from `partners`)."""
     for off, size, value, _ in RAID_SETUP:
         m.put(setup + off, size, value)
     for p in range(5):
@@ -1369,7 +1370,9 @@ def raid_setup(m, alloc, setup, bootstrap, partners):
                 m.put(a + 0xD, 1, 1)
     point = 5 * PARTY_RECORD
     m.put(setup + 0x718, 8, int.from_bytes(bootstrap[point + 0x3D8:point + 0x3E0], "little"))
-    game, client, command = struct.unpack_from("<3I", bootstrap, point + 0x34)
+    active, game, client, command = struct.unpack_from("<4I", bootstrap, point + 0x30)
+    if not active & 0xFF:                   # the Lua timer initializer's group defaults (docs/sv_raid.md)
+        game, client, command = 300, 0, 60
     m.put(setup + 0x48A, 2, game); m.put(setup + 0x48C, 2, client); m.put(setup + 0x48E, 2, command)
     for i, value in enumerate(struct.unpack_from("<37I", bootstrap, point + 0x4C)):
         m.put(setup + 0x514 + 2 * i, 2, value)

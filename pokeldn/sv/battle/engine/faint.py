@@ -299,3 +299,104 @@ def faint_user_if(m, o, user, x, *_):
     if not r & 1:
         return r
     return _tail(m, m.main + 0x1536F20, t, user)
+
+
+@lifted(0x288CDC4)
+def battler_vf_580(m, o, ident, *_):
+    """vf 0x580 of the battler `ident` (x1 then holds the method's own address)."""
+    b = m.call(m.main + 0xF21C94, m.u64(m.u64(o + 0x10) + 0x30), ident)
+    f = m.u64(m.u64(b) + 0x580)
+    return _tail(m, f, b, f)
+
+
+@lifted(0x2885868)
+def queue_3c(m, o, ident, *_):
+    """0x288cdc4([o+0x20], ident), then command 0x3c with ident."""
+    m.call_void(m.main + 0x288CDC4, m.u64(o + 0x20), ident)
+    return _tail(m, m.main + 0x119AFF0, m.u64(o + 0x18), 0x3C, ident & M32)
+
+
+@lifted(0x288589C)
+def queue_ae(m, o, v, *_):
+    return _tail(m, m.main + 0x119AFF0, m.u64(o + 0x18), 0xAE, v & M32)
+
+
+@lifted(0x28426A8)
+def raid_boss_down(m, o, _x1, rec, *_):
+    """rec = {battler, byte announce}: message 0xcb (0x1536f5c, 0x101) when announced, then commands 0x3c
+    (0x2885868) with its id and 0xae with its slot (0x17d31e0)."""
+    b = m.u64(rec)
+    ident = m.vcall(b, 0x98) & M32
+    slot = m.call(m.main + 0x17D31E0, o, ident) & M32
+    if m.u8(rec + 8):
+        m.call_void(m.main + 0x1536F5C, m.call(m.main + 0x1143584, o), ident, m.u64(rec), 0x101)
+    m.call_void(m.main + 0x2885868, m.call(m.main + 0x1143584, o), ident)
+    return _tail(m, m.main + 0x288589C, m.call(m.main + 0x1143584, o), slot)
+
+
+def _static_46dcd58(m):
+    """The static at [0x46dcd58] (guard [0x46dcd50]), built from 0x19f5520 on first use."""
+    guard = m.u64(m.main + 0x46DCD50)
+    if m.u8(guard) & 1 == 0 and m.call(m.main + 0x343CF10, guard) & M32:
+        m.put(m.u64(m.main + 0x46DCD58), 8, m.call(m.main + 0x19F5520))
+        m.call_void(m.main + 0x343CF20, guard)
+    return m.u64(m.main + 0x46DCD58)
+
+
+@lifted(0x187FF90)
+def change_form(m, b, form, flag, *_):
+    """When b's Pokemon ([b+0x48]) is of the class 0x46dcd58: form `form` (+0x718, +0x6f = flag & 1,
+    0x133b218), vf 0x7f8(1, 1), the HP limit +0x58 = vf 0x70(0) x +0x3f4 / 10 with the current and
+    maximum HP moved by it (vf 0x2e8 / 0x2e0), vf 0x810, Shaymin-like species 0x1ec back to form 0 (vf
+    0x360), then the Pokemon's vf 0x1a8 with its earlier vf 0x1a0 bit."""
+    pk = m.u64(b + 0x48)
+    node = m.vcall(pk + 0x28, 0)
+    target = _static_46dcd58(m)
+    while node != target:
+        if not node:
+            return
+        node = m.u64(node)
+    m.put(b + 0x718, 2, form)
+    m.put(b + 0x6F, 1, flag & 1)
+    keep = m.vcall(pk, 0x1A0)
+    m.call_void(m.main + 0x133B218, m.u64(pk + 0x48), form & M32, 0)
+    m.vcall_void(b, 0x7F8, 1, 1)
+    top = m.vcall(b, 0x108) & M32
+    cur = m.vcall(b, 0x110) & M32
+    z = m.vcall(m.u64(b + 0x48), 0x70, 0) & 0xFFFF
+    new = ((z * m.u16(b + 0x3F4)) & M32) // 10
+    m.put(b + 0x58, 2, new)
+    if cur & 0xFFFF < new & 0xFFFF:
+        m.vcall_void(b, 0x2E8, (new - cur) & M32)
+    if cur & 0xFFFF > new & 0xFFFF and top & 0xFFFF > new & 0xFFFF:
+        m.vcall_void(b, 0x2E0, (top - new) & M32)
+    m.vcall_void(b, 0x810)
+    if form & 0xFFFF == 0 and m.u16(b + 0x710) == 0x1EC:
+        m.put(b + 0x712, 2, 0)
+        m.vcall_void(b, 0x360, m.vcall(pk, 0x140) & M32)
+    f = m.u64(m.u64(pk) + 0x1A8)
+    return _tail(m, f, pk, keep & 1, f)
+
+
+@lifted(0x187FE98)
+def change_raid_form(m, o, ident, form, flag, *_):
+    """For the raid battler `ident`: 0x187ff90 (form, flag & 1), then 0x114eb70 notes it in its side."""
+    from pokeldn.sv.battle.engine.statics import static_46d3f08
+    b = m.call(m.main + 0xF21C94, m.u64(m.u64(o + 0x10) + 0x30), ident)
+    if not b:
+        return
+    node = m.vcall(b + 0x28, 0)
+    target = static_46d3f08(m)
+    while node != target:
+        if not node:
+            return
+        node = m.u64(node)
+    m.call_void(m.main + 0x187FF90, b, form, flag & 1)
+    return _tail(m, m.main + 0x114EB70, o, b)
+
+
+@lifted(0x187FE48)
+def change_raid_form_queued(m, o, ident, form, flag, *_):
+    """0x187fe98([o+0x20], ...), then command 0x57 (ident, form, flag & 1)."""
+    m.call_void(m.main + 0x187FE98, m.u64(o + 0x20), ident, form, flag & 1)
+    return _tail(m, m.main + 0x119AFF0, m.u64(o + 0x18), 0x57, ident & M32, form & 0xFFFF, flag & 1)

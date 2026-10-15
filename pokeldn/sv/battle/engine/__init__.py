@@ -4,6 +4,6 @@ address it reproduces (`pokeldn.sv.battle.machine.lifted`)."""
 from pokeldn.sv.battle.engine import (  # noqa: F401
     accessors, actions, arena, battler, battler_methods, calls, conditions, containers, damage, data, events, faint,
     flatbuffer, flow, getters, handler_table, handlers, heap, libc, members, messages, moves, network, pokemon,
-    queue, raid, random, records, references, requests, round, rules, session, slots, stages, start, state, statics,
+    queue, raid, random, records, references, requests, round, rules, server, session, slots, stages, start, state, statics,
     steps, targets, triggers, turn_end,
 )

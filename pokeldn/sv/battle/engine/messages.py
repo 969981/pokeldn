@@ -1281,3 +1281,133 @@ def text_ab(m, o, b, *_):
     """Command 0xcb (b's id, text 0xab, b's id) through 0x157eba0."""
     ident = m.vcall(b, 0x98) & M32
     return _tail(m, m.main + 0x157EBA0, m.call(m.main + 0x1143584, o), ident, 0xAB, ident)
+
+
+@lifted(0x134ED6C)
+def weather_turns_left(m, w, *_):
+    """0 without a weather (u8 +0x19); 0xff for an endless one (u32 +8 is 0xff); else +8 minus +0x10."""
+    if not m.u8(w + 0x19):
+        return 0
+    n = m.u32(w + 8)
+    return 0xFF if n == 0xFF else (n - m.u32(w + 0x10)) & M32
+
+
+@lifted(0x114A040)
+def weather_may_replace(m, o, kind, *_):
+    """0 when the current weather (u8 +0x19 of 0x148253c(0x1482534(o))) is 5..7 and `kind` is 1..4."""
+    cur = m.call(m.main + 0x114A08C, m.call(m.main + 0x148253C, m.call(m.main + 0x1482534, o))) & 0xFF
+    return int((cur - 5) & 0xFF > 2) | int((kind - 1) & 0xFF > 3)
+
+
+@lifted(0x1149F90)
+def weather_check(m, o, out, req, *_):
+    """out[0] = 0 when the weather request (u8 kind [req], u8 turns [req+1]) may change the weather; 2
+    when the weather is locked (+0x1a clear) or 0x114a040 refuses; 1 for a kind above 7 or for the
+    same endless weather already up."""
+    m.put(out, 1, 1)
+    if m.u8(req) > 7:
+        return
+    w = m.call(m.main + 0x148253C, m.call(m.main + 0x1482534, o))
+    if m.call(m.main + 0x114A038, w) & 1 == 0 or m.call(m.main + 0x114A040, o, m.u8(req)) & 1 == 0:
+        m.put(out, 1, 2)
+        return
+    if m.u8(req) != m.call(m.main + 0x114A08C, w) & 0xFF:
+        m.put(out, 1, 0)
+        return
+    if m.u8(req + 1) != 0xFF:
+        return
+    if m.call(m.main + 0x134ED6C, w) & M32 != 0xFF:
+        m.put(out, 1, 0)
+
+
+@lifted(0x1149F50)
+def weather_check_of(m, o, kind, turns, *_):
+    """0x1149f90 on [0x1361214(o)+0x200] for {kind, turns}: its answer."""
+    with m.frame(0x10) as sp:
+        m.put(sp + 8, 1, kind); m.put(sp + 9, 1, turns)
+        x = m.call(m.main + 0x1149F88, m.call(m.main + 0x1361214, o))
+        m.call_void(m.main + 0x1149F90, x, sp, sp + 8)
+        return m.u8(sp)
+
+
+@lifted(0x114C1F4)
+def weather_store(m, o, kind, turns, a, src, *_):
+    """The weather block [[o+0x10]+0x70]: kind at +0x19, turns +8, a +0xc, 0 at +0x10, src +0x14."""
+    w = m.u64(m.u64(o + 0x10) + 0x70)
+    m.put(w + 0x19, 1, kind)
+    m.put(w + 8, 4, turns & 0xFF); m.put(w + 0xC, 4, a & 0xFF)
+    m.put(w + 0x10, 4, 0); m.put(w + 0x14, 4, src)
+
+
+@lifted(0x114C164)
+def weather_set(m, o, kind, turns, a, src, e, f, *_):
+    """0x114c1f4([o+0x20], ...), then commands 0x79 (kind, turns, a, src, e) and 0x88 (kind, src, e, f & 1)."""
+    m.call_void(m.main + 0x114C1F4, m.u64(o + 0x20), kind, turns, a, src)
+    m.call_void(m.main + 0x119AFF0, m.u64(o + 0x18), 0x79, kind & 0xFF, turns & 0xFF, a & 0xFF, src & M32,
+                e & M32)
+    return _tail(m, m.main + 0x119AFF0, m.u64(o + 0x18), 0x88, kind & 0xFF, src & M32, e & 0xFF, f & 1)
+
+
+@lifted(0x114BF24)
+def weather_event_of(m, o, out, kind, *_):
+    return _tail(m, m.main + 0x1151590, m.call(m.main + 0x1146E90, o), m.u8(kind))
+
+
+@lifted(0x114BEEC)
+def weather_event(m, o, kind, *_):
+    """0x114bf24 on [0x1361214(o)+0x1e0] with the kind."""
+    with m.frame(0x10) as sp:
+        m.put(sp + 8, 1, kind)
+        x = m.call(m.main + 0x114BF1C, m.call(m.main + 0x1361214, o))
+        return _tail(m, m.main + 0x114BF24, x, sp, sp + 8)
+
+
+@lifted(0x114BF48)
+def weather_trigger(m, o, src, kind, *_):
+    """Trigger 0x121bdb0 on [0x1361214(o)+0x1d40] with the record {9, src, kind at +0xa}."""
+    with m.frame(0x20) as sp:
+        r = sp + 0x10
+        m.put(r + 0xC, 2, 0); m.put(r + 8, 2, 0)
+        m.put(r, 4, 9); m.put(r + 4, 4, src)
+        m.put(r + 0xA, 1, kind)
+        m.put(sp + 8, 1, 0)
+        x = m.call(m.main + 0x114E520, m.call(m.main + 0x1361214, o))
+        return _tail(m, m.main + 0x121BDB0, x, sp + 8, r)
+
+
+@lifted(0x114BE34)
+def weather_apply(m, o, out, req, *_):
+    """Apply the weather request: 0x114beb0 (0), 0x114bf8c (0, kind), 0x114c164 with its fields,
+    0x114beec (kind), then 0x114bf48 (src, kind)."""
+    m.call_void(m.main + 0x114BEB0, m.call(m.main + 0x1143584, o), 0)
+    m.call_void(m.main + 0x114BF8C, m.call(m.main + 0x1143584, o), 0, m.u8(req))
+    m.call_void(m.main + 0x114C164, m.call(m.main + 0x1143584, o), m.u8(req), m.u8(req + 1), m.u8(req + 2),
+                m.u32(req + 4), m.u8(req + 8), m.u8(req + 9))
+    m.call_void(m.main + 0x114BEEC, o, m.u8(req))
+    return _tail(m, m.main + 0x114BF48, o, m.u32(req + 4), m.u8(req))
+
+
+@lifted(0x114BDE4)
+def weather_apply_of(m, o, kind, turns, a, src, e, *_):
+    """0x114be34 on [0x1361214(o)+0x220] with {kind, turns, a, src, e, +9 = 1}."""
+    with m.frame(0x20) as sp:
+        r = sp + 0x10
+        m.put(r + 9, 1, 1)
+        m.put(r, 1, kind); m.put(r + 1, 1, turns); m.put(r + 2, 1, a)
+        m.put(r + 4, 4, src); m.put(r + 8, 1, e)
+        x = m.call(m.main + 0x114BE2C, m.call(m.main + 0x1361214, o))
+        return _tail(m, m.main + 0x114BE34, x, sp + 8, r)
+
+
+@lifted(0x1149ED0)
+def weather_request(m, o, out, req, *_):
+    """out[0] = 0x1149f50's answer (0 when req+8 is set); when 0, 0x114bde4 with the request's fields."""
+    if m.u8(req + 8) == 0:
+        r = m.call(m.main + 0x1149F50, o, m.u8(req), m.u8(req + 1)) & 0xFF
+        m.put(out, 1, r)
+        if r:
+            return
+    else:
+        m.put(out, 1, 0)
+    return _tail(m, m.main + 0x114BDE4, o, m.u8(req), m.u8(req + 1), m.u8(req + 2), m.u32(req + 4),
+                 m.u8(req + 9))

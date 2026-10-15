@@ -512,6 +512,17 @@ def weather_sets_178(m, o, ident, *_):
     _bump_record(m, m.u64(m.u64(m.u64(o + 0x38) + 0x78) + 0x178), 0x32)
 
 
+@lifted(0x284F540)
+def weather_scales_38(m, o, ident, *_):
+    """For the event's actor `ident` under a weather 0x14c7890 accepts: 0x1353738([o+0x38], 0x38,
+    0x2000)."""
+    if _id_at(m, _t78(m, o), 0x18) != ident & M32:
+        return
+    if m.call(m.main + 0x14C7890, m.call(m.main + 0x14C78D0, o, ident)) & 1 == 0:
+        return
+    return _tail(m, m.main + 0x1353738, m.u64(o + 0x38), 0x38, 0x2000)
+
+
 @lifted(0x285B720)
 def target_flag5_sets_180(m, o, ident, *_):
     """For the event's actor `ident`: when the target battler has flag 5, record 0x180 takes 3."""

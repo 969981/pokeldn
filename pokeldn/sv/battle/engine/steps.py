@@ -3544,6 +3544,101 @@ def make_raid_link(m, n, a1, a2, a3, a4, alloc, *_):
                 _release(m, x)
 
 
+@lifted(0xFB1BBC)
+def construct_fb1bbc(m, o, *_):
+    """Class 0x44ffbf8 on the weak-object base: +0x40..+0x78 zero."""
+    r = _weak_base(m, o)
+    m.put(o, 8, m.main + 0x44FFBF8); m.put(o + 0x20, 8, m.main + 0x44FFC70)
+    m.put(o + 0x28, 8, m.main + 0x44FFCC0)
+    m.write(o + 0x40, bytes(0x38))
+    return r
+
+
+@lifted(0xFB1AF4)
+def create_fb1af4(m, alloc, *_):
+    """Create a 0x78-byte 0x44ffbf8 object (0xfb1bbc)."""
+    return _create(m, alloc, 0x78, lambda o: m.call_void(m.main + 0xFB1BBC, o))
+
+
+@lifted(0xFB1A30)
+def create_fb1a30_ref(m, alloc, *_):
+    """*x8 = a new 0xfb1af4 object with a weak reference added."""
+    out = m.x8
+    r = m.call(m.main + 0xFB1AF4, alloc)
+    m.put(out, 8, r)
+    if r:
+        _acquire(m, r)
+    return r
+
+
+@lifted(0xFB1CDC)
+def raid_sources_other(m, o, *_):
+    """*x8 = the three side-5 handles: kinds 3 and 4 from 0xfa766c sources wrapped by 0xfa793c, kind 5
+    from a 0xfa77d4 source wrapped by 0xfa803c."""
+    _sources(m, o, m.x8, ((3, 5, 1, 0xFA766C, 0xFA793C), (4, 5, 1, 0xFA766C, 0xFA793C),
+                          (5, 5, 1, 0xFA77D4, 0xFA803C)))
+
+
+@lifted(0xFB19D8)
+def copy_fb19d8(m, dst, src, *_):
+    """dst+0x40..+0x58 = src's three words, then the shared handles +0x58 / +0x60 (0xfa6424) and +0x68
+    (0xfa6560) from src+0x18 / +0x20 / +0x28."""
+    m.put(dst + 0x40, 8, m.u64(src)); m.put(dst + 0x48, 8, m.u64(src + 8))
+    m.put(dst + 0x50, 8, m.u64(src + 0x10))
+    m.call_void(m.main + 0xFA6424, dst + 0x58, m.u64(src + 0x18))
+    m.call_void(m.main + 0xFA6424, dst + 0x60, m.u64(src + 0x20))
+    return _tail(m, m.main + 0xFA6560, dst + 0x68, m.u64(src + 0x28))
+
+
+@lifted(0xFB1544)
+def make_raid_link_server(m, n, a1, a2, a3, a4, alloc, *_):
+    """*x8 = a new 0x44ffbf8 object (0xfb1a30 from alloc) given {n, a1, a2} and the three side-5
+    handles of a3 (0xfb1cdc), which are also added to a4 (0xfa5930)."""
+    out = m.x8
+    m.x8 = out
+    m.call_void(m.main + 0xFB1A30, alloc)
+    with m.frame(0x60) as f:
+        q, c, t = f, f + 0x18, f + 0x20
+        m.x8 = q
+        m.call_void(m.main + 0xFB1CDC, a3)
+        _add_handles(m, a4, (m.u64(q), m.u64(q + 8), m.u64(q + 0x10)), c)
+        _stores(m, t, ((0x20, 8, 0), (0x28, 8, 0), (0, 8, n), (8, 8, a1), (0x10, 8, a2), (0x18, 8, 0)))
+        m.call_void(m.main + 0xFA6424, t + 0x18, m.u64(q))
+        m.call_void(m.main + 0xFA6424, t + 0x20, m.u64(q + 8))
+        m.call_void(m.main + 0xFA6560, t + 0x28, m.u64(q + 0x10))
+        m.call_void(m.main + 0xFB19D8, m.u64(out), t)
+        for p in (t + 0x28, t + 0x20, t + 0x18, q + 0x10, q + 8, q):
+            x = m.u64(p)
+            if x:
+                _release(m, x)
+
+
+@lifted(0xFB0774)
+def set_shared_fb0774(m, o, x, *_):
+    """*o = x with a weak reference added; the old handle goes through 0x18584f0."""
+    if x:
+        _acquire(m, x)
+    with m.frame(0x10) as f:
+        m.put(f, 8, m.u64(o))
+        m.put(o, 8, x)
+        return _tail(m, m.main + 0x18584F0, f)
+
+
+@lifted(0xFA402C)
+def set_link_fa402c(m, o, h, *_):
+    """0xfb0774(o+0x40, *h)."""
+    return _tail(m, m.main + 0xFB0774, o + 0x40, m.u64(h))
+
+
+@lifted(0xFA4038)
+def drop_fa4038(m, o, *_):
+    """o+0x48 released (0x1858568)."""
+    with m.frame(0x10) as f:
+        m.put(f, 8, m.u64(o + 0x48))
+        m.put(o + 0x48, 8, 0)
+        return _tail(m, m.main + 0x1858568, f)
+
+
 def _swap_shared(m, holder, value, release):
     """*holder = value (a moved shared pointer); the old one goes through `release`."""
     with m.frame(0x10) as f:

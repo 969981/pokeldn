@@ -99,6 +99,20 @@ def init_action(m, p, *_):
     m.put(p + 0x88, 1, 5); m.put(p + 0x84, 4, 0x5400000)
 
 
+@lifted(0x1145BD8)
+def action_owner(m, o, *_):
+    return m.u64(o + 0x1820)
+
+
+@lifted(0x1145BE0)
+def take_actions(m, o, _x1, req, *_):
+    """The actions of a request ({list, header} at req) decoded into the list (0x1145e40), then rebuilt
+    (0x1145c10)."""
+    lst = m.u64(req)
+    m.call_void(m.main + 0x1145E40, o, lst, m.u64(req + 8))
+    return _tail(m, m.main + 0x1145C10, o, m.u64(req))
+
+
 @lifted(0x1145C10)
 def rebuild_actions(m, o, src, *_):
     """Rebuild each action of `src` (kind 1 with +0x12 set) through 0x1149638 into a local list, then

@@ -954,7 +954,7 @@ A round's block therefore holds one slot's actions. The 4 unwritten bytes of eac
 0x235..0x237 come from the poster's stack and reach the type-0x15 body unchanged; the round reads
 none of them. Each type-0x15 record between two emulated Scarlet 4.0.0 equals, outside those bytes,
 the block built from the type-6 command of its acting slot (10 of 10 records whose command was on the
-wire; the boss's own slot-1 blocks have none). The rounds of four emulated sessions run from their
+wire; the boss's own slot-1 blocks have none: [The boss's actions](#the-bosss-actions)). The rounds of four emulated sessions run from their
 actions alone (`pokeldn.sv.battle.engine.requests.run_round`) give the console's 20576-byte bodies
 outside those bytes.
 
@@ -1007,6 +1007,100 @@ carried `0x5a (3, 506, 212)`, `0x5b (3, 506)` and `0xc9 (3, 0, 506, 4, 0)`. Ever
 from emulated Scarlet 4.0.0 servers and the type-0x15 records between two emulated consoles, 20 in
 all, decodes to its last byte and encodes back to the same bytes (`tests/test_sv_battle_queue.py`).
 The 0xcf groups seen so far are zero-filled.
+
+### The server's messages
+
+Every message the server sends is one step of `0x113bad8(server, kind, destination)`:
+
+| step | code |
+|---|---|
+| the step counter `server+0x198` raised | |
+| a body already received for that step ([[server+0x448]+0x38], `0xe63734`) is reused; otherwise the builder runs with that kind and the round counter `server+0x488` | `0x113c8a0` |
+| the 32-byte header: u32 kind, u64 step +0x08, u64 round +0x10, the destination +0x18 (5 for every station), 5 at +0x19 | stack bytes +0x04..+0x07 and +0x1a..+0x1f are never written |
+| the message object: 0x50 bytes from the server's allocator `[server+8]`, vtable `0x44ed338`, a buffer of header and body at +0x40, its length u32 at +0x48 | `0x1227714`, destructor `0x28015b4` |
+| onto the link of each destination slot (dest 5: slots 0 to 4 and 0xff) when `server+0x490` is set: links by slot in the map at `server+0x1a0`, each link's outgoing deque at `[link+0x48]` | `0x113cd5c`, `0x113e17c`, `0x113d33c`, `0x113d4a0` |
+| onto the server's log `[server+0x50]` and the sent entry of each seated destination slot, unless the log or entry holds that step already | `0x113c718`, `0x113c4cc` |
+| writes {u8 `[[server+0x448]+0xc4a5]`, u64 step, u8 `+0xc4a4`} to x8: the round's result | |
+
+A message deque is libc++ `deque<message*>`: map at +0x40, start +0x80, size +0x88, 0x200 pointers a
+block (`0x113d5e0`, `0x113d810`, erase `0x131be1c`). The server keeps two entries per slot: what it sent
+the slot (map at `server+0xc8`, `0xf6f324`) and what the slot sent it (map at `server+0x130`, `0xe634c8`).
+`0xf6f0a8` finds a message by header type, `0xf6fd7c` erases it, `0xe63380` asks whether a slot sent a
+message of a given step. A link's messages reach the wire as a battle-start frame addressed (0x2713, 1,
+slot): u16 key 0x7b, u32 setup `+0x2c`, u32 1, u32 the slot, u32 the length, then the message. The code
+that drains a link onto the network was not located.
+
+### The boss's actions
+
+The raid boss's extra actions wait in a list of four (u8 kind at +0x5c + 8i, u32 value at +0x60 + 8i,
+count +0x7c), after a copy of the RaidPoint's action profile at +0x10. The round engine's list is
+`[module+0x1b0]` (`0x16e5c90`), reset with every round; the server's per-frame machine keeps its own.
+
+| kind | queued by | value |
+|---|---|---|
+| 1 | the shield (`0xf6f87c`): by time at or below profile +0x14 percent, or HP at or below +0x12, before it starts | `0xf70af0` of the timer by time, 0 by HP |
+| 2 | the shield's end (`0xf6f87c`, `0xf70010` against +0x18) | 1 |
+| 3 | `0xf6dd84` when a time check finds 10 percent or less left | 1 |
+| 4 | the six extra actions (`0xf6fa5c`: kind, timing 1 time / 2 HP, threshold, move at +0x24 + 8i), each once (record +0x86 + i) | the action's index |
+| 5 | the double action (`0xf6de7c`): HP at or below profile +0x54 | 0 |
+
+None of them draws a random number: every trigger is a threshold on the boss's HP share or the time
+left (`0xf91070` on the battle timer). As request block actions (`0x114fb2c`) the word's kind is 12,
+bits 4..11 the list's kind, bits 32..47 its value, and the actor the raid battler's id (`0x114fc70`).
+
+During a round, an empty list is filled from the HP triggers (`0x11425b0`); without a shield among them
+the actions run in that round (`0x1145be0`). After a round, the result's byte `0xc4a5` (8 when `0xc4a4`
+is set) picks the next step (`0x16e4ff0`, jump table `0x3c61c38`): 0 none, 4 an empty round
+(`0x16e5cac`), 6 the round's list when it holds a shield (`0x16e5ad0`), 7 the battle's end
+(`0x16e56a0`). A raid action (`0x18c92a8`, payload copied by `0x17b5f3c`) runs in four states:
+
+| state | the server |
+|---|---|
+| 0 | sends message 0x47 to every station; `0x18c9a68` on the battle timer |
+| 1 | waits until every seated slot sent a message of that step (`0xe63380`) |
+| 2 | `0xe63ac4` on the battle timer; a request block whose slot 1 holds the actions (count byte +0x231), sent as a round (0x15) |
+| 3 | the round's result's next step, the list cleared (`0xfaf024`), each slot's 0x47 and its answer 0x48 erased |
+
+A list without a shield starts at state 2. The per-frame machine checks the profile's time triggers on a
+copy of the list while the boss's list is empty (`0xf6d62c`); when one fires it sends the copy as message
+0x51 (`0xf71b74`). A machine list holding actions posts a raid action (`0xf6d8d4`); how the copy's actions
+reach that list was not traced, and the served battle below copies them.
+
+Between two emulated Scarlet 4.0.0, a 4-star boss with the profile (3 Sunny Day at 80 percent time, 1 at
+75 percent HP, 2 at 40 percent HP, shield at 50 percent HP or 30 percent time) gave three slot-1 rounds:
+kind 4 value 0 alone (no 0x47, a 0x51 sent with it), then after a guest's attack 0x47 and kind 1 with kind
+4 value 2, then 0x47 and kind 1 again. The 75 percent action ran inside the slot-0 round that crossed it.
+
+### The server's flow
+
+On the console the steps are jobs: ServerRequest (`0x138d178`, message 5 to one slot), ServerCommand
+(`0x16e4f10`, a posted request block as a round, then its result's next step), RaidAction, and the
+battle's end. A per-frame machine (`0xf6d538`) steps five per-slot readers (`0xf6df44`) and the boss's
+list. A reader for a player's slot on the server's side:
+
+| reader state | when | then |
+|---|---|---|
+| 0 | the slot's sent entry holds none of 5, 0xd, 0xb, 0xf, 9, 7, 0x21, 3, 0x23, 0x15, 0x17, 0x19, 0x13, 0x47, 0x1f, 0x1d | a ServerRequest for the slot (`0xf70078`), state 1 |
+| 0 | otherwise | each answered pair erased from both entries (`0xf6edf4` for 0x15/0x16, 0x23/0x24, 0x11/0x12, 0x13/0x14, 0x17/0x18, 0x19/0x1a, 0x1b/0x1c, 0x1d/0x1e, 0x25/0x26, 0x1f/0x20) |
+| 1 | the slot was sent 5 and sent 6 | a zeroed block with the slot's command gathered in (`0xf6e6a8`, `0xf702ec` key 6, done key 5) posted as a ServerCommand, state 2 |
+| 2 | the slot answered a round (0x15 / 0x16) | state 0 |
+
+A slot is the boss's side by the table `0x3c6a45a` (0, 1, 0, 0, 0) against N+0x95; its reader only
+erases answered pairs. In the capture between two emulated consoles, three slots' commands that arrived
+during a raid action were sent as rounds after the raid action the first one posted in its state 3. The
+served battle gives that order when the readers run only while no job runs; the code that holds them
+back was not located.
+
+`pokeldn.sv.battle.engine.server.Server` runs this flow over a session the engine built, with the
+lifted steps above; the job scheduler, the per-frame machine and the readers' objects are stand-ins.
+From the emulated host's own bootstrap (message 0x2f in the capture) and the stations' messages the
+capture holds (the guest's frames, the host's local clients' frames as the host relayed them), it sends
+the guest the console's 21 frames up to the last round in the same order: type 1, 0x11, four requests,
+13 rounds of which three are the boss's, two 0x47. Twenty are byte for byte the console's outside the
+header's unwritten bytes and the request blocks' ([Actions](#actions)), with the battle timer started 60 s
+before the boss's timed action; one request carries step 24 where the console's carried 27, because the
+console's local clients answered rounds 22 and 23 before the host relayed those answers. Under unicorn, the game's own code for
+every lifted step leaves the same pages through the whole served battle.
 
 ### Reproducing a round
 
@@ -1146,6 +1240,10 @@ the host start; its Pokemon stayed in the battle.
 - Whether the battle timer a guest runs on a six-star point is the point's `gameLimit` 450; the
   reward-screen check did not measure it.
 - What the RaidPoint's byte 0x3b4 holds.
+- The code that drains a server link's deque (`[link+0x48]`) onto the network, and what holds the
+  server's per-slot readers back while a job runs.
+- How the per-frame machine's boss list (+0xf8) receives the actions of a timed check (message 0x51).
+- The battle's end on the server (`0x16e56a0`: messages 0x25, 0x29, 0x49).
 - Whether a retail console's reward screen follows the Lua filter for subjects 2 to 4; subjects 1
   and 5 are measured on a retail guest, the rest on an emulated one.
 - Whether the five-star catch-once records go in the save's list as the seven-star ones do.

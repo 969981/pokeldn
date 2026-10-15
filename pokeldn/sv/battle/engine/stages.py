@@ -625,3 +625,19 @@ def rank_targets_or_text(m, o, _x1, r, *_):
         return
     q = m.call(m.main + 0x1143584, o)
     return _tail(m, m.main + 0x287EE68, q, m.vcall(m.u64(r + 8), 0x98) & M32, 0x237)
+
+
+@lifted(0x186F0B0)
+def raise_negative_stages(m, p, *_):
+    """Each of the seven signed stage bytes at p below 6 becomes 6; whether any did."""
+    hit = 0
+    for k in range(7):
+        if m.s(p + k, 1) <= 5:
+            m.put(p + k, 1, 6)
+            hit = 1
+    return hit
+
+
+@lifted(0x186F0A8)
+def raise_negative_stages_of(m, b, *_):
+    return _tail(m, m.main + 0x186F0B0, b + 0x414)

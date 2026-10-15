@@ -1718,3 +1718,24 @@ lifted(0x114686C)(_events_each(0x71))
 def event_76(m, o, *_):
     """Event 0x76 with no parameters."""
     _event(m, o, 0x76, ())
+
+
+@lifted(0x2835CF0)
+def event_a0(m, o, kind, b, *_):
+    """Event 0xa0 with parameters 0x3e (kind), 3 (b's id) and 0x27 (0): the value 0x27 comes back with."""
+    return _event(m, o, 0xA0, ((0x3E, kind & 0xFF, 4, 0x1F8), (3, lambda: m.vcall(b, 0x98), 4, 0x20),
+                               (0x27, 0, 0, 0x140)), result=0x140)
+
+
+@lifted(0x1151590)
+def event_a1(m, o, kind, *_):
+    """Event 0xa1 with parameters 0x3e (kind) and 0x48 (0); when 0x48 comes back 0, event 0xa2 in the same
+    frame."""
+    ev_push(m, m.u64(o + 0x10))
+    ev_param(m, m.u64(o + 0x10), 0x3E, kind & 0xFF, 4, 0x1F8)
+    ev_param(m, m.u64(o + 0x10), 0x48, 0, 1, 0x248)
+    m.call_void(m.main + 0xF7B310, m.u64(o + 0x10), 0xA1, 8, 1)
+    ctx = m.u64(o + 0x10)
+    if _value(m, ctx, 0x248) == 0:
+        m.call_void(m.main + 0xF7B310, ctx, 0xA2, 8, 1)
+    ev_pop(m, m.u64(o + 0x10))

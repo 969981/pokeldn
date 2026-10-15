@@ -2,7 +2,7 @@
 resumable end-of-turn state machine."""
 
 from pokeldn.sv.battle.engine.calls import M32, _need, _s32, _tail, m_s32
-from pokeldn.sv.battle.engine.statics import _has_static
+from pokeldn.sv.battle.engine.statics import _has_static, _raid_class
 from pokeldn.sv.battle.machine import lifted
 
 
@@ -111,6 +111,67 @@ def mark_flagged(m, o, *_):
                     t = m.u64(o + 0x20)
                     m.call_void(m.main + 0x115043C, t, m.vcall(pk, 0x98) & 0xFFFFFFFF)
             pk = m.call(m.main + 0x158003C, it)
+
+
+def _rule_index(m, table, ident):
+    """The setup map's s32 for `ident` below 5, else 0; 0 when absent."""
+    p = m.call(m.main + 0x10E2DD4, table, ident & M32)
+    if not p:
+        return 0
+    v = m.s(p, 4)
+    return v if v < 5 else 0
+
+
+@lifted(0x1680124)
+def get_714(m, b, *_): return m.u8(b + 0x714)
+
+
+@lifted(0x168012C)
+def clear_entry_flag(m, t, k, ident, flag, *_):
+    """In row k (0..4, 0x60 bytes) of t: the first of the six entries (u32 id at +0x10 + 0x10 j) holding
+    `ident` takes flag & 1 in its byte +0xe when that byte is 0."""
+    k &= 0xFF
+    if k > 4:
+        return
+    for j in range(1, 7):
+        e = t + 0x60 * k + 0x10 * j
+        if m.u32(e) == ident & M32:
+            if m.u8(e + 0xE) == 0:
+                m.put(e + 0xE, 1, flag & 1)
+            return
+
+
+@lifted(0x1680000)
+def note_raid_flag(m, o, b, *_):
+    """For a raid battler b: 0x168012c on [[o+0x10]+0x250] with b's setup index, id and byte +0x714."""
+    if not _raid_class(m, b):
+        return
+    ident = m.vcall(b, 0x98) & M32
+    k = _rule_index(m, m.u64(m.u64(m.u64(m.u64(o + 0x10) + 0x290) + 8) + 0x50), ident)
+    t = m.u64(m.u64(o + 0x10) + 0x250)
+    return _tail(m, m.main + 0x168012C, t, k & M32, ident, m.call(m.main + 0x1680124, b) & 1)
+
+
+@lifted(0x1150480)
+def reset_raid_battler(m, o, ident, *_):
+    """For the raid battler `ident`: clear +0x714, vf 0x4d8(0x1c); with setup flag 0x49c bit 1, zero its
+    index's u64 in [[o+0x10]+0x210]+0x80 and byte in [[o+0x10]+0x2d0]+8; then 0x1680000."""
+    b = m.call(m.main + 0xF21C94, m.u64(m.u64(o + 0x10) + 0x30), ident)
+    b = b if _raid_class(m, b) else 0
+    m.put(b + 0x714, 1, 0)
+    m.vcall_void(b, 0x4D8, 0x1C)
+    if m.u8(m.u64(m.u64(o + 8) + 0x38) + 0x49C) >> 1 & 1:
+        k = _rule_index(m, m.u64(m.u64(o + 0x10) + 0x50), ident)
+        m.put(m.u64(m.u64(o + 0x10) + 0x210) + 8 * (k & M32) + 0x80, 8, 0)
+        m.put(m.u64(m.u64(o + 0x10) + 0x2D0) + 4 * k + 8, 1, 0)
+    return _tail(m, m.main + 0x1680000, o, b)
+
+
+@lifted(0x115044C)
+def reset_raid_battler_queued(m, o, ident, *_):
+    """0x1150480([o+0x20], ident), then command 0x80 with ident."""
+    m.call_void(m.main + 0x1150480, m.u64(o + 0x20), ident)
+    return _tail(m, m.main + 0x119AFF0, m.u64(o + 0x18), 0x80, ident & M32)
 
 
 @lifted(0x1142D98)

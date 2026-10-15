@@ -95,6 +95,14 @@ def copy_actions(m, block, slot, payload, count):
         m.put(counter, 1, m.u8(counter) + 1)
 
 
+@lifted(0xF6FC54)
+def copy_action(m, dst, src, *_):
+    """One request block action: the u64 word and the u32 actor."""
+    m.put(dst, 8, m.u64(src))
+    m.put(dst + 8, 4, m.u32(src + 8))
+    return dst
+
+
 @lifted(0xF7065C)
 def take_command(m, store, block, key, slot, *_):
     """Slot's count byte cleared, then slot's message `key` from the store (0xe634c8 by slot, 0xf6f0a8

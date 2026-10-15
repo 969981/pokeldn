@@ -1123,3 +1123,15 @@ def _factory(tag, r):
 
 for _addr, _tag, _r in _FACTORIES:
     lifted(_addr)(_factory(_tag, _r))
+
+
+@lifted(0x2D0DF50)
+def factory_by_kind(m, out, kind, *_):
+    """Kinds 5..7: tag (1, 1, 3) [0x3c69f60] and the descriptor pointer [0x44f1498 + 8 i]; any other
+    kind: tag 1 and main+0x44f12f8."""
+    i = (kind - 5) & 0xFF
+    if i > 2:
+        m.put(out, 4, 1)
+        return m.main + 0x44F12F8
+    m.put(out, 4, (1, 1, 3)[i])
+    return m.u64(m.main + 0x44F1498 + 8 * i)

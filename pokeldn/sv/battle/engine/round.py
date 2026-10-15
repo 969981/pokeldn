@@ -285,6 +285,94 @@ _BUILDER_TAILS = {3: 0x114BD5C, 7: 0x113E08C, 11: 0x114BD5C, 15: 0x11513EC, 17: 
                   37: 0x114C220, 61: 0x1150C58, 77: 0x11534C0}
 
 
+@lifted(0x114C634)
+def stat_entry(m, o, ident, *_):
+    """The value (+0x14) of the u32-keyed node for `ident` in the map at o+8, or 0."""
+    with m.frame(0x10) as k:
+        m.put(k, 4, ident)
+        node = m.call(m.main + 0x114C668, o + 8, k)
+    return node + 0x14 if node else 0
+
+
+@lifted(0x114C458)
+def side_has_entries(m, o, side, *_):
+    """For each member of side `side` (0x114e498) with an entry (0x114c634 on [[o+0x10]+0x2f0]) holding a
+    nonzero u32 or u16 sum: a 16-byte record {u32 id, bytes +6, +8, +0xa, +0xc, +0xe, +0xd = 1}; with any,
+    0x1141994 on [0x1361214(o)+0x640] decides. 0 without."""
+    lst = m.call(m.main + 0x114E498, o, side)
+    with m.frame(0xA0) as sp:
+        recs = sp + 0x20
+        for i in range(6):
+            r = recs + 0x10 * i
+            m.put(r, 8, 0); m.put(r + 5, 8, 0); m.put(r + 0xD, 1, 1)
+        n = m.call(m.main + 0xE7E274, lst) & 0xFF
+        found = 0
+        for i in range(n):
+            b = m.call(m.main + 0x114C614, lst, i)
+            stats = m.call(m.main + 0x114C60C, m.call(m.main + 0x1482534, o))
+            e = m.call(m.main + 0x114C634, stats, m.vcall(b, 0x98) & M32)
+            if not e:
+                continue
+            v = m.u32(e)
+            if v == 0 and sum(m.u16(e + k) for k in range(4, 0x10, 2)) == 0:
+                continue
+            r = recs + 0x10 * i
+            m.put(r, 4, v)
+            for j, k in enumerate((6, 8, 0xA, 0xC, 0xE)):
+                m.put(r + 5 + j, 1, m.u8(e + k))
+            found += 1
+        if not found:
+            return 0
+        m.put(sp + 0x18, 1, 0)
+        m.put(sp + 0x98, 1, 0)
+        m.put(sp + 8, 8, lst); m.put(sp + 0x10, 8, recs)
+        x = m.call(m.main + 0x113FD24, m.call(m.main + 0x1361214, o))
+        m.call_void(m.main + 0x1141994, x, sp + 0x98, sp + 8)
+        return int(m.u8(sp + 0x98) != 0)
+
+
+@lifted(0x114C3CC)
+def any_side_has_entries(m, o, out, *_):
+    """out[0] = whether 0x114c458 answers yes for any of the sides 0..4 (all five are asked)."""
+    hits = [m.call(m.main + 0x114C458, o, k) & 1 for k in range(5)]
+    m.put(out, 1, int(sum(hits[:4]) != (M32 if hits[4] else 0)))
+
+
+@lifted(0x114C390)
+def check_side_entries(m, o, req, *_):
+    """0x114c3cc on [[o+0x18]+0x1da0]; its answer is dropped."""
+    with m.frame(0x10) as sp:
+        m.put(sp + 8, 8, req)
+        m.put(sp, 1, 0)
+        m.call_void(m.main + 0x114C3CC, m.call(m.main + 0x114C3C4, m.u64(o + 0x18)), sp, sp + 8)
+
+
+@lifted(0x114C220)
+def build_round_message(m, o, out, size, count, *_):
+    """Message kind 37: the queue's formats reset (0xfaf048 inlined, as kind 21), the 0x5060-byte buffer o+0x58 zeroed
+    and opened with the 0x238 bytes of [o+0x40], 0x114c390, the queue bytes copied to o+0x294 (length
+    o+0x290), *out = o+0x58, *size = 0x5060, *count += 1, and [o+0x40]'s request block cleared."""
+    q = m.u64(o + 0x10)
+    m.put(q + 0x68, 8, 0)
+    for i, fmt in enumerate(_ROUND_FORMATS):
+        m.put(m.call(m.main + 0xFAF09C, q, m.main + 0x3C6ABE4 + 4 * i), 1, fmt)
+    buf = o + 0x58
+    m.write(buf, bytes(0x5060))
+    req = m.u64(o + 0x40)
+    m.write(buf, m.read(req, 0x238))
+    m.call_void(m.main + 0x114C390, m.u64(o + 8), req)
+    q = m.u64(o + 0x10)
+    n = m.u32(q + 0x68)
+    m.put(o + 0x290, 4, n)
+    m.write(o + 0x294, m.read(q + 0x70, n))
+    m.put(out, 8, buf); m.put(size, 4, 0x5060)
+    m.put(count, 8, m.u64(count) + 1)
+    req = m.u64(o + 0x40)
+    for off in range(0, 0x230, 0x10):
+        m.put(req + off, 8, 0)
+    m.put(req + 0x234, 1, 0); m.put(req + 0x230, 4, 0)
+
+
 @lifted(0x113C8A0)
 def build_message(m, o, out, size, count, kind, *_):
     """The server's per-kind message builder: *out / *size get the message (0 when none). Kind 21 runs a

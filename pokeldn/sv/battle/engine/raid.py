@@ -488,3 +488,43 @@ def _raid_member_id(m, o):
         if b:
             m.put(x + 0x18, 4, m.vcall(b, 0x98))
     return m.u32(x + 0x18)
+
+
+# --- the raid boss's queued actions: up to four (u8 kind +0x5c + 8i, u32 value +0x60 + 8i), count +0x7c,
+# in the object at [server module + 0x1b0] (docs/sv_raid.md, The boss's actions) --------------------------
+
+@lifted(0xFAF024)
+def clear_actions(m, x, *_):
+    """The four queued actions and the count cleared."""
+    for i in range(4):
+        m.put(x + 0x5C + 8 * i, 1, 0); m.put(x + 0x60 + 8 * i, 4, 0)
+    m.put(x + 0x78, 8, 0)
+
+
+@lifted(0x1142804)
+def has_shield_action(m, x, *_):
+    """Whether one of the first four queued actions is of kind 1 (the shield)."""
+    n = m.u32(x + 0x7C)
+    return int(any(i <= 3 and m.u8(x + 0x5C + 8 * i) == 1 for i in range(n)))
+
+
+@lifted(0x114FC70)
+def raid_id(m, rec, *_):
+    """The raid battler's id the record caches at +0x18 (_raid_id)."""
+    return _raid_id(m, rec)
+
+
+@lifted(0x114FB2C)
+def action_words(m, x, out, *_):
+    """Each queued action as a request block action at out + 0x10 * i: the word's kind 0xc (bits 0..3),
+    the action's kind byte in bits 4..11, its value's low u16 in bits 32..47, bits 20..31 kept from out,
+    the rest clear; the actor u32 the raid battler's id (0x114fc70). Returns the count."""
+    n = m.u32(x + 0x7C)
+    for i in range(n):
+        ident = m.call(m.main + 0x114FC70, m.u64(m.u64(x + 8) + 0x310)) & 0xFFFFFFFF
+        a = out + 0x10 * i
+        w = m.u64(a) & 0xFFF00000 | 0xC | m.u8(x + 0x5C + 8 * i) << 4 | m.u16(x + 0x60 + 8 * i) << 32
+        m.put(a + 8, 4, ident)
+        m.put(a, 8, w)
+        n = m.u32(x + 0x7C)
+    return n
