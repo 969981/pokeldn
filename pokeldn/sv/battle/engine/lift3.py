@@ -1667,10 +1667,8 @@ def can_take_condition(m, o, out, s, *_):
         elif m.call(m.main + 0x1795EA4, m.call(m.main + 0x1146E90, o), b, u, k, sub) & 1:
             apply = True
         else:
-            if m.u8(m.u64(m.main + 0x46D3F00)) & 1 == 0:
-                raise UnliftedCall("static 0x46d3f08 not built")
             node = m.vcall(b + 0x28, 0)
-            static = m.u64(m.main + 0x46D3F08)
+            static = m.call(m.main + 0x2D1FD38)
             while node:
                 if node == static:
                     if k == 0x2A and m.u8(b + 0x714):
@@ -1811,10 +1809,8 @@ def apply_condition_record(m, o, _out, s, *_):
     elif text:
         m.call_void(m.main + 0x114B0AC, m.u64(o + 0x20), uid, text)
     u, b, k = m.u64(s), m.u64(s + 8), m.u16(s + 0x10)
-    if m.u8(m.u64(m.main + 0x46D3F00)) & 1 == 0:
-        raise UnliftedCall("static 0x46d3f08 not built")
     node = m.vcall(b + 0x28, 0)
-    static = m.u64(m.main + 0x46D3F08)
+    static = m.call(m.main + 0x2D1FD38)
     while node and node != static:
         node = m.u64(node)
     if node and k == 3 and m.u16(b + 0x710) == 0x1EC and m.u16(b + 0x718) == 1:
@@ -2686,9 +2682,7 @@ def critical_hit(m, o, a, b, move, out, *_):
 def _held_static(m, b):
     """Whether b's list at +0x28 (vf 0 of that subobject) holds the static at 0x46d3f08."""
     node = m.vcall(b + 0x28, 0)
-    if m.u8(m.u64(m.main + 0x46D3F00)) & 1 == 0:
-        raise UnliftedCall("static 0x46d3f08 not built")
-    static = m.u64(m.main + 0x46D3F08)
+    static = m.call(m.main + 0x2D1FD38)
     while node and node != static:
         node = m.u64(node)
     return node != 0
@@ -4191,8 +4185,6 @@ def turn_end(m, o, *_):
     0x283c488, 0x282fbf4; vf 0x448 and command 0x23 for each id in [[o+0x40]+0x68] (then cleared);
     vf 0 of each listed member's +0x28; 0x121bdb0 with codes 5 and (rule 0x49c bit 1) 0x1a; result 9
     from 0x1399e20; the turn counter (at most 9999), command 0x2d, 0x2d21a74."""
-    if m.u8(m.u64(m.main + 0x46D3F00)) & 1 == 0:
-        raise UnliftedCall("static 0x46d3f08 not built")
     with m.frame(0x100) as sp:
         lst, a, b = sp + 8, sp + 0xD8, sp + 0xB8
 
@@ -4240,6 +4232,7 @@ def turn_end(m, o, *_):
         m.write(ids + 8, bytes(0x1E)); m.put(ids + 0x28, 4, 0)
         for t in listed():
             m.vcall(t + 0x28, 0)
+            m.call(m.main + 0x2D1FD38)
         for code, on in ((5, True), (0x1A, None)):
             if on is None and not m.u8(m.u64(m.u64(o + 8) + 0x38) + 0x49C) >> 1 & 1:
                 continue
@@ -5051,9 +5044,7 @@ def mark_raid_bit(m, o, ident, bit, *_):
     if not b:
         return
     node = m.vcall(b + 0x28, 0)
-    if m.u8(m.u64(m.main + 0x46D3F00)) & 1 == 0:
-        raise UnliftedCall("static 0x46d3f08 not built")
-    static = m.u64(m.main + 0x46D3F08)
+    static = m.call(m.main + 0x2D1FD38)
     while node and node != static:
         node = m.u64(node)
     if not node:
@@ -5795,17 +5786,22 @@ def rank_change_check(m, o, user, target, desc, *_):
 
 @lifted(0x2D02BE8)
 def static_476a198(m, *_):
-    """A function-local static at main+0x476a198 (guard byte 0x476a1a0); the engine only reads one built."""
-    if m.u8(m.main + 0x476A1A0) & 1 == 0:
-        raise UnliftedCall("static 0x476a198 not built")
+    """The function-local static at main+0x476a198 (guard byte 0x476a1a0), built from 0x28024a0."""
+    guard = m.main + 0x476A1A0
+    if m.u8(guard) & 1 == 0 and m.call(m.main + 0x343CF10, guard) & M32:
+        m.put(m.main + 0x476A198, 8, m.call(m.main + 0x28024A0))
+        m.call_void(m.main + 0x343CF20, guard)
     return m.main + 0x476A198
 
 
 @lifted(0x2D37AA8)
 def static_46e2f70(m, *_):
-    """The function-local static [0x46e2f70] (guard [0x46e2f68]); the engine only reads one built."""
-    if m.u8(m.u64(m.main + 0x46E2F68)) & 1 == 0:
-        raise UnliftedCall("static 0x46e2f70 not built")
+    """The function-local static [0x46e2f70] (guard [0x46e2f68]), built from 0x28024a0."""
+    guard = m.u64(m.main + 0x46E2F68)
+    if m.u8(guard) & 1 == 0 and m.call(m.main + 0x343CF10, guard) & M32:
+        slot = m.u64(m.main + 0x46E2F70)
+        m.put(slot, 8, m.call(m.main + 0x28024A0))
+        m.call_void(m.main + 0x343CF20, guard)
     return m.u64(m.main + 0x46E2F70)
 
 
@@ -6646,9 +6642,7 @@ def _speed_pass(m, o, user, lst, mv, scratch):
         if not flags >> 0x11 & 1:
             return False
         node = m.vcall(p + 0x28, 0)
-        if m.u8(m.u64(m.main + 0x46D3F00)) & 1 == 0:
-            raise UnliftedCall("static 0x46d3f08 not built")
-        static = m.u64(m.main + 0x46D3F08)
+        static = m.call(m.main + 0x2D1FD38)
         while node:
             if node == static:
                 return bool(m.u8(p + 0x714))
@@ -7521,9 +7515,7 @@ def _tera_floor(m, o, att, mv, power):
     named floor (0x3c69ec8) is raised to it, outside multi-hit moves (field 9 > 1), moves with positive
     priority-like field 8, and the listed exceptions."""
     node = m.vcall(att + 0x28, 0)
-    if m.u8(m.u64(m.main + 0x46D3F00)) & 1 == 0:
-        raise UnliftedCall("static 0x46d3f08 not built")
-    static = m.u64(m.main + 0x46D3F08)
+    static = m.call(m.main + 0x2D1FD38)
     while node and node != static:
         node = m.u64(node)
     if not node:
@@ -7574,9 +7566,7 @@ def _tera_percent(m, user, mv, base, same, other):
     if not base:
         return 0
     node = m.vcall(user + 0x28, 0)
-    if m.u8(m.u64(m.main + 0x46D3F00)) & 1 == 0:
-        raise UnliftedCall("static 0x46d3f08 not built")
-    static = m.u64(m.main + 0x46D3F08)
+    static = m.call(m.main + 0x2D1FD38)
     while node and node != static:
         node = m.u64(node)
     if not node or not m.u8(user + 0x714):
@@ -7756,9 +7746,7 @@ def _survival_cap_applies(m, o, t):
         return True
     if flags >> 0x11 & 1:
         node = m.vcall(t + 0x28, 0)
-        if m.u8(m.u64(m.main + 0x46D3F00)) & 1 == 0:
-            raise UnliftedCall("static 0x46d3f08 not built")
-        static = m.u64(m.main + 0x46D3F08)
+        static = m.call(m.main + 0x2D1FD38)
         while node and node != static:
             node = m.u64(node)
         if not node:
@@ -7900,11 +7888,9 @@ def battler_fainted(m, o, rec, ident, *_):
 
 def _raid_class(m, b):
     """Whether battler b's class list (vf 0 of b+0x28) holds the static 0x46d3f08; refuses while the
-    static is not built (the game builds it here, a write)."""
+    static is not built (0x2d1fd38 builds it)."""
     node = m.vcall(b + 0x28, 0)
-    if m.u8(m.u64(m.main + 0x46D3F00)) & 1 == 0:
-        raise UnliftedCall("static 0x46d3f08 not built")
-    static = m.u64(m.main + 0x46D3F08)
+    static = m.call(m.main + 0x2D1FD38)
     while node:
         if node == static:
             return True
@@ -8027,8 +8013,7 @@ def friendship_member(m, ctx, side, ident, *_):
     Pokemon (0x1380644) with the key **ctx."""
     r = m.call(m.main + 0xF79790, m.u64(side + 0x30), ident & M32)
     lst = m.vcall(r + 0x28, 0)
-    _static_built(m, 0x46D3F00)
-    static = m.u64(m.main + 0x46D3F08)
+    static = m.call(m.main + 0x2D1FD38)
     while lst:
         if lst == static:
             pp = m.call(m.main + 0x1380644, r)
@@ -11212,3 +11197,51 @@ def build_battle_start(m, o, out, size, count, *_):
     m.put(count, 8, m.u64(count) + 1)
     m.put(o + 0xC4A5, 1, flag)
     m.put(o + 0xC4A3, 1, 0)
+
+
+# --- function-local statics: the guards and the constructors they run --------------------------------
+
+@lifted(0x343CF10)
+def guard_acquire(m, guard, *_):
+    """__cxa_guard_acquire (the SDK's 0x53c49a0, through [0x46ca080]): 0 when byte 0 says built or byte 1
+    reads 1 (released); else byte 1 = 2 (in progress) and 1. A guard in progress elsewhere waits on the
+    condition variable 0x5b318b8: refused. The guard mutex 0x5b318c0 is taken and given back (no net write)."""
+    if m.u8(guard):
+        return 0
+    b = m.u8(guard + 1)
+    if b & 2:
+        raise UnliftedCall("guard acquire while another construction is in progress")
+    if b == 1:
+        return 0
+    m.put(guard + 1, 1, 2)
+    return 1
+
+
+def _override(address):
+    """Replace an earlier module's registration (it refused a static's first construction)."""
+    def register(fn):
+        FUNCTIONS[address] = fn
+        fn.address = address
+        return fn
+    return register
+
+
+@_override(0x2D1FD38)
+def static_46d3f08(m, *_):
+    """The raid battler class's static [0x46d3f08] (guard [0x46d3f00]), built from 0x1a07aa4 on first use."""
+    guard = m.u64(m.main + 0x46D3F00)
+    if m.u8(guard) & 1 == 0 and m.call(m.main + 0x343CF10, guard) & M32:
+        slot = m.u64(m.main + 0x46D3F08)
+        m.put(slot, 8, m.call(m.main + 0x1A07AA4))
+        m.call_void(m.main + 0x343CF20, guard)
+    return m.u64(m.main + 0x46D3F08)
+
+
+@_override(0x28024A0)
+def static_46e2578(m, *_):
+    """The static chain [0x46e2578] -> [0x46d3ab0] -> [0x46d39b8] -> [0x46d39c8] (0), each level under its
+    own guard; the outer slot."""
+    from pokeldn.sv.battle.engine.lift0 import _static_chain
+    _static_chain(m, ((0x46E2570, 0x46E2578), (0x46D3AA8, 0x46D3AB0), (0x46D39B0, 0x46D39B8),
+                      (0x46D39C0, 0x46D39C8)))
+    return m.u64(m.main + 0x46E2578)

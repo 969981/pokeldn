@@ -959,8 +959,8 @@ handlers. Over 86 halted consoles (49 rounds, 5 battle starts) the port leaves t
 the same memory pages as the game's own code, with no call handed back to it. The heap it allocates
 from is the SDK's `nn::mem::StandardAllocator` over a thread cache, ported with the cache's creation
 and its TinyMT32 key (`0x525f448`). The battle-state build steps `0x2892ac0`, `0x2d381a4` and
-`0x2891748` also match; five calls in them still run the game's code, all first-time construction
-of function-local statics.
+`0x2891748` also run in Python and match, function-local statics included: `__cxa_guard_acquire`
+(`0x53c49a0`) returns 1 and sets byte 1 of the guard to 2 when neither byte 0 nor byte 1 is set.
 
 ## Joining
 
