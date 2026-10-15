@@ -222,3 +222,42 @@ def seed_for(stage, wanted=(), entropy=os.urandom):
         seed = int.from_bytes(entropy(8), "little")
         if tuple(draw(seed, stage, len(wanted))) == wanted:
             return seed
+
+
+# The species' own Tera type where an entry leaves it to the per-species table 0xe78418 reads
+# (docs/sv_raid.md, Partners): Dragon for Haxorus, Ground for Clodsire.
+DEFAULT_TERA = {612: 15, 980: 4}
+
+
+def record_fields(seed, stage, index, level):
+    """-> the gen9 fields of the partner record the console builds for pool entry `index` at `level`:
+    identity(seed) and the game's entry; scale 128, language 2, met at its level, the base friendship,
+    the PP of each move (35 for an empty slot)."""
+    entry = game_pool(stage)[index]
+    species, form = entry["species"], entry["form"]
+    base, _types, _ratio, friendship, growth, abilities = raid_encounter.personal(species, form)
+    ec, tid, sid, pid, height, weight = identity(seed)
+    moves = tuple(entry["moves"]) + (0,) * (4 - len(entry["moves"]))
+    ivs, evs = tuple(entry["ivs"]), tuple(entry["evs"])
+    party = raid_encounter.stats(base, ivs, level, entry["nature"], evs)
+    pp = raid_encounter.tables()["move_pp"]
+    tera = entry["tera"] if entry["tera"] is not None else DEFAULT_TERA[species]
+    return {
+        "species": species, "form": form, "level": level, "met_level": level,
+        "experience": raid_encounter.experience(level, growth), "encryption_constant": ec,
+        "trainer_id": tid, "secret_id": sid, "pid": pid,
+        "ability": abilities[{1: 0, 2: 1, 4: 2}[entry["ability_number"]]], "ability_number": entry["ability_number"],
+        "gender": entry["gender"], "nature": entry["nature"], "stat_nature": entry["nature"], "ivs": ivs, "evs": evs,
+        "height_scalar": height, "weight_scalar": weight, "scale": entry["scale"],
+        "tera_type_original": tera, "tera_type_override": raid_encounter.TERA_NONE, "moves": moves,
+        "move_pp": tuple(pp.get(str(mv), 35) if mv else 35 for mv in moves),
+        "current_hp": party[0], "stats": party, "ot_friendship": friendship,
+        "nickname": raid_encounter.tables()["species_names"][str(species)], "language": 2, "affixed_ribbon": -1,
+        "ball": entry["ball"],
+    }
+
+
+def record(seed, stage, index, level):
+    """-> the encrypted 0x158-byte party record of a partner (record_fields)."""
+    from pokeldn import gen9
+    return gen9.encrypt(gen9.write(bytes(gen9.SIZE_PARTY), **record_fields(seed, stage, index, level)))

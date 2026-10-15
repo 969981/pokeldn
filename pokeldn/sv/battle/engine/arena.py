@@ -12,13 +12,16 @@ with its destructors (slots are numbered in allocation order).
 """
 
 import dataclasses
+import struct
 
 from pokeldn.sv.battle.engine import heap
-from pokeldn.sv.battle.machine import MASK, Machine, UnliftedCall, lifted
+from pokeldn.sv.battle.machine import FORMAT, MASK, Machine, UnliftedCall, lifted
 
 M64 = MASK[8]
 M32 = MASK[4]
 PAGE = 0x1000
+_UNPACK = {n: struct.Struct(f).unpack_from for n, f in FORMAT.items()}
+_PACK = {n: struct.Struct(f).pack_into for n, f in FORMAT.items()}
 
 ARENA_TLS = 0x7F0000000         # stand-in tpidrro_el0 block; +0x1f8 the thread object
 ARENA_THREAD = 0x7F0001000      # stand-in nn::os ThreadType (+0x80 + 8 * slot TLS values, +0x1b0 handle)
@@ -63,6 +66,21 @@ class Arena(Machine):
             s = self.static(p) if self.static else None
             b = self.pages[p] = bytearray(s) if s is not None else bytearray(PAGE)
         return b
+
+    def u(self, address, size):
+        o = address & (PAGE - 1)
+        if o + size <= PAGE and self._direct_read:
+            b = self.pages.get(address - o)
+            return _UNPACK[size](b if b is not None else self.page(address), o)[0]
+        return Machine.u(self, address, size)
+
+    def put(self, address, size, value):
+        o = address & (PAGE - 1)
+        if o + size <= PAGE and self._direct_write:
+            b = self.pages.get(address - o)
+            _PACK[size](b if b is not None else self.page(address), o, value & MASK[size])
+            return
+        Machine.put(self, address, size, value)
 
     def made(self, address):
         """Whether reading `address` gives anything but a zero: a page exists or the image backs it."""

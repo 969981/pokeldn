@@ -1,12 +1,11 @@
 """A raid battle served by the engine (pokeldn.sv.battle.engine.server.Server) from a Scarlet 4.0.0 host's
 own bootstrap and the stations' messages its server received, against the frames that server sent the guest
-between two emulated consoles (docs/sv_raid.md, The server's flow). The session needs the game's image and
-romfs tables in scratchpad/."""
+between two emulated consoles (docs/sv_raid.md, The server's flow). The session needs Scarlet 4.0.0's image
+and tables, read from the user's dump (game_files)."""
 import base64
 import json
 import os
 import re
-import sys
 import zlib
 from pathlib import Path
 
@@ -16,8 +15,6 @@ from pokeldn import gen9
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = json.loads((Path(__file__).parent / "data" / "sv_raid_served.json").read_text())
-BATTLE = ROOT / "scratchpad" / "battle"
-ROMFS = ROOT / "scratchpad" / "sv" / "romfs"
 EMULATOR_NAMES = {"Player", "POKELDN", "VMJOINER"}
 HEADER = 18 + 0x20                 # the frame's address and length, then the message header
 PADDING = set(range(4, 8)) | set(range(0x1A, 0x20))       # header bytes the game copies from its stack
@@ -37,30 +34,26 @@ def test_the_recorded_battle_names_only_an_emulated_player():
     assert owners <= EMULATOR_NAMES | {""}
 
 
+def game_files():
+    """Scarlet 4.0.0's image and tables (pokeldn.sv.battle.game) from the cache in POKELDN_SV_GAME_CACHE
+    (default scratchpad/sv/game), prepared there first from the dump when POKELDN_SV_UPDATE,
+    POKELDN_SV_BASE and POKELDN_KEYS name it."""
+    from pokeldn.sv.battle import game
+    cache = Path(os.environ.get("POKELDN_SV_GAME_CACHE", ROOT / "scratchpad" / "sv" / "game"))
+    if game.ready(cache):
+        return game.load(cache)
+    dump = [os.environ.get(v) for v in ("POKELDN_SV_UPDATE", "POKELDN_SV_BASE", "POKELDN_KEYS")]
+    if not all(dump):
+        pytest.skip("needs Scarlet 4.0.0's image and tables: POKELDN_SV_GAME_CACHE, or the dump "
+                    "in POKELDN_SV_UPDATE, POKELDN_SV_BASE and POKELDN_KEYS")
+    cache.mkdir(parents=True, exist_ok=True)
+    return game.prepare(*dump, cache)
+
+
 @pytest.fixture(scope="module")
 def session():
-    if not (BATTLE / "arena" / "image.pkl").exists() or not ROMFS.exists():
-        pytest.skip("needs Scarlet 4.0.0's image and romfs tables in scratchpad/")
-    for sub in ("standalone", "arena"):
-        if str(BATTLE / sub) not in sys.path:
-            sys.path.insert(0, str(BATTLE / sub))
-    import standalone
-    from pokeldn.sv.battle.engine import arena, session as build
-    boot = bytes.fromhex(DATA["bootstrap"])
-    m = standalone.Standalone(standalone.static_page)
-    arena.build(m)
-    app = build.application_allocator(m)
-    build.build_handles(m, app)
-    names = [t[4] for t in build.TABLES] + [build.IDHASH[4]]
-    build.build_tables(m, app, {p: (ROMFS / p).read_bytes() for p in names})
-    saved = build.RAID_SETUP
-    build.RAID_SETUP = tuple((o, s, 0 if o == 0x90 else v, n) for o, s, v, n in saved)   # the host's slot 0
-    try:
-        n = build.build_session(m, app, boot, standalone.generated_partners(boot))
-    finally:
-        build.RAID_SETUP = saved
-    build.start_states(m, n)
-    return m, n
+    from pokeldn.sv.battle import standalone
+    return standalone.battle(game_files(), bytes.fromhex(DATA["bootstrap"]), slot=0)   # the host's slot 0
 
 
 def serve(m, n):

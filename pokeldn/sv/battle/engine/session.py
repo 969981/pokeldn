@@ -1353,15 +1353,17 @@ RAID_SETUP = (
 )
 
 
-def raid_setup(m, alloc, setup, bootstrap, partners):
+def raid_setup(m, alloc, setup, bootstrap, partners, slot=None):
     """The raid start's setup fields: RAID_SETUP; per participant p and entry e (0x1c bytes from +0x18 of
     +0xc8 + 0xc0 * p) u16 +0x10 30 (26 for the boss, p = 1) and u8 +0xd 1 for the host's entries 1..5 and
     the guest's 0..5; from the bootstrap (0xaa0 plaintext) the RaidPoint's randSeed at +0x718, its
     raidTimeData limits at +0x48a/+0x48c/+0x48e (300, 0, 60 when inactive), its boss action profile as
     u16 at +0x514, and the five party holders (our Pokemon, the boss, the guest, the two NPC partners'
-    records from `partners`)."""
+    records from `partners`). `slot` replaces RAID_SETUP's console slot u32 +0x90 (0: the host's)."""
     for off, size, value, _ in RAID_SETUP:
         m.put(setup + off, size, value)
+    if slot is not None:
+        m.put(setup + 0x90, 4, slot)
     for p in range(5):
         for e in range(6):
             a = setup + 0xC8 + 0xC0 * p + 0x18 + 0x1C * e
@@ -1388,7 +1390,7 @@ def _session_of(m, mgr, ident):
     return m.u64(node + 0x18) if node else 0
 
 
-def build_session(m, alloc, bootstrap, partners):
+def build_session(m, alloc, bootstrap, partners, slot=None):
     """The battle session as the console makes it: the session manager (0x168ca58, at boot), a session
     S under it (0x159dba0; S's job is bare_job: the engine's job scheduler is not reproduced),
     the raid start's setup fields (raid_setup), the session start (0x1891274: N+0x48, N and what hangs
@@ -1407,7 +1409,7 @@ def build_session(m, alloc, bootstrap, partners):
         del FUNCTIONS[0x159F018]
     mgr = manager(m)
     s = _session_of(m, mgr, ident)
-    raid_setup(m, alloc, m.u64(s + 0xE0), bootstrap, partners)
+    raid_setup(m, alloc, m.u64(s + 0xE0), bootstrap, partners, slot)
     with m.frame(0x20) as opt:
         m.put(opt, 8, 0)
         m.call_void(m.main + 0x1891274, ident, opt)

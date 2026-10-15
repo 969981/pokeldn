@@ -1215,7 +1215,8 @@ come out of `arc/data.trpfs` (`tools/switch/trpfs_read.py`; Oodle entries throug
 `OodleLZ_Decompress` at `0xcc8750`), and every byte of them held by 97 halted consoles equals the
 extracted file.
 
-The battle start also runs with no halted console. From the static image and the romfs alone, the
+The battle start also runs with no halted console (`pokeldn.sv.battle.standalone`). From the static
+image and the romfs alone, the
 port builds the game heap (`pokeldn.sv.battle.engine.arena`), the "Application" counted allocator
 (`0x3b78d3d`, limit 0xa0000000, over the GlobalHeap allocator 0x4763918), the weak-handle table
 (`0x165dd08`) and the five data tables (personal `0x164498c`, id-hash `0x1730f6c`). The session and
@@ -1271,6 +1272,14 @@ The data system's init `0x1641afc` runs `0x1643a48` (personal, growth), `0x1641c
 `0x1641d78` (abilities). Each table is created from the allocator, reset into its static (`0x1643e68`)
 and appended through `0xf0ba9c` to the registry at 0x4763a18 (count u32 0x4765a18, at most 0x400).
 Inserting a file's records in file order, after reserving their count, gives the console's node list.
+The static image and the five tables come from the player's own dump (`pokeldn.sv.battle.game`):
+main and the SDK from the v4.0.0 update's ExeFS (main's build id
+`421c5411b487eb4d049dd065fec9547773e8e598`), each NSO's segments at their memory offsets with .bss, RELATIVE relocations at main
+`0x8504000` and SDK main + `0x4e6d000`, then the GLOB_DAT, JUMP_SLOT and ABS64 slots bound to the
+first module exporting the symbol, main before the SDK; the tables from the update's RomFS over the
+base game's (`arc/data.trpfs`, Oodle through `0xcc8750`). Reading them takes 3 s on an M4; building
+the session and N's start states 2.4 s.
+
 A weak-handle entry is 0x20 bytes: u64 id (u32 index | u32 generation << 32), +8 the resolved value,
 +0x10 the object, u16 +0x18 weak count, u16 +0x1a strong count, u32 +0x1c state (-1 freed, -2 live).
 Blocks hold 0x400 entries (`0xc1adec`); freed ids go to a `deque<u32>` grown by `0xb44724`.

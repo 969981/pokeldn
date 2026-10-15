@@ -22,8 +22,11 @@ Layout, as the code reads it:
     +0 u16 pages per span, +2 u16 object size
 """
 
+import re
+import struct
+
 from pokeldn.sv.battle.engine.calls import _need, _tail, _vtail
-from pokeldn.sv.battle.machine import FUNCTIONS, MASK, Machine, UnliftedCall, lifted
+from pokeldn.sv.battle.machine import FORMAT, FUNCTIONS, MASK, Machine, UnliftedCall, lifted
 
 M64 = MASK[8]
 M32 = MASK[4]
@@ -40,14 +43,19 @@ CLASSES = 0x39
 SLOT_DIV7 = 0x6DB6DB6DB6DB6DB7  # the inverse of 7: descriptor offset / 0x70
 
 
+_CHANGED = re.compile(rb"[^\x00]+")      # a run of changed bytes in a page's XOR
+
+
 class _Tx(Machine):
-    """Reads through to `base`, buffers every write; `commit` stores the bytes that changed."""
+    """Reads through to `base`, buffers every write; `commit` stores the bytes that changed, run by run,
+    from the span of each page the writes touched."""
 
     def __init__(self, base):
         super().__init__(pages=None, main=base.main, stack=base.sp, tls=base.tls)
         self.base = base
         self.cache = {}
         self.orig = {}
+        self.span = {}              # page -> [lowest, highest + 1) offset written
 
     def page(self, address):
         p = address & ~(PAGE - 1)
@@ -56,27 +64,42 @@ class _Tx(Machine):
             b = self.cache[p] = bytearray(self.base.read(p, PAGE))
         return b
 
+    def _touch(self, p, lo, hi):
+        s = self.span.get(p)
+        if s is None:
+            self.orig[p] = bytes(self.page(p))
+            self.span[p] = [lo, hi]
+        else:
+            if lo < s[0]:
+                s[0] = lo
+            if hi > s[1]:
+                s[1] = hi
+
     def write(self, address, data):
         i = 0
         while i < len(data):
             p = address & ~(PAGE - 1)
-            if p not in self.orig:
-                self.orig[p] = bytes(self.page(p))
             o = address & (PAGE - 1); k = min(len(data) - i, PAGE - o)
+            self._touch(p, o, o + k)
             self.cache[p][o:o + k] = data[i:i + k]; address += k; i += k
 
+    def put(self, address, size, value):
+        o = address & (PAGE - 1)
+        if o + size > PAGE:
+            return super().put(address, size, value)
+        p = address - o
+        self._touch(p, o, o + size)
+        struct.pack_into(FORMAT[size], self.cache[p], o, value & MASK[size])
+
     def commit(self):
-        for p, old in self.orig.items():
-            new = self.cache[p]
-            i = 0
-            while i < PAGE:
-                if new[i] == old[i]:
-                    i += 1; continue
-                j = i
-                while j < PAGE and new[j] != old[j]:
-                    j += 1
-                self.base.write(p + i, bytes(new[i:j]))
-                i = j
+        for p, (lo, hi) in self.span.items():
+            new, old = self.cache[p][lo:hi], self.orig[p][lo:hi]
+            if new == old:
+                continue
+            n = hi - lo
+            diff = (int.from_bytes(new, "little") ^ int.from_bytes(old, "little")).to_bytes(n, "little")
+            for run in _CHANGED.finditer(diff):
+                self.base.write(p + lo + run.start(), bytes(new[run.start():run.end()]))
 
 
 def _transaction(m, fn, *args):

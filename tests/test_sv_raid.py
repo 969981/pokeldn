@@ -239,13 +239,15 @@ def test_the_raidpoint_carries_the_partner_seed_and_the_raid_s_stage():
 
 
 def test_lz4_blocks_cross_an_independent_decoder():
-    """Ours read by `nso_read.lz4_block`; one liblz4 1.10 made (LZ4_compress_default) read by ours."""
-    from nso_read import lz4_block
+    """Ours read by the NSO reader's `lz4_block`; one liblz4 1.10 made (LZ4_compress_default), with
+    overlapping matches, read by both."""
+    from pokeldn.switch.nso import lz4_block
     plain = raid.bootstrap(raid_encounter.generate(0xBD13FB43), ())
     assert lz4_block(lz4.compress(plain), len(plain)) == plain
     theirs = bytes.fromhex("ff0552616964506f696e745f504f4b454c444e5f30000100145f504b4c444e0500240f6300"
                            "06500000000000")
-    assert lz4.decompress(theirs, 149) == b"RaidPoint_POKELDN_0" + bytes(40) + b"PKLDN" * 12 + bytes(30)
+    want = b"RaidPoint_POKELDN_0" + bytes(40) + b"PKLDN" * 12 + bytes(30)
+    assert lz4.decompress(theirs, 149) == lz4_block(theirs, 149) == want
 
 
 def test_the_port2_session_and_the_channel_table_are_a_retail_host_s():
