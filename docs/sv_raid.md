@@ -999,14 +999,54 @@ extracted file.
 The battle start also runs with no halted console. From the static image and the romfs alone, the
 port builds the game heap (`pokeldn.sv.battle.engine.arena`), the "Application" counted allocator
 (`0x3b78d3d`, limit 0xa0000000, over the GlobalHeap allocator 0x4763918), the weak-handle table
-(`0x165dd08`) and the five data tables (personal `0x164498c`, id-hash `0x1730f6c`). The server object
-N then comes from a 1633-byte session template plus the bootstrap. After that, the four build steps
-and the builder with type 0x11 run. The battle-start bodies of five sessions (268, 345, 328, 422 and
+(`0x165dd08`) and the five data tables (personal `0x164498c`, id-hash `0x1730f6c`). The session and
+the server object N then come from the game's own creators (below), with the raid start's setup
+fields from the bootstrap. After that, N's start states run the four build steps, and the builder
+with type 0x11 runs. The battle-start bodies of five sessions (268, 345, 328, 422 and
 268 bytes) equal the console's, and so do nine later rounds' 20576-byte command queues once each
 round is given its 0x238-byte request block. A changed battle seed leaves the start body unchanged
 and changes 123 bytes of a round. Neither heap addresses nor weak-handle ids reach a body: the
 console's ids are 0x1b5xx of generation 3, and the port's are 0..0x58 with all its objects at other
 addresses.
+
+The session is made in four steps, each by the game's code ported to Python
+(`pokeldn.sv.battle.engine.session` and `.network`):
+
+| step | code | what it makes |
+|---|---|---|
+| boot | `0x168ca58` -> `0x168cb20`, constructor `0x168cc48` | the session manager `[[0x46d38e0]]` (0xc0 bytes, vtable 0x4483f68): sessions by id at +0x28, a mutex at +0x90, the next id u32 +0xb0, and at +0xb8 the communication holder (0x48 bytes, vtable 0x4492338) of a 0x7660-byte object (vtable 0x4492468, constructor `0x168d59c`: port 0x7b, 16 entries of 12 bytes, 32 of 0x18) |
+| raid start | `0x159dba0` -> `0x159dc10`, constructor `0x159e860` | the session S (0x110 bytes, vtable 0x4484008) under the next id: its job at +0x40, the battle setup (0x730 bytes, vtable 0x44ff070, constructor `0x159f8f0`, reset `0x159fe68`) at +0xe0, a 0x288-byte object at +0xe8 |
+| raid start | the setup's Lua bindings, setters `0x7fa0cc`..`0x7faf24` | the setup's battle fields, below |
+| battle start | `0x1891274(id)` -> `0x1891440` -> `0x18915c4(S, mgr + 0xb8, ...)` | N+0x48 (vtable 0x44fef38) with five 0x3e8-byte and five 0xb70-byte counted resources under keys 0..4, the named-parameter table at +0x148, the election object (vtable 0x4492a48) at +0x108, then N (`0x16af068`, constructor `0x16b0fb8`) in S+0x48 |
+
+N's start states `0x1269824` follow: state 0 copies the setup's time limits (+0x48a..) to N+0x8a,
+takes the election object into N+0x138 and [N+0x48]+0x140 into N+0x190, runs the server build
+`0x2891748`, seeds the random holder (N+0x1a0) with setup+0x718 (`0x281c260`, which draws once), sets
+N+0x30 to that seed, makes the 6 x 5 command pairs of N+0x120 (`0x132ecfc`) and gives [N+0x110] the
+u32 setup+0x2c with N+0x120 and the manager's communication holder (`0x169ffa0`). State 2 picks the
+step machine by mode (`0x2d380a4` for a raid), and state 3 runs it: its state 0 sets the format bytes
+N+0x98.. by the rule and N+0x95, then the steps `0x2892ac0`, `0x2d381a4` and `0x2892dd4`.
+
+The 29 named parameters are code: `0x146496c` stores one u32 per 0x10-byte entry of main
+`0x3c60f80` (the name hash, then the same value at +8), in table order.
+
+The raid start writes the setup from Lua (0.4455 -> 0.4893 -> 0.4945) through the setup's bindings.
+These fields held the same values in four consoles' setups: u32 +0x2c 10003 (`fD8E195CA`, so the
+0x2713 the builders read at [N+0x110]+0x40), u32 +0x34 mode 2, +0x8c 1, +0x8d rule 5, u32 +0x90 the
+console's slot 2, u32 +0x94 the server slot 0, the member codes +0x99.. (0, 0xff, 1, 0xff, 0xff),
++0x488 and +0x489 1, +0x498 0x400, u32 +0x4b0 12000, u32 +0x4b4 400, +0x4dd and +0x4df 1, u32 +0x4ec 0,
++0x706 1, +0x714 8, and per participant six 0x1c-byte entries from +0x18 with u16 +0x10 30 (26 for
+the boss) and u8 +0xd 1 (the host's entries 1 to 5, the guest's 0 to 5). The
+bootstrap gives the seed (+0x718), the time limits (+0x48a, +0x48c, +0x48e), the boss's action profile
+(+0x514) and the party holders (+0xa0..). Under unicorn the game's own code makes the same manager, S,
+N+0x48, N and state 0's writes from these fields as the port, except bytes the game copies from stack
+padding.
+
+Four parts stay outside: S's job (`0x159f018`; its constructor needs the engine's job scheduler,
+and no battle code reads S+0x40), the job graph links (`0x1193e44`, `0x11fd13c`), the resource
+system (setup+0x720 through `0x1ffbb68`, the loader N+0x1a8 through `0x1802edc` and `0x1929dc4`,
+which state 1 waits for), and the Pia network manager `[[0x46d6ca0]]` that gives the election
+object its station ids.
 
 The data system's init `0x1641afc` runs `0x1643a48` (personal, growth), `0x1641cf0` (moves) and
 `0x1641d78` (abilities). Each table is created from the allocator, reset into its static (`0x1643e68`)
@@ -1043,13 +1083,9 @@ the host start; its Pokemon stayed in the battle.
   enters neither queue: the reader switches on it and `0xf5bc10` returns at `0xf5bc30`.
 - What the source at `+0xa8` of the object `0xfc363c` steps holds, and which item message 16
   releases into the sink: the item `0xfc363c` returns through x8 at `0xfc36ac`, then its vtable's
-  `+0x68`. The source is `[[sm+0x48]+0x128]` (`0xfa46d4`); what fills `[sm+0x48]` is untraced.
-- What writes the 0x2713 word of the battle-start port address. The builders read it at `+0x40`
-  of the object at the battle network object's `+0x110` (`0xfa7320`, `0xfa8628`, `0xfb1cf8`,
-  `0x28949f4`); no instruction in the image materialises 0x2713. On an emulated Scarlet 4.0.0 guest that object (vtable `0x44ff6c8`,
-  constructor `0x16b21f0`, which zeroes `+0x40`, destructor `0x2894604`) held the u32 pair
-  `0x1527b, 7` at `+0x38` and 0x2713 at `+0x40` when the builders first read it at the join.
-  Every raid hosted with it began its battle, on retail and emulated consoles.
+  `+0x68`. The source is `[[sm+0x48]+0x128]` (`0xfa46d4`): N+0x48's +0x128, which `0x18915c4` fills
+  (`0xfa493c`) with the 0x50-byte object `0x1849e10` makes (constructor `0x16b0c80`, vtables
+  `[0x46dcd18]`), also kept at S+0xd8.
 - Whether the battle timer a guest runs on a six-star point is the point's `gameLimit` 450; the
   reward-screen check did not measure it.
 - What the RaidPoint's byte 0x3b4 holds.

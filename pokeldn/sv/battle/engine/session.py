@@ -1,15 +1,15 @@
 """What a battle session holds before the build steps run, made on an arena (`arena.new`): the data
-tables in their function-local statics, the weak-handle table, the battle network object N (vtable
-0x44ff468) and what hangs off it (docs/sv_raid.md, Reproducing a round).
+tables in their function-local statics, the weak-handle table, the battle session manager (made at
+boot, 0x168ca58), the session S under it (0x159dba0 -> ctor 0x159e860) with its battle setup (0x730
+bytes, vtable 0x44ff070) and the session start that makes N (`network`) (docs/sv_raid.md, Reproducing
+a round).
 
 The table creators are the game's (personal 0x164498c, id-hash 0x1730f6c); the files they load come
 from the romfs as bytes (`files`), laid into the maps as the loaders leave them: each map reserved to
 its record count, then filled in file order, the default record the one for key 0. The weak-handle
-table is the game's (0x165dd08) with its growth paths (0xc1adec, 0xc1aa80, 0xb44724). N's own objects
-come from a template (units of constants, links, handles) the caller supplies; the battle bootstrap
-gives the party records, the seed, the time limits and the boss's action profile (`build_network`).
-The named-parameter table at [N+0x48]+0x148 is laid out from (name hash, value) pairs
-(`build_parameters`).
+table is the game's (0x165dd08) with its growth paths (0xc1adec, 0xc1aa80, 0xb44724). The raid start's
+setup fields, which the game writes from Lua through the setup's bindings, come from the bootstrap and
+RAID_SETUP (`raid_setup`); `build_session` makes the rest with the game's own code.
 """
 
 import struct
@@ -593,114 +593,836 @@ def build_party(m, alloc, record):
     return h
 
 
-# --- the session plumbing from a template ---------------------------------------------------------
-
-def build_from_template(m, alloc, template):
-    """The objects of `template` (units {id: {size, header, fields}}; a field (offset, kind, data):
-    "bytes" (data, mask), "alloc", "link" (unit, offset), "opaque" (an address the chain carries but
-    never reads through: a zeroed 0x40-byte block), "handle_ptr" / "handle_id" (a weak handle to (unit,
-    offset) in the weak-handle table, entry +8..+0x1f as given)) allocated from `alloc` and laid out;
-    bytes no field names are zero. Returns {unit id: address}."""
-    at = {}
-    for uid, u in template["units"].items():
-        o = m.vcall(alloc, 0x10, u["size"], 8)
-        m.write(o, bytes(u["size"]))
-        if u["header"]:                 # a Create'd object: +8 its allocator, +0x10 itself, +0x18 size
-            m.put(o + 8, 8, alloc); m.put(o + 0x10, 8, o); m.put(o + 0x18, 4, 0x80000 | u["size"])
-        at[uid] = o
-    opaque, entries = {}, {}
-    pool = m.u64(m.main + 0x4700930)
-    for uid, u in template["units"].items():
-        o = at[uid]
-        for f in u["fields"]:
-            off, kind, data = f[0], f[1], f[2]
-            if kind == "bytes":
-                mask = f[3]
-                old = m.u64(o + off)
-                new = int.from_bytes(data, "little")
-                m.put(o + off, 8, (old & ~mask) | (new & mask))
-            elif kind == "alloc":
-                m.put(o + off, 8, alloc)
-            elif kind == "link":
-                m.put(o + off, 8, at[data[0]] + data[1])
-            elif kind == "opaque":
-                if data not in opaque:
-                    opaque[data] = m.vcall(alloc, 0x10, 0x40, 8)
-                    m.write(opaque[data], bytes(0x40))
-                m.put(o + off, 8, opaque[data])
-            elif kind in ("handle_ptr", "handle_id"):
-                target, toff, tail = data
-                key = (target, toff)
-                if key not in entries:
-                    with m.frame(0x10) as h:
-                        m.x8 = h
-                        m.call(m.main + 0xC1A58C, pool, at[target] + toff)
-                        e = m.u64(h)
-                    m.write(e + 8, tail)
-                    m.put(e + 0x10, 8, at[target] + toff)
-                    entries[key] = e
-                e = entries[key]
-                m.put(o + off, 8, e if kind == "handle_ptr" else m.u64(e))
-    return at
+from pokeldn.sv.battle.engine.calls import _tail
+from pokeldn.sv.battle.engine.network import (
+    M32, M64, _acquire_into, _base, _class_static, _clear_strong, _empty_map, _inc, _make, _network_manager,
+    _release_strong, _scope_owner, _stores, _top_f53840, _vtables, _weak_base, release_counted_holder,
+    take_release_strong)
+from pokeldn.sv.battle.engine.references import _release_ref
+from pokeldn.sv.battle.engine.steps import _do_rehash, _find
 
 
-def build_network(m, alloc, template, bootstrap, partners):
-    """N and what hangs off it: the plumbing from `template`, then what the battle bootstrap (0xaa0
-    plaintext) gives: the setup's five party holders (our Pokemon, the boss, the guest, then the two
-    NPC partners' records from `partners`), the RaidPoint's randSeed at N+0x30 and setup+0x718, its
-    raidTimeData limits at N+0x8a / +0x8c / +0x8e and its boss action profile as u16 at setup+0x514.
-    N+0x150..+0x18f (the main-module holders 0x2891748 fills) start empty. Returns N."""
-    at = build_from_template(m, alloc, template)
-    n = at[template["root"]]
-    setup = m.u64(n + 0x38)
+# --- the default resource handle: the resource system's null handle [0x46d4260] ----------------------
+
+@lifted(0x2B80A64)
+def resource_add_ref_null(m, *_):
+    """vf 0x18 of the null resource handle: nothing."""
+    return None
+
+
+@lifted(0x1A1FB4C)
+def construct_null_resource(m, o, *_):
+    """The null resource handle (0x48 bytes): vtable [0x46d4268]+0x10 (+0x20 its +0x48), the name
+    [[0x46d4270]] at +0x38 and its FNV-1a 64 at +0x30 (basis 0xcbf29ce484222645), +8 0, +0x10 itself."""
+    m.put(o, 8, m.main + 0x441DAB0); m.put(o + 0x10, 8, 0); m.put(o + 0x18, 4, 0)
+    top = _tls_top(m)
+    h = 0xCBF29CE484222645
+    m.put(o + 0x28, 4, 0); m.put(o + 0x30, 8, h); m.put(o + 0x40, 8, 0)
+    vt = m.u64(m.main + 0x46D4268)
+    m.put(o, 8, vt + 0x10); m.put(o + 8, 8, top); m.put(o + 0x20, 8, vt + 0x48)
+    name = m.u64(m.u64(m.main + 0x46D4270))
+    m.put(o + 0x38, 8, name)
+    i = 0
+    while True:
+        c = m.u8(name + i)
+        if not c:
+            break
+        h = ((h ^ c) * 0x100000001B3) & M64
+        i += 1
+    m.put(o + 0x30, 8, h); m.put(o + 0x40, 8, 0)
+    m.put(o + 8, 8, 0); m.put(o + 0x10, 8, o)
+
+
+@lifted(0xC44228)
+def null_resource(m, *_):
+    """The null resource handle [0x46d4260] (guard [0x46d4258]), built with no owner on the thread's
+    object stack; returns its address."""
+    stack = _tls_stack(m)
+    _push(m, stack, 0)
+    guard = m.u64(m.main + 0x46D4258)
+    if m.u8(guard) & 1 == 0 and m.call(m.main + 0x343CF10, guard) & M32:
+        m.call_void(m.main + 0x1A1FB4C, m.u64(m.main + 0x46D4260))
+        m.call_void(m.main + 0x343CF20, guard)
+    _pop(m, stack)
+    return m.u64(m.main + 0x46D4260)
+
+
+@lifted(0xC1E764)
+def resource_handle_from(m, dst, src, *_):
+    """*dst = a handle for *src's name: the null handle (one reference, vf 0x18) when the name is empty;
+    a named one comes from the resource system (0xbf9884), not reproduced."""
+    m.put(dst, 8, 0)
+    s = m.u64(src)
+    name = m.u64(s + 0x38) if s else 0
+    if name and m.u8(name):
+        raise UnliftedCall("main+0xbf9884: the resource system")
+    h = m.call(m.main + 0xC44228)
+    if h:
+        m.vcall_void(h, 0x18)
+    old = m.u64(dst)
+    m.put(dst, 8, h)
+    if old:
+        m.vcall_void(old, 0x20)
+    return dst
+
+
+def _setup_default_resource(m):
+    """The static [0x46d8c30] (guard [0x46d8c28]): a handle copied from the null one (its __cxa_atexit
+    registration is not reproduced)."""
+    guard = m.u64(m.main + 0x46D8C28)
+    if m.u8(guard) & 1 == 0 and m.call(m.main + 0x343CF10, guard) & M32:
+        with m.frame(0x10) as f:
+            m.put(f, 8, m.call(m.main + 0xC44228))
+            m.call_void(m.main + 0xC1E764, m.u64(m.main + 0x46D8C30), f)
+        m.call_void(m.main + 0x343CF20, guard)
+
+
+# --- the battle setup (0x730 bytes, vtable 0x44ff070) -------------------------------------------------
+
+PARTICIPANT = (0x0, 0xC8, 0x188, 0x248, 0x308, 0x3C8)        # +0xc8 + 0xc0 * i: the five participants
+
+_PARTICIPANT_RESET = (
+    (0x0, 8, 0), (0xC, 2, 0xFFFF), (0x8, 4, 0xFFFFFFFF), (0x18, 1, 0), (0x10, 8, 0), (0x1A, 2, 0xA),
+    (0x20, 1, 0xA), (0x1C, 4, 0x0A0A0A0A), (0x24, 2, 0), (0x26, 1, 0), (0x28, 2, 0), (0x34, 1, 0),
+    (0x2C, 8, 0), (0x36, 2, 0xA), (0x3C, 1, 0xA), (0x38, 4, 0x0A0A0A0A), (0x40, 2, 0), (0x42, 1, 0),
+    (0x44, 2, 0), (0x50, 1, 0), (0x48, 8, 0), (0x52, 2, 0xA), (0x58, 1, 0xA), (0x54, 4, 0x0A0A0A0A),
+    (0x5C, 2, 0), (0x5E, 1, 0), (0x60, 2, 0), (0x6C, 1, 0), (0x64, 8, 0), (0x6E, 2, 0xA), (0x74, 1, 0xA),
+    (0x70, 4, 0x0A0A0A0A), (0x78, 2, 0), (0x7A, 1, 0), (0x7C, 2, 0), (0x88, 1, 0), (0x80, 8, 0),
+    (0x8A, 2, 0xA), (0x90, 1, 0xA), (0x8C, 4, 0x0A0A0A0A), (0x94, 2, 0), (0x96, 1, 0), (0x98, 2, 0),
+    (0xA4, 1, 0), (0x9C, 8, 0), (0xA6, 2, 0xA), (0xAC, 1, 0xA), (0xA8, 4, 0x0A0A0A0A), (0xB0, 2, 0),
+    (0xB2, 1, 0), (0xB4, 2, 0))
+
+
+def _participant_tail(m, p):
+    """A participant's reference (+0) released and its seven stat-stage blocks reset."""
+    old = m.u64(p)
+    m.put(p, 8, 0)
+    if old:
+        _release_ref(m, old)
+    _stores(m, p, _PARTICIPANT_RESET)
+
+
+@lifted(0x15A0110)
+def reset_participant(m, p, *_):
+    """A participant (0xc0 bytes): u32 +0xb8 0x64640000, +0xbc 100, then the reset."""
+    m.put(p + 0xB8, 4, 0x64640000); m.put(p + 0xBC, 1, 0x64)
+    _participant_tail(m, p)
+
+
+@lifted(0x159FBB0)
+def construct_participant(m, p, *_):
+    """A participant's fields stored once (the reset's values, +0xb8/+0xbc), then the reset."""
+    _stores(m, p, (
+        (0x0, 8, 0), (0xC, 2, 0xFFFF), (0x8, 4, 0xFFFFFFFF), (0x10, 8, 0), (0x20, 2, 0xA), (0x1C, 4, 0x0A0A0A0A),
+        (0x18, 1, 0), (0x1A, 2, 0xA), (0x24, 2, 0), (0x26, 1, 0), (0x28, 2, 0), (0x2C, 8, 0),
+        (0x38, 4, 0x0A0A0A0A), (0x34, 1, 0), (0x36, 2, 0xA), (0x3C, 2, 0xA), (0x40, 2, 0), (0x42, 1, 0),
+        (0x44, 2, 0), (0x59, 1, 0), (0x48, 8, 0), (0x54, 4, 0x0A0A0A0A), (0x50, 1, 0), (0x52, 2, 0xA),
+        (0x58, 1, 0xA), (0x5C, 2, 0), (0x5E, 1, 0), (0x60, 2, 0), (0x64, 8, 0), (0x70, 4, 0x0A0A0A0A),
+        (0x6C, 1, 0), (0x6E, 2, 0xA), (0x74, 2, 0xA), (0x78, 2, 0), (0x7A, 1, 0), (0x7C, 2, 0), (0x80, 8, 0),
+        (0x91, 1, 0), (0x88, 1, 0), (0x90, 1, 0xA), (0x8C, 4, 0x0A0A0A0A), (0x8A, 2, 0xA), (0x94, 2, 0),
+        (0x96, 1, 0), (0x98, 2, 0), (0x9C, 8, 0), (0xA8, 4, 0x0A0A0A0A), (0xB8, 4, 0x64640000), (0xA4, 1, 0),
+        (0xA6, 2, 0xA), (0xAC, 2, 0xA), (0xB0, 2, 0), (0xB2, 1, 0), (0xB4, 2, 0), (0xBC, 1, 0x64)))
+    _participant_tail(m, p)
+
+
+@lifted(0x159FE68)
+def reset_setup(m, o, *_):
+    """The setup's battle fields reset: member codes +0x99..+0x9d 0xff, the five party holders released
+    and the participants reset, flags +0x498 zero, the float factors 1.0, +0x4e4..+0x4f7 -1."""
+    _stores(m, o, ((0x8C, 2, 0), (0x90, 8, 0), (0x2C, 8, 0), (0x31, 8, 0), (0x99, 4, 0xFFFFFFFF),
+                   (0x9D, 1, 0xFF), (0x708, 8, 0), (0x98, 1, 0)))
+    for i in range(5):
+        h = o + 0xA0 + 8 * i
+        old = m.u64(h)
+        m.put(h, 8, 0)
+        if old:
+            _release_ref(m, old)
+        m.call_void(m.main + 0x15A0110, o + PARTICIPANT[i + 1])
+    _stores(m, o, (
+        (0x492, 1, 0), (0x488, 8, 0), (0x498, 8, 0), (0x49E, 8, 0), (0x4A8, 8, 0), (0x4B0, 8, 0), (0x4B8, 1, 0),
+        (0x704, 4, 0), (0x710, 4, 0), (0x4BC, 8, 0x3F8000003F800000), (0x4D4, 4, ONE_F),
+        (0x4C4, 8, 0x3F8000003F800000), (0x4CC, 8, 0x3F8000003F800000), (0x714, 1, 0), (0x4D8, 8, 0),
+        (0x4E0, 2, 0), (0x4F4, 4, 0xFFFFFFFF), (0x4E4, 8, M64), (0x4EC, 8, M64)))
+    _setup_default_resource(m)
+    _stores(m, o, ((0x6F4, 8, 0), (0x6FC, 8, 0), (0x6DC, 8, 0), (0x6E4, 8, 0), (0x6EC, 8, 0),
+                   (0x4C0, 4, ONE_F), (0x4F8, 2, 0), (0x6D8, 2, 0), (0x490, 2, 0)))
+
+
+@lifted(0x159F8F0)
+def construct_setup(m, o, *_):
+    """The battle setup: vtable 0x44ff070 (+0x20 0x44ff0a8), five participants (0x159fbb0), the boss
+    action profile block at +0x500 (vtable [0x46e2f48]+0x10) and +0x560 ([0x46e2f50]+0x10), the reset
+    (0x159fe68)."""
+    top = _base(m, o)
+    m.put(o + 0x28, 4, 0)
+    m.put(o, 8, m.main + 0x44FF070); m.put(o + 8, 8, top); m.put(o + 0x20, 8, m.main + 0x44FF0A8)
+    _stores(m, o, ((0x3C, 1, 0), (0x3E, 2, 0), (0x40, 4, 0x1000000), (0x44, 2, 0), (0x46, 1, 0), (0x48, 8, 0),
+                   (0x4D, 8, 0), (0x58, 8, 0), (0x5F, 8, 0), (0x88, 4, 0), (0xA0, 8, 0), (0x78, 8, 0),
+                   (0x80, 8, 0), (0x68, 8, 0), (0x70, 8, 0), (0xB8, 8, 0), (0xC0, 8, 0), (0xA8, 8, 0),
+                   (0xB0, 8, 0)))
+    for p in PARTICIPANT[1:]:
+        m.call_void(m.main + 0x159FBB0, o + p)
+    m.put(o + 0x508, 4, 0)
+    m.put(o + 0x500, 8, m.u64(m.main + 0x46E2F48) + 0x10)
+    m.put(o + 0x50C, 1, 0)
+    m.write(o + 0x510, bytes(0x4E))
+    m.put(o + 0x560, 8, m.u64(m.main + 0x46E2F50) + 0x10)
+    m.write(o + 0x568, bytes(0x4A))
+    _stores(m, o, (
+        (0x5C6, 2, 0xA), (0x5C8, 4, 0x0A0A0A0A), (0x5CC, 2, 0xA), (0x5D8, 8, 0), (0x5E0, 8, 0), (0x5E8, 8, 0),
+        (0x5F0, 8, 0), (0x5F8, 8, 0), (0x600, 8, 0), (0x608, 8, 0), (0x610, 1, 0), (0x612, 2, 0xA),
+        (0x614, 4, 0x0A0A0A0A), (0x618, 2, 0xA), (0x61C, 2, 0), (0x61E, 1, 0), (0x620, 2, 0), (0x635, 1, 0),
+        (0x624, 8, 0), (0x62C, 1, 0), (0x62E, 2, 0xA), (0x634, 1, 0xA), (0x630, 4, 0x0A0A0A0A), (0x638, 2, 0),
+        (0x63A, 1, 0), (0x63C, 2, 0), (0x648, 1, 0), (0x640, 8, 0), (0x64A, 2, 0xA), (0x64C, 4, 0x0A0A0A0A),
+        (0x650, 2, 0xA), (0x654, 2, 0), (0x656, 1, 0), (0x658, 2, 0), (0x66D, 1, 0), (0x65C, 8, 0),
+        (0x664, 1, 0), (0x666, 2, 0xA), (0x668, 4, 0x0A0A0A0A), (0x66C, 1, 0xA), (0x670, 2, 0), (0x672, 1, 0),
+        (0x674, 2, 0), (0x678, 8, 0), (0x680, 1, 0), (0x682, 2, 0xA), (0x688, 2, 0xA), (0x684, 4, 0x0A0A0A0A),
+        (0x68C, 2, 0), (0x68E, 1, 0), (0x690, 2, 0), (0x6A5, 1, 0), (0x694, 8, 0), (0x69C, 1, 0),
+        (0x69E, 2, 0xA), (0x6A4, 1, 0xA), (0x6A0, 4, 0x0A0A0A0A), (0x6A8, 2, 0), (0x6AA, 1, 0), (0x6AC, 2, 0),
+        (0x6D0, 8, 0), (0x6C8, 8, 0), (0x6C0, 8, 0), (0x6B8, 8, 0), (0x6B0, 8, 0), (0x5B8, 4, 0), (0x5D0, 2, 0),
+        (0x728, 8, 0), (0x720, 8, 0), (0x718, 8, 0)))
+    return _tail(m, m.main + 0x159FE68, o)
+
+
+@lifted(0x159F0EC)
+def create_setup(m, out, alloc, *_):
+    return _make(m, alloc, 0x730, 0x159F8F0)
+
+
+@lifted(0x159EEE8)
+def make_setup(m, alloc, *_):
+    """*x8 = a new setup holding one reference."""
+    out = m.x8
+    with m.frame(0x10) as f:
+        p = m.call(m.main + 0x159F0EC, f, alloc)
+    m.put(out, 8, p)
+    if p:
+        _inc(m, p)
+    return p
+
+
+# --- S+0xe8: 0x288 bytes (vtable 0x44fefa0) with a 0x98-byte map holder (vtable 0x44ff008) at +0x38 -----
+
+lifted(0x159F840)(lambda m, h, *_: _scope_owner(m, h))
+lifted(0x159F898)(lambda m, h, *_: _scope_owner(m, h))
+lifted(0x159F800)(lambda m, t, *_: _empty_map(m, t, 0x159F840, 0x159F898))
+
+
+@lifted(0x159F788)
+def construct_159f788(m, o, *_):
+    """vtable 0x44ff008 (+0x20 0x44ff040), an empty map at +0x30."""
+    m.put(o + 0x10, 8, 0); m.put(o + 0x18, 4, 0)
+    m.put(o, 8, m.u64(m.main + 0x46D66F8) + 0x10)
+    top = _top_f53840(m)
+    m.put(o + 0x28, 4, 0)
+    m.put(o, 8, m.main + 0x44FF008); m.put(o + 8, 8, top); m.put(o + 0x20, 8, m.main + 0x44FF040)
+    return _tail(m, m.main + 0x159F800, o + 0x30)
+
+
+@lifted(0x159F660)
+def create_159f660(m, alloc, *_):
+    return _make(m, alloc, 0x98, 0x159F788)
+
+
+lifted(0x159F5F4)(lambda m, holder, *_: release_counted_holder(m, holder))
+
+
+@lifted(0x159EDC8)
+def clear_map_159edc8(m, t, *_):
+    if m.u64(t + 0x58):
+        raise UnliftedCall("main+0x159edc8 clearing a filled map")
+    return None
+
+
+@lifted(0x159ED18)
+def reset_159ed18(m, o, *_):
+    """S+0xe8's battle fields reset: u32 5 / 6 bytes from +0x2c, zero runs, +0x110..+0x275 zero, +0x278
+    -1, then its map at [+0x38]+0x30 cleared."""
+    _stores(m, o, ((0xF0, 8, 0), (0x2C, 8, 0x700000000), (0x34, 2, 0x506), (0xA7, 8, 0), (0xA0, 8, 0),
+                   (0x40, 8, 0x0506050605060506), (0x48, 8, 0x0506050605060506), (0x50, 4, 0x05060506),
+                   (0xB0, 8, 0), (0xB7, 8, 0), (0xC0, 8, 0), (0xC7, 8, 0), (0xD0, 8, 0), (0xD7, 8, 0),
+                   (0xE0, 8, 0), (0xE7, 8, 0), (0x106, 8, 0), (0x97, 8, 0), (0x80, 8, 0), (0xF8, 8, 0),
+                   (0x100, 8, 0), (0x88, 8, 0), (0x90, 8, 0)))
+    m.write(o + 0x110, bytes(0x166))
+    m.put(o + 0x278, 8, M64)
+    return _tail(m, m.main + 0x159EDC8, m.u64(o + 0x38) + 0x30)
+
+
+@lifted(0x159F47C)
+def construct_159f47c(m, o, *_):
+    """vtable 0x44fefa0 (+0x20 0x44fefd8), a new 0x98-byte map holder at +0x38, then the reset."""
+    top = _base(m, o)
+    m.put(o + 0x28, 4, 0)
+    m.put(o, 8, m.main + 0x44FEFA0); m.put(o + 8, 8, top); m.put(o + 0x20, 8, m.main + 0x44FEFD8)
+    _stores(m, o, ((0x38, 8, 0), (0x78, 8, 0), (0x280, 4, 0), (0x284, 2, 0), (0x58, 8, 0), (0x60, 8, 0),
+                   (0x68, 8, 0), (0x70, 8, 0)))
+    p = m.call(m.main + 0x159F660, top)
+    if p:
+        _inc(m, p)
+    old = m.u64(o + 0x38)
+    m.put(o + 0x38, 8, p)
+    if old:
+        _release_ref(m, old)
+    return _tail(m, m.main + 0x159ED18, o)
+
+
+@lifted(0x159F214)
+def create_159f214(m, alloc, *_):
+    return _make(m, alloc, 0x288, 0x159F47C)
+
+
+@lifted(0x159EE7C)
+def make_159ee7c(m, alloc, *_):
+    out = m.x8
+    p = m.call(m.main + 0x159F214, alloc)
+    m.put(out, 8, p)
+    if p:
+        _inc(m, p)
+    return p
+
+
+# --- the battle session S (0x110 bytes, vtable 0x4484008) ---------------------------------------------
+
+lifted(0x159EF5C)(lambda m, dst, p, *_: _acquire_into(m, dst, p))
+lifted(0x159ECA0)(lambda m, holder, *_: _release_strong(m, holder))
+
+
+@lifted(0x159EC64)
+def assign_strong_159ec64(m, holder, p, *_):
+    """*holder = p (a strong reference); the old value released."""
+    with m.frame(0x10) as t:
+        m.call_void(m.main + 0x159EF5C, t, p)
+        x = m.u64(t)
+        m.put(t, 8, m.u64(holder)); m.put(holder, 8, x)
+        return m.call(m.main + 0x159ECA0, t)
+
+
+@lifted(0xD220F4)
+def link_job(m, job, before, after, *_):
+    """Links a job after `before` and before `after` in the engine's job graph; with both null (no job
+    scheduler: the session runs on no thread) it does nothing."""
+    if before or after:
+        raise UnliftedCall("main+0xd220f4: the job scheduler")
+    return job
+
+
+def bare_job(m, alloc, *_):
+    """A stand-in for the job 0x159f018 makes (0x400 bytes from alloc; its constructor 0xca3348 needs
+    the engine's job scheduler at +0x1e8, which no arena holds): a Create'd block, zero but for its
+    header and a weak handle at +0x30 to its +0x28. S keeps it at +0x40; no battle code reads it."""
+    def build(o):
+        m.write(o, bytes(0x400))
+        m.call_void(m.main + 0xC1A3F4, o + 0x30, o + 0x28)
+    return _create(m, alloc, 0x400, build)
+
+
+@lifted(0x159E860)
+def construct_session(m, s, before, after, *_):
+    """S: vtable 0x4484008 (+0x20 0x4484080, +0x28 0x44840d0), +0x40..+0x10b zero, its job (0x159f018,
+    the callback 0x126753c over S at +0x380..+0x3a0, linked by 0xd220f4) at +0x40, +0xf8 cleared, the
+    setup at +0xe0 (0x159eee8, reset by 0x159fe68, +0x718 eight random bytes), the 0x288-byte object
+    at +0xe8 (0x159ee7c, reset by 0x159ed18)."""
+    _weak_base(m, s)
+    _vtables(m, s, 0x4484008, 0x78, 0xC8)
+    m.write(s + 0x40, bytes(0xCC))
+    with m.frame(0x20) as f:
+        sp8, fp18 = f, f + 8
+        m.put(fp18, 8, s)
+        m.call_sret(m.main + 0x159F018, sp8, m.u64(s + 8), fp18)
+        job = m.u64(sp8)
+        if m.u64(job + 0x388):
+            raise UnliftedCall("main+0x159e860: the job already holds a callback")
+        m.put(job + 0x380, 8, m.main + 0x126753C); m.put(job + 0x390, 8, m.main + 0x2A0F9E4)
+        m.put(job + 0x3A0, 8, s); m.put(job + 0x388, 8, m.main + 0x2A0F9E0)
+        m.put(job + 0x398, 8, m.main + 0x2A0F9F0)
+        thread = m.call(m.main + 0x343C290)
+        if m.u64(job + 0x1D0):
+            raise UnliftedCall("main+0x159e860: the job is locked")
+        m.put(job + 0x1D0, 8, thread)
+        m.call_void(m.main + 0xD220F4, job, before, 0)
+        m.call_void(m.main + 0xD220F4, job, 0, after)
+        _clear_strong(m, s + 0x40)
+        m.put(sp8, 8, 0); m.put(s + 0x40, 8, job)
+        m.call_void(m.main + 0x159EC64, s + 0xF8, 0)
+        alloc = m.u64(s + 8)
+        m.call_sret(m.main + 0x159EEE8, fp18, alloc)
+        old = m.u64(s + 0xE0); m.put(s + 0xE0, 8, 0)
+        if old:
+            _release_ref(m, old)
+        m.put(s + 0xE0, 8, m.u64(fp18))
+        m.call_sret(m.main + 0x159EE7C, fp18, alloc)
+        old = m.u64(s + 0xE8); m.put(s + 0xE8, 8, 0)
+        if old:
+            _release_ref(m, old)
+        m.put(s + 0xE8, 8, m.u64(fp18))
+        m.call_void(m.main + 0x159FE68, m.u64(s + 0xE0))
+        setup = m.u64(s + 0xE0)
+        m.call_void(m.main + 0x343DD20, fp18, 8)
+        m.put(setup + 0x718, 8, m.u64(fp18))
+        m.call_void(m.main + 0x159ED18, m.u64(s + 0xE8))
+        m.put(s + 0x100, 4, 0)
+        m.put(job + 0x1D0, 8, 0)
+        m.call_void(m.main + 0x343E5E0, job + 0x1D8)
+
+
+@lifted(0x159E0E0)
+def create_session(m, alloc, before_ref, after_ref, *_):
+    """S from alloc (0x110 bytes) with the job's scheduler links *before_ref and *after_ref."""
+    return _create(m, alloc, 0x110, lambda o: m.call_void(m.main + 0x159E860, o, m.u64(before_ref),
+                                                          m.u64(after_ref)))
+
+
+@lifted(0x343DD20)
+def generate_random_bytes(m, dst, n, *_):
+    """nn::crypto::GenerateCryptographicallyRandomBytes: the Machine's random_bytes(n)."""
+    from pokeldn.sv.battle.engine.steps import _random
+    _random(m, dst, n)
+
+
+# --- the battle session manager [[0x46d38e0]] (0xc0 bytes, vtable 0x4483f68), made at boot ------------
+
+@lifted(0x343C300)
+def initialize_mutex(m, mutex, recursive, level, *_):
+    """nn::os::InitializeMutex: u8 +0 1, u8 +1 recursive, u32 +4 level, u32 +8 count 0, +0x10 owner 0,
+    u32 +0x18 lock 0 (+0xc and +0x1c untouched)."""
+    m.put(mutex, 1, 1); m.put(mutex + 1, 1, recursive & 1); m.put(mutex + 4, 4, level)
+    m.put(mutex + 8, 4, 0); m.put(mutex + 0x10, 8, 0); m.put(mutex + 0x18, 4, 0)
+
+
+lifted(0x168B604)(lambda m, *_: _class_static(m, 0x4740CA8, 0x4740CB0))
+
+
+@lifted(0x2A1C9C8)
+def comm_buffers_class(m, *_):
+    """vf 0 of the 0x7660-byte communication object's +0x28 part: its class static 0x4740ca8."""
+    m.call_void(m.main + 0x168B604)
+    return m.main + 0x4740CA8
+
+
+def _fresh_storage(m, vec, size, align, n, elem):
+    """A custom vector {allocator, max, ..} at vec gets n elements of `size` bytes (vf 0x10 of the
+    allocator, `align`): the pointer at +0x20, count 0 at +0x28 and capacity n at +0x30 (0x168d8b8,
+    0x168d97c for a vector that held nothing)."""
+    if m.u64(vec + 8) < n:
+        raise UnliftedCall("vector length error")
+    p = m.vcall(m.u64(vec), 0x10, n * size, align)
+    if not p:
+        raise UnliftedCall("allocator out of memory")
+    if m.u64(vec + 0x20):
+        raise UnliftedCall("main+0x168d8b8 replacing a vector's storage")
+    m.put(vec + 0x30, 8, n); m.put(vec + 0x20, 8, p); m.put(vec + 0x28, 8, 0)
+
+
+lifted(0x168D770)(lambda m, vec, n, *_: _fresh_storage(m, vec, 0xC, 4, n, 0))
+lifted(0x168D7AC)(lambda m, vec, n, *_: _fresh_storage(m, vec, 0x18, 8, n, 0))
+
+
+@lifted(0x168D59C)
+def construct_comm_buffers(m, o, alloc, port_ref, slots, frames, *_):
+    """The 0x7660-byte communication object (vtable 0x4492468 (+0x20 0x44924e8, +0x28 0x4492538,
+    +0x40 0x4492590)): u16 +0x50 *port_ref, a vector of `slots` 12-byte entries over alloc at +0x78
+    (storage +0x98, capacity +0xa8) and one of `frames` 0x18-byte entries at +0xd0 (storage +0xf0),
+    +0x108..+0x763f zero, a mutex at +0x7640. +0x94 and +0xec copy +0x74 and +0xcc, which nothing
+    writes (heap contents; zero here)."""
+    m.put(o + 0x10, 8, 0); m.put(o + 0x18, 4, 0)
+    _weak_base(m, o)
+    _vtables(m, o, 0x4492468, 0x80, 0xD0)
+    m.put(o + 0x40, 8, m.main + 0x4492590); m.put(o + 0x48, 8, alloc)
+    port = m.u16(port_ref)
+    v = o + 0x78
+    m.put(v, 8, alloc); m.put(o + 0x70, 4, 0); m.put(o + 0x50, 2, port)
+    tail = m.u64(o + 0x70)
+    _stores(m, o, ((0x60, 8, 0x1555555555555555), (0x68, 8, 0), (0x58, 8, alloc), (0x80, 8, 0x1555555555555555),
+                   (0x88, 8, 0), (0xA0, 8, 0), (0xA8, 8, 0), (0x90, 8, tail), (0x98, 8, 0)))
+    if slots & M32:
+        m.call_void(m.main + 0x168D770, v, slots & M32)
+    v = o + 0xD0
+    m.put(v, 8, alloc); m.put(o + 0xC8, 4, 0)
+    _stores(m, o, ((0xB8, 8, 0x0AAAAAAAAAAAAAAA), (0xC0, 8, 0), (0xB0, 8, alloc), (0xD8, 8, 0x0AAAAAAAAAAAAAAA),
+                   (0xE0, 8, 0)))
+    tail = m.u64(o + 0xC8)
+    _stores(m, o, ((0xE8, 8, tail), (0xF0, 8, 0), (0xF8, 8, 0), (0x100, 8, 0)))
+    if frames & M32:
+        m.call_void(m.main + 0x168D7AC, v, frames & M32)
+    m.write(o + 0x108, bytes(0x7538))
+    return _tail(m, m.main + 0x343C300, o + 0x7640, 0, 0)
+
+
+@lifted(0x168D444)
+def create_comm_buffers(m, alloc, alloc_ref, port_ref, slots_ref, frames_ref, *_):
+    return _create(m, alloc, 0x7660, lambda o: m.call_void(
+        m.main + 0x168D59C, o, m.u64(alloc_ref), port_ref, m.u32(slots_ref), m.u32(frames_ref)))
+
+
+@lifted(0x168D380)
+def make_comm_buffers(m, alloc, alloc_ref, port_ref, slots_ref, frames_ref, *_):
+    return _make_strong_args(m, 0x168D444, alloc, alloc_ref, port_ref, slots_ref, frames_ref)
+
+
+def _make_strong_args(m, create, *args):
+    out = m.x8
+    p = m.call(m.main + create, *args)
+    _acquire_into(m, out, p)
+    return p
+
+
+@lifted(0x168DA40)
+def register_comm_buffers(m, o, *_):
+    """Registers the communication object with the network manager (0x168e4dc); nothing without one or
+    when it is registered (+0x7638)."""
+    if m.u64(o + 0x7638):
+        return o
+    if _network_manager(m) == 0:
+        return 0
+    raise UnliftedCall("main+0x168e4dc: a network manager")
+
+
+@lifted(0x168D210)
+def construct_comm(m, o, alloc, port_ref, slots, frames, *_):
+    """The 0x48-byte holder (vtable 0x4492338 (+0x20 0x44923c0, +0x28 0x4492410)) of the communication
+    object at +0x40 (0x168d380 from alloc, *port_ref, slots, frames), then its registration."""
+    _stores(m, o, ((0x30, 8, 0), (0x38, 8, 0), (0x20, 8, 0), (0x28, 8, 0)))
+    m.put(o, 8, m.u64(m.main + 0x46D66F8) + 0x10); m.put(o + 8, 8, 0)
+    m.put(o + 0x10, 8, 0); m.put(o + 0x18, 8, 0); m.put(o + 0x18, 4, 0)
+    _weak_base(m, o)
+    _vtables(m, o, 0x4492338, 0x88, 0xD8)
+    with m.frame(0x10) as f:
+        m.put(f, 8, alloc); m.put(f + 8, 4, slots); m.put(f + 0xC, 4, frames)
+        m.call_sret(m.main + 0x168D380, o + 0x40, m.u64(o + 8), f, port_ref, f + 8, f + 0xC)
+    p = m.u64(o + 0x40)
+    if p:
+        return _tail(m, m.main + 0x168DA40, p)
+    return None
+
+
+@lifted(0x168D0B8)
+def create_comm(m, alloc, alloc_ref, port_ref, slots_ref, frames_ref, *_):
+    return _create(m, alloc, 0x48, lambda o: m.call_void(
+        m.main + 0x168D210, o, m.u64(alloc_ref), port_ref, m.u32(slots_ref), m.u32(frames_ref)))
+
+
+@lifted(0x168CDC0)
+def make_comm(m, alloc, alloc_ref, port_ref, slots_ref, frames_ref, *_):
+    return _make_strong_args(m, 0x168D0B8, alloc, alloc_ref, port_ref, slots_ref, frames_ref)
+
+
+lifted(0x168CD48)(lambda m, holder, *_: _release_strong(m, holder))
+
+
+@lifted(0x168E23C)
+def do_rehash_168e23c(m, table, n, *_):
+    """__do_rehash of the manager's session map (u32 id keys, bucket arrays aligned 8)."""
+    _do_rehash(m, table, n, 8, 4)
+
+
+@lifted(0x168CE84)
+def rehash_168ce84(m, table, n, *_):
+    _rehash(m, table, n, 0x168E23C)
+
+
+@lifted(0x168CF8C)
+def manager_base(m, o, *_):
+    """vtable 0x4483fb8 (+0x20 0x4483fe8), +8 the owner; the manager static's byte +8 = 1 (its guard
+    [0x46d38d8], whose __cxa_atexit registration is not reproduced)."""
+    top = _base(m, o)
+    m.put(o, 8, m.main + 0x4483FB8); m.put(o + 8, 8, top); m.put(o + 0x20, 8, m.main + 0x4483FE8)
+    guard = m.u64(m.main + 0x46D38D8)
+    if m.u8(guard) & 1 == 0 and m.call(m.main + 0x343CF10, guard) & M32:
+        m.call_void(m.main + 0x343CF20, guard)
+    m.put(m.u64(m.main + 0x46D38E0) + 8, 1, 1)
+
+
+@lifted(0x168CC48)
+def construct_manager(m, o, *_):
+    """The battle session manager: the session map at +0x28 (id -> S, 64 buckets), a mutex at +0x90,
+    the next id u32 +0xb0, and at +0xb8 a strong reference to the communication holder 0x168cdc0 makes
+    (port 0x7b, 16 slots, 32 frames)."""
+    m.call_void(m.main + 0x168CF8C, o)
+    owner = m.u64(o + 8)
+    m.put(o, 8, m.main + 0x4483F68); m.put(o + 0x20, 8, m.main + 0x4483F98)
+    _stores(m, o, ((0x28, 8, 0), (0x30, 8, 0), (0x38, 8, owner), (0x58, 8, 0), (0x60, 8, owner), (0x50, 4, 0),
+                   (0x78, 4, 0), (0x80, 8, 0), (0x88, 4, ONE_F), (0x40, 8, 0x0FFFFFFFFFFFFFFF), (0x48, 8, 0),
+                   (0x68, 8, 0x0FFFFFFFFFFFFFFF), (0x70, 8, 0)))
+    m.call_void(m.main + 0x343C300, o + 0x90, 0, 0)
+    m.put(o + 0xB0, 4, 0); m.put(o + 0xB8, 8, 0)
+    m.call_void(m.main + 0x168CE84, o + 0x28, 64)
+    with m.frame(0x30) as f:
+        alloc_ref, port, frames, slots, out, old = f, f + 8, f + 0x10, f + 0x14, f + 0x18, f + 0x20
+        m.put(alloc_ref, 8, owner); m.put(port, 2, 0x7B); m.put(frames, 4, 0x20); m.put(slots, 4, 0x10)
+        m.call_sret(m.main + 0x168CDC0, out, owner, alloc_ref, port, slots, frames)
+        m.put(old, 8, m.u64(o + 0xB8)); m.put(o + 0xB8, 8, 0)
+        m.call_void(m.main + 0x168CD48, old)
+        x = m.u64(out); m.put(out, 8, 0); m.put(o + 0xB8, 8, x)
+        m.call_void(m.main + 0x168CD48, out)
+
+
+@lifted(0x168CB20)
+def create_manager(m, alloc, *_):
+    return _make(m, alloc, 0xC0, 0x168CC48)
+
+
+@lifted(0x168FF70)
+def reset_manager_static(m, slot, p, *_):
+    """unique_ptr reset of the manager static: the old manager would be destroyed (not reproduced)."""
+    old = m.u64(slot)
+    m.put(slot, 8, p)
+    if old:
+        raise UnliftedCall("main+0x168ff70 destroying a manager")
+
+
+@lifted(0x168CA58)
+def make_manager(m, alloc, *_):
+    """The boot step: the manager static [[0x46d38e0]] (guard [0x46d38d8]) = a new manager from alloc, its
+    +0x20 appended to the registry at 0x4763a18 (count u32 0x4765a18, at most 0x400)."""
+    guard = m.u64(m.main + 0x46D38D8)
+    if m.u8(guard) & 1 == 0 and m.call(m.main + 0x343CF10, guard) & M32:
+        m.call_void(m.main + 0x343CF20, guard)
+    p = m.call(m.main + 0x168CB20, alloc)
+    slot = m.u64(m.main + 0x46D38E0)
+    m.call_void(m.main + 0x168FF70, slot, p)
+    n = m.u32(m.main + 0x4765A18)
+    if n >= 0x400:
+        raise UnliftedCall("main+0x1cace90: registry full")
+    mgr = m.u64(slot)
+    m.put(m.main + 0x4763A18 + 8 * n, 8, mgr + 0x20 if mgr else 0)
+    m.put(m.main + 0x4765A18, 4, n + 1)
+
+
+# --- sessions in the manager: id -> S (strong references) ---------------------------------------------
+
+@lifted(0x159E42C)
+def emplace_session(m, table, key_ptr, value_ref, *_):
+    """emplace(*key_ptr, move(*value_ref)) in the manager's map (node 0x20 {next, hash, u32 id, S}): a
+    present key leaves the map and *value_ref as they are."""
+    key = m.u32(key_ptr)
+    if _find(m, table, key, 4):
+        return None
+    owner = m.u64(table + 0x38)
+    node = m.vcall(owner, 0x10, 0x20, 8)
+    if not node:
+        raise UnliftedCall("allocator out of memory")
+    stack = _tls_stack(m)
+    if stack:
+        _push(m, stack, owner)
+    m.put(node + 0x10, 4, m.u32(key_ptr))
+    v = m.u64(value_ref); m.put(value_ref, 8, 0); m.put(node + 0x18, 8, v)
+    if stack:
+        _pop(m, stack)
+    m.put(node, 8, 0); m.put(node + 8, 8, key)
+    _insert(m, table, node, key, 0x168E23C)
+    return None
+
+
+@lifted(0x159E220)
+def session_slot(m, table, key_ptr, *_):
+    """operator[] of the manager's map: the S slot (node +0x18) of *key_ptr, a new node holding none when
+    absent."""
+    key = m.u32(key_ptr)
+    node = _find(m, table, key, 4)
+    if node:
+        return node + 0x18
+    owner = m.u64(table + 0x38)
+    node = m.vcall(owner, 0x10, 0x20, 8)
+    if not node:
+        raise UnliftedCall("allocator out of memory")
+    stack = _tls_stack(m)
+    if stack:
+        _push(m, stack, owner)
+    m.put(node + 0x10, 4, m.u32(key_ptr)); m.put(node + 0x18, 8, 0)
+    if stack:
+        _pop(m, stack)
+    m.put(node, 8, 0); m.put(node + 8, 8, key)
+    _insert(m, table, node, key, 0x168E23C)
+    return node + 0x18
+
+
+lifted(0x159E024)(lambda m, dst, p, *_: _acquire_into(m, dst, p))
+lifted(0x159DFA4)(lambda m, holder, *_: take_release_strong(m, holder))
+
+
+def _job_links(m):
+    """The job graph S's job joins: 0x1193e44 (the engine's job manager, found by its class through the
+    static [0x46d9108]) and 0x11fd13c([0x46d4e00], 1)'s phase. The statics on the way are built as the
+    game builds them (no __cxa_atexit registration); the engine's job system is not reproduced, so S's
+    job gets no links."""
+    from pokeldn.sv.battle.engine.statics import _static_chain
+    guard = m.u64(m.main + 0x46D6C20)
+    if m.u8(guard) & 1 == 0 and m.call(m.main + 0x343CF10, guard) & M32:
+        m.call_void(m.main + 0x343CF20, guard)
+    m.put(m.u64(m.main + 0x46D6C30), 8, m.u64(m.u64(m.main + 0x46D6C28)))
+    _static_chain(m, ((0x46D9100, 0x46D9108), (0x46D3AA8, 0x46D3AB0), (0x46D39B0, 0x46D39B8),
+                      (0x46D39C0, 0x46D39C8)))
+    guard = m.u64(m.main + 0x46D4DF8)
+    if m.u8(guard) & 1 == 0 and m.call(m.main + 0x343CF10, guard) & M32:
+        m.call_void(m.main + 0x343CF20, guard)
+    m.put(m.u64(m.main + 0x46D4E08), 8, m.u64(m.u64(m.main + 0x46D4E00)))
+    return 0, 0
+
+
+@lifted(0x159DC10)
+def new_session(m, mgr, *_):
+    """A new session under the manager's next id (u32 +0xb0, then +1 mod 64): S from the manager's
+    allocator (0x159e0e0) in its map at +0x28 (lock +0x90). Returns the id."""
+    m.call_void(m.main + 0x343C340, mgr + 0x90)
+    with m.frame(0x20) as f:
+        ident, held, links = f, f + 8, f + 0x10
+        m.put(ident, 4, m.u32(mgr + 0xB0))
+        m.put(held, 8, 0)
+        m.call_void(m.main + 0x159E42C, mgr + 0x28, ident, held)
+        if m.u64(held):
+            raise UnliftedCall("main+0x159dc10 replacing a live session")
+        alloc = m.u64(mgr + 8)
+        before, after = _job_links(m)
+        m.put(links, 8, before); m.put(links + 8, 8, after)
+        s = m.call(m.main + 0x159E0E0, alloc, links, links + 8)
+        m.call_void(m.main + 0x159E024, held, s)
+        slot = m.call(m.main + 0x159E220, mgr + 0x28, ident)
+        m.call_void(m.main + 0x159DFA4, slot)
+        x = m.u64(held); m.put(held, 8, 0); m.put(slot, 8, x)
+        r = m.u32(ident)
+    m.put(mgr + 0xB0, 4, (m.u32(mgr + 0xB0) + 1) & 0x3F)
+    m.call_void(m.main + 0x343C360, mgr + 0x90)
+    return r
+
+
+def manager(m):
+    """The manager static [[0x46d38e0]] (guard [0x46d38d8], no destructor registered), also noted at
+    0x4700900."""
+    guard = m.u64(m.main + 0x46D38D8)
+    if m.u8(guard) & 1 == 0 and m.call(m.main + 0x343CF10, guard) & M32:
+        m.call_void(m.main + 0x343CF20, guard)
+    mgr = m.u64(m.u64(m.main + 0x46D38E0))
+    m.put(m.main + 0x4700900, 8, mgr)
+    return mgr
+
+
+@lifted(0x159DBA0)
+def create_session_id(m, *_):
+    """A new session in the manager (0x159dc10); returns its id."""
+    return _tail(m, m.main + 0x159DC10, manager(m))
+
+
+lifted(0x16D9BDC)(lambda m, *_: _class_static(m, 0x4740BA8, 0x4740BB0))
+
+
+@lifted(0x2A0F878)
+def session_class(m, *_):
+    """vf 0 of S's +0x28 part: its class static 0x4740ba8."""
+    m.call_void(m.main + 0x16D9BDC)
+    return m.main + 0x4740BA8
+
+
+@lifted(0x1891440)
+def start_session_by_id(m, mgr, ident, opt, *_):
+    """Under the manager's lock: the session with this id, if any, starts (0x18915c4 with the manager's
+    communication holder +0xb8 and a copy of the optional session handle)."""
+    m.call_void(m.main + 0x343C340, mgr + 0x90)
+    node = _find(m, mgr + 0x28, ident & M32, 4)
+    if node:
+        s = m.u64(node + 0x18)
+        with m.frame(0x20) as o2:
+            m.call_void(m.main + 0x1891340, o2, opt)
+            m.call_void(m.main + 0x18915C4, s, mgr + 0xB8, o2)
+            if m.u8(o2):
+                raise UnliftedCall("main+0xc8e444: an optional session handle")
+    m.call_void(m.main + 0x343C360, mgr + 0x90)
+
+
+@lifted(0x1891274)
+def start_session_id(m, ident, opt, *_):
+    """The session start by id (a Lua binding's native): 0x1891440 on the manager."""
+    mgr = manager(m)
+    with m.frame(0x20) as o2:
+        m.call_void(m.main + 0x1891340, o2, opt)
+        m.call_void(m.main + 0x1891440, mgr, ident, o2)
+        if m.u8(o2):
+            raise UnliftedCall("main+0xc8e444: an optional session handle")
+
+
+# --- the session: the manager, S, the raid start's setup fields, the start ----------------------------
+
+# The raid start's writes into the setup through its Lua bindings (Lua 0.4455 -> 0.4893 -> 0.4945; the
+# setup's bindings 0x441cc10..0x441d958): fields equal in the ch1, ch2, ch5 and ch6 consoles' setups.
+# (offset, size, value, the binding that writes it when known)
+RAID_SETUP = (
+    (0x2C, 4, 0x2713, "fD8E195CA"), (0x34, 4, 2, "f62A8F7B6"), (0x8C, 1, 1, None), (0x8D, 1, 5, None),
+    (0x90, 4, 2, "f67B478AC"), (0x94, 4, 0, "f4891D27C"), (0x99, 1, 0, "fD185AB33"), (0x9B, 1, 1, "fD185AB33"),
+    (0x488, 1, 1, "f9BFB0E4D"), (0x489, 1, 1, "f6A5B5505"), (0x498, 8, 0x400, "f4FD8C069"),
+    (0x4B0, 4, 12000, "f52BC8073"), (0x4B4, 4, 400, "f8E89EF89"), (0x4DD, 1, 1, None), (0x4DF, 1, 1, None),
+    (0x4EC, 4, 0, "f11DA56AD"), (0x706, 1, 1, None), (0x714, 1, 8, "fBF4C224C"),
+)
+
+
+def raid_setup(m, alloc, setup, bootstrap, partners):
+    """The raid start's setup fields: RAID_SETUP; per participant p and entry e (0x1c bytes from +0x18 of
+    +0xc8 + 0xc0 * p) u16 +0x10 30 (26 for the boss, p = 1) and u8 +0xd 1 for the host's entries 1..5 and
+    the guest's 0..5; from the bootstrap (0xaa0 plaintext) the RaidPoint's randSeed at +0x718, its
+    raidTimeData limits at +0x48a/+0x48c/+0x48e, its boss action profile as u16 at +0x514, and the five
+    party holders (our Pokemon, the boss, the guest, the two NPC partners' records from `partners`)."""
+    for off, size, value, _ in RAID_SETUP:
+        m.put(setup + off, size, value)
+    for p in range(5):
+        for e in range(6):
+            a = setup + 0xC8 + 0xC0 * p + 0x18 + 0x1C * e
+            m.put(a + 0x10, 2, 26 if p == 1 else 30)
+            if (p == 0 and e) or p == 2:
+                m.put(a + 0xD, 1, 1)
     point = 5 * PARTY_RECORD
-    seed = int.from_bytes(bootstrap[point + 0x3D8:point + 0x3E0], "little")
-    m.put(n + 0x30, 8, seed); m.put(setup + 0x718, 8, seed)
+    m.put(setup + 0x718, 8, int.from_bytes(bootstrap[point + 0x3D8:point + 0x3E0], "little"))
     game, client, command = struct.unpack_from("<3I", bootstrap, point + 0x34)
-    m.put(n + 0x8A, 2, game); m.put(n + 0x8C, 2, client); m.put(n + 0x8E, 2, command)
+    m.put(setup + 0x48A, 2, game); m.put(setup + 0x48C, 2, client); m.put(setup + 0x48E, 2, command)
     for i, value in enumerate(struct.unpack_from("<37I", bootstrap, point + 0x4C)):
         m.put(setup + 0x514 + 2 * i, 2, value)
     records = [bootstrap[0:PARTY_RECORD], bootstrap[4 * PARTY_RECORD:5 * PARTY_RECORD],
                bootstrap[PARTY_RECORD:2 * PARTY_RECORD]] + list(partners)
     for i, rec in enumerate(records):
         m.put(setup + 0xA0 + 8 * i, 8, build_party(m, alloc, rec))
-    for off in range(0x150, 0x190, 8):
-        m.put(n + off, 8, 0)
-    return n
 
 
-# --- named battle parameters: N+0x48 +0x148 -------------------------------------------------------
+def _session_of(m, mgr, ident):
+    from pokeldn.sv.battle.engine.steps import _find
+    node = _find(m, mgr + 0x28, ident, 4)
+    return m.u64(node + 0x18) if node else 0
 
-PARAMETERS_VT = 0x4485568               # 0xa8 bytes; +0x20 0x44855e8, +0x28 the shared part 0x4485638
+
+def build_session(m, alloc, bootstrap, partners):
+    """The battle session as the console makes it: the session manager (0x168ca58, at boot), a session
+    S under it (0x159dba0; S's job is bare_job: the engine's job scheduler is not reproduced),
+    the raid start's setup fields (raid_setup), the session start (0x1891274: N+0x48, N and what hangs
+    off them). Returns N, ready for its start states (0x1269824)."""
+    from pokeldn.sv.battle.machine import FUNCTIONS
+    m.call_void(m.main + 0x168CA58, alloc)
+
+    def job(m, owner, *_):
+        p = bare_job(m, owner)
+        m.put(m.x8, 8, p)
+        return p
+    FUNCTIONS[0x159F018] = job
+    try:
+        ident = m.call(m.main + 0x159DBA0)
+    finally:
+        del FUNCTIONS[0x159F018]
+    mgr = manager(m)
+    s = _session_of(m, mgr, ident)
+    raid_setup(m, alloc, m.u64(s + 0xE0), bootstrap, partners)
+    with m.frame(0x20) as opt:
+        m.put(opt, 8, 0)
+        m.call_void(m.main + 0x1891274, ident, opt)
+    return m.u64(s + 0x48)
 
 
-def build_parameters(m, alloc, pairs):
-    """The named-parameter table [N+0x48]+0x148 the rounds read through 0x11521a0 and its vf 0x68
-    (0x20049f4): an unordered_map<u64 name hash, u32> at +0x40 (buckets +0x40, count +0x48, first node
-    +0x70, size +0x98, max load 1.0 +0xa0; nodes 0x20 bytes {next, hash, key, u32 value}) filled one by
-    one from `pairs` (name hash, value), and a weak handle at +0x30 (its id at +0x38) to its +0x28 part
-    holding one strong reference."""
-    from pokeldn.sv.battle.engine.steps import _insert
-
-    def build(o):
-        m.write(o, bytes(0xA8))
-        m.put(o, 8, m.main + PARAMETERS_VT); m.put(o + 0x20, 8, m.main + PARAMETERS_VT + 0x80)
-        m.put(o + 0x28, 8, m.main + PARAMETERS_VT + 0xD0)
-        m.put(o + 0x50, 8, alloc); m.put(o + 0x58, 8, MAX_NODES)
-        m.put(o + 0x78, 8, alloc); m.put(o + 0x80, 8, MAX_NODES)
-        m.put(o + 0xA0, 4, ONE_F)
-    o = _create(m, alloc, 0xA8, build)
-    pool = m.u64(m.main + 0x4700930)
-    with m.frame(0x10) as h:
-        m.x8 = h
-        m.call(m.main + 0xC1A58C, pool, o + 0x28)
-        e = m.u64(h)
-    m.put(e + 8, 8, m.main + 0x4740BF0)         # the resolved value a live reference holds
-    m.put(e + 0x1A, 2, 1); m.put(e + 0x1C, 4, 0xFFFFFFFE)
-    m.put(o + 0x30, 8, e); m.put(o + 0x38, 8, m.u64(e))
-    table = o + 0x40
-    for key, value in pairs:
-        node = m.vcall(m.u64(table + 0x38), 0x10, 0x20, 8)
-        m.put(node, 8, 0); m.put(node + 8, 8, key); m.put(node + 0x10, 8, key); m.put(node + 0x18, 8, value)
-        _insert(m, table, node, key, 0xFAE80C)
-    return o
+def start_states(m, n, steps=None):
+    """N's start states (0x1269824 from state 0) until its raid step machine (N+0x60) has run the three
+    build steps; steps(name) is called after each of 0x2891748 (in state 0), 0x2892ac0, 0x2d381a4 and
+    0x2892dd4."""
+    with m.frame(0x10) as st:
+        m.put(st, 4, 0)
+        while m.u32(st) < 3:
+            m.call(m.main + 0x1269824, n, st)
+            if m.u32(st) == 1 and steps:
+                steps("0x2891748")
+        names = {2: "0x2892ac0", 3: "0x2d381a4", 4: "0x2892dd4"}
+        while m.u32(n + 0x60) < 4:
+            m.call(m.main + 0x1269824, n, st)
+            if steps and m.u32(n + 0x60) in names:
+                steps(names[m.u32(n + 0x60)])
