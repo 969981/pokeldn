@@ -1007,6 +1007,30 @@ from emulated Scarlet 4.0.0 servers and the type-0x15 records between two emulat
 all, decodes to its last byte and encodes back to the same bytes.
 The 0xcf groups seen so far are zero-filled.
 
+### The battle-start body
+
+Message 0x11's body is a command queue with no length word ([The server command queue](#the-server-command-queue)).
+Battler ids are 1 for slot 0, 2 for the boss (slot 1), 3 for slot 2, and 4 and 5 for slots 3 and 4; a
+battler sits at position id − 1. The body sends each battler out in id order, then runs the switch-in
+events, then ends with `0x2b (0)`:
+
+| commands | what |
+|---|---|
+| `0x3d (pos)`, `0x16 (pos, 0, 0, 0)`, `0x5e (id, ability)`, `0x61 (id)`, `0x6b (id)`, `0x4e (id)` | one battler sent out; `ability` is its ability id |
+| `0x25 (id)`, `0xc7 (id, 0)`, the effect, `0xc8 (id)` | an ability's activation |
+| `0xcb (id, text, params..., 0xffff0000)`, padded with zeros to ten arguments | a battle message |
+
+| switch-in event | effect |
+|---|---|
+| Pressure (46) | the activation around `0xcb (id, 162, id)` |
+| Intimidate (22) | the activation around, per target, `0x0d (target, 1, 1)`, `0x93 (target, 1, 1, 0)`, `0xcb (id, 32, target, 1)` |
+| Frisk (119) | the activation around `0xcb (0, 146, id, target, item)` per foe holding an item |
+| Air Balloon (541) held | `0xcb (id, 137, id)`, after the battler's ability |
+
+In 224 of 233 oracle battles the events run in the battlers' speed order (party record speed). The 9 others
+involve Unnerve (127), which acts first, or speed ties. Over the same battles, 161 abilities produced no
+switch-in event and, of the items Leftovers (234), Life Orb (247), 270 and Focus Sash (275), none did.
+
 ### The server's messages
 
 Every message the server sends is one step of `0x113bad8(server, kind, destination)`:
