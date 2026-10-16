@@ -935,8 +935,10 @@ for 137 of 140 hits with every draw logged the logged roll and critical draw giv
 Hits that do not fit come during the boss's shield (about 0.45 of the formula), from moves with their
 own rules (Body Press, Rising Voltage, multi-hit moves) or are capped at the HP left.
 
-A boss's HP pool is its record's HP times the raid's multiplier: battles won at one and two stars
-ended after exactly five times the record's HP in `0x02` damage.
+A boss's HP pool is its record's HP times the RaidPoint's HP coefficient over 100 ([The battle
+bootstrap](#the-battle-bootstrap)): of the oracle battles won, 78 at one star, 84 at two, 125 at three and 35 at
+four ended after exactly 5, 5, 8 and 12 times the record's HP in `0x37 (2, 2, damage)`; the others took
+less, through the shield and moves with their own rules.
 
 ### A move in the round queue
 
@@ -1101,6 +1103,8 @@ events, then ends with `0x2b (0)`:
 | Pressure (46) | the activation around `0xcb (id, 162, id)` |
 | Intimidate (22) | the activation around, per target, `0x0d (target, 1, 1)`, `0x93 (target, 1, 1, 0)`, `0xcb (id, 32, target, 1)` |
 | Frisk (119) | the activation around `0xcb (0, 146, id, target, item)` per foe holding an item |
+| Unnerve (127) | `0x25 (id)`, `0xc7 (id, 127)`, `0xca (id, 679, side, 0xffff0000)`, `0xc8 (id)`, before every other event; `side` is 1 for a player's Unnerve, 0 for the boss's |
+| Anticipation (107) | the activation around `0xcb (id, 145, id)` when a foe knows a damaging move super effective on it or a one-hit KO move |
 | Air Balloon (541) held | `0xcb (id, 137, id)`, after the battler's ability |
 
 In 224 of 233 oracle battles the events run in the battlers' speed order (party record speed). The 9 others
@@ -1115,7 +1119,7 @@ after its drop with `0x0c (F, 1, 2)`, `0x92 (F, 1, 2, 0)` and `0xcb (F, 18, F, 0
 names the first foe that holds an item with `0xcb (0, 146, I, F, item, 0xffff0000)` and each later
 one with `0xca (0, 752, F, item, 0xffff0000)`; with no item among the foes it has no event. Defiant,
 Hyper Cutter, Klutz, Light Metal, Moxie, Poison Touch and Wind Power have no start event. Built this
-way, 392 of 554 oracle start bodies are equal and none differ.
+way, 420 of 554 oracle start bodies are equal and none differ.
 
 ### The server's messages
 
@@ -1562,6 +1566,10 @@ the host start; its Pokemon stayed in the battle.
   before some secondaries stand for.
 - Why a player's Whirlpool (a move that registers a handler and traps) hit a Fairy-Tera boss for 7
   where the damage formula gives 14 to 17.
+- Why a one-star boss's Tackle (Smoliv, Tera Normal, Early Bird) on a partner Dedenne did 4 where its
+  logged draws (critical `below(24)` 10, roll `below(16)` 4) give 2. Its `0x8b` carried 1 in the eighth
+  argument, which marks about 6 percent of boss hits at every HP share; the other marked hits fit the
+  formula with their logged draws.
 - Whether a listener of the GlueCode dispatcher `0x18beef4` reads `+0x4c` as a word (listeners
   register at run time; groups 1 to 3 are called at `0x18bf87c`), and which consumer drains the
   per-slot queues `0xe106a4` fills (`0x113d5e0` from `0xe107ac`). Message 16, with +0x08 zero,
