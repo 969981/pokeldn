@@ -11,6 +11,7 @@ from gui import drop
 from gui import theme as t
 from gui.views.widgets import open_folder
 from pokeldn import plugins
+from pokeldn.ldn import radios
 from pokeldn.app import plugin_store as store
 from pokeldn.app.paths import SESSION
 
@@ -220,16 +221,23 @@ class PluginsView:
 
     def _radio_card(self) -> list[ft.Control]:
         s = self.app.settings
-        choices = [("", "The board (default)")] + [(r.scheme, r.label) for r in plugins.radios()]
+        choices = [("", "The board (default)")] + [(r.scheme, r.label) for r in radios.choices()]
         if s.radio and s.radio not in {c[0] for c in choices}:
             choices.append((s.radio, f"{s.radio} (its plugin is off)"))
         if len(choices) == 1:
             return []
+        help_controls = ["The Games page shows the radio in use before you start."]
+        if any(key == "ldnrs" for key, label in choices):
+            help_controls += [
+                "For USB Wi-Fi on Windows, install ldnrs 0.0.3, complete its adapter wizard and keep its "
+                "daemon running. Its setup replaces the adapter's Wi-Fi driver with WinUSB; restore the "
+                "original driver in Device Manager to use that adapter for ordinary Wi-Fi again.",
+                t.link_button("ldnrs setup and download", lambda e: self.app.page.run_task(
+                    self.app.open_url, "https://github.com/unlimitedcoder2/ldnrs/releases/tag/0.0.3"))]
         return [t.section("Radio", t.card(
             "What carries the wireless messages",
             t.dropdown(choices, s.radio, on_select=lambda e: self._set_radio(e.control.value or "")),
-            "Keep the board unless a plugin's instructions say otherwise. The Games page shows the radio in "
-            "use before you start."))]
+            *help_controls))]
 
     def _first_tool(self, state: plugins.Plugin):
         for game in state.games:
@@ -254,7 +262,7 @@ class PluginsView:
     def _reload(self, message: str = "") -> None:
         plugins.reload()
         s = self.app.settings
-        if s.radio and plugins.radio(s.radio) is None:
+        if s.radio and radios.radio(s.radio) is None:
             s.radio = ""
             s.save()
             message = (message + " " if message else "") + "The radio is back to the board."
@@ -298,7 +306,7 @@ class PluginsView:
     def _set_radio(self, scheme: str) -> None:
         self.app.settings.radio = scheme
         self.app.settings.save()
-        radio = plugins.radio(scheme)
+        radio = radios.radio(scheme)
         self.say(f"Sessions now use {radio.label}." if radio else "Sessions now use the board.", t.BLUE, "cpu")
         self.render(update=True)
 
@@ -328,7 +336,7 @@ class PluginsView:
         s.plugins = [i for i in s.plugins if i != plugin_id] + ([plugin_id] if value else [])
         s.save()
         plugins.reload()
-        if s.radio and plugins.radio(s.radio) is None:
+        if s.radio and radios.radio(s.radio) is None:
             s.radio = ""
             s.save()
 
