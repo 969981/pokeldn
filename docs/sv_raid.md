@@ -959,8 +959,14 @@ move hits the boss and the boss's reply hits a player:
 | `0x7c ()`, `0x08 (A, 0)`, `0x1d (A, T's position, type, 1, 0, M, M)`, `0x5b (A, M)` twice, `0x1e (A, 0)` | the move ends |
 
 A round ends with `0xb2 (0)`, `0x37 (b, 7, 1)` for each battler that moved, `0x75 (3, n)`, `0xc5 (1)`,
-`0x43 (b)` for each battler, `0x23 (b)` for each battler that moved or for all five in a round's first
-command, and `0x2d (0)`. It starts with `0xb5 (0)` and runs of `0x51 (b, 1)`, `0x5a (b, M, x)` and
+`0x43 (b)` for each battler in speed order (party record speed, the boss among them), `0x23 (b)` for
+each battler that moved in id order, or all five in the battle's first round, and `0x2d (0)`;
+`0x75 (3, n)` counts the rounds so far, this one included. The prefix runs `0x51 (b, 1)` once for the
+round's actors in id order, then once in the order they move (speed order). A battler choosing a move
+that registers its own handler adds `0x5a (b, M, speed)` and `0x5b (b, M)` after each pass, and
+`0x5a (b, M, 0x72000 + speed)` before it moves. Built this way, from Showdown's move data and the Gen 9
+damage formula, 19 battles' first rounds of plain moves (a single-target damaging move with no effect
+that triggers) equal the oracle's byte for byte. It starts with `0xb5 (0)` and runs of `0x51 (b, 1)`, `0x5a (b, M, x)` and
 `0x5b (b, M)` before the first move.
 
 ### Actions
