@@ -47,6 +47,17 @@ def test_the_usbwatch_report_every_hello_repeats_is_logged_once_per_link():
     assert lines == ["[esp32] usbwatch: reset reason 11, up 812 ms", "[esp32] joined", "[esp32] joined"]
 
 
+def test_a_lost_board_ends_the_run_with_a_reason_the_players_stop_lacks(monkeypatch):
+    import pokeldn.ldn
+    interrupted = []
+    monkeypatch.setattr(esp32_wlan._thread, "interrupt_main", lambda: interrupted.append(True))
+    monkeypatch.setattr(pokeldn.ldn, "_radio_lost", "")
+    assert pokeldn.ldn.radio_lost() == ""
+    esp32_wlan.board_lost(log=lambda line: None, error=OSError("Device not configured"))
+    assert interrupted == [True]
+    assert pokeldn.ldn.radio_lost() == "The board's USB connection failed (Device not configured)."
+
+
 def test_reader_resynchronises_after_boot_text():
     frame = esp32.encode_frame(esp32.MSG_RX_ETH, b"\x00abc\x00")
     reader = esp32.FrameReader()

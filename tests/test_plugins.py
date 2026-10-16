@@ -20,7 +20,8 @@ from pokeldn.plugins import Field, Tool
 
 def register(api):
     api.add_tool("frlg", Tool("example-echo", "Echo", "echo.py", "Writes its arguments.", ("Nothing to press.",),
-                              fields=(Field("--word", "Word", default="hello"),), fixed=("--out", "echo.json")))
+                              fields=(Field("--word", "Word", default="hello"),),
+                              fixed=("--out", "echo.json", "--keys-file", "{keys}")))
 '''
 ECHO = '''
 import argparse, json, sys
@@ -30,6 +31,7 @@ def build_parser():
     parser.add_argument("--out")
     parser.add_argument("--word")
     parser.add_argument("--extra")
+    parser.add_argument("--keys-file")
     return parser
 
 if __name__ == "__main__":
@@ -83,6 +85,8 @@ def isolated(tmp_path, monkeypatch):
 def test_a_folder_plugin_tool_runs_through_the_cli_child_path(tmp_path):
     folder = make(tmp_path / "elsewhere", "echo", TOOL_PLUGIN, echo_py=ECHO)
     env = dict(os.environ, POKELDN_PLUGINS=str(folder), POKELDN_DATA=str(tmp_path / "data"), PYTHONPATH=str(ROOT))
+    (tmp_path / "data").mkdir()
+    (tmp_path / "data" / "settings.json").write_text(json.dumps({"keys": "~/Switch keys/prod.keys"}))
     run = lambda *a: subprocess.run([sys.executable, "-m", "pokeldn", *a], cwd=tmp_path, env=env,  # noqa: E731
                                     capture_output=True, text=True, timeout=60)
     listed = run("--list")
@@ -90,8 +94,9 @@ def test_a_folder_plugin_tool_runs_through_the_cli_child_path(tmp_path):
     assert "echo                 Echo, API 1.0: loaded" in run("--plugins").stdout
     done = run("example-echo", "--", "--extra", "1")
     assert done.returncode == 0, done.stderr
-    assert json.loads((tmp_path / "echo.json").read_text()) == ["--out", "echo.json", "--word", "hello",
-                                                                "--extra", "1"]
+    assert json.loads((tmp_path / "echo.json").read_text()) == [
+        "--out", "echo.json", "--keys-file", os.path.expanduser("~/Switch keys/prod.keys"), "--word", "hello",
+        "--extra", "1"]
 
 
 def test_a_plugin_radio_carries_the_ldn_calls(isolated, tmp_path, monkeypatch):

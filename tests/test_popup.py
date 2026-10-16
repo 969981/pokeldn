@@ -249,6 +249,41 @@ def test_code_in_the_app_reaches_the_manager_directly(monkeypatch):
     assert acked == [1]
 
 
+def test_a_choice_answers_the_index_of_the_option_pressed_and_esc_dismisses_it(monkeypatch):
+    """The program's choice through the app's manager: each option is an answer, and only those and dismiss."""
+    app, view, _, _ = manager()
+    picked = []
+    program = app.program("Updates", popup.answered)
+    monkeypatch.setattr(popup, "_sink", program.take)
+    options = ["Save the console's update", "Send 1.2.0", "Leave"]
+    for press in ("1", "dismiss"):
+        popup.choose("Update found", "Version 1.1.0, 2.7 GB.", options, on_choice=picked.append,
+                     on_dismiss=lambda: picked.append("dismissed"))
+        entry = view.shown[-1]
+        assert (entry.kind, entry.options, entry.answers) == ("choose", options, ("0", "1", "2", "dismiss"))
+        app.answer(entry, "3")                          # no fourth option
+        app.answer(entry, "agree")                      # not a choice's answer
+        assert view.shown == [entry]
+        entry.escaped() if press == "dismiss" else entry.press(press)
+    assert picked == [1, "dismissed"] and view.shown == []
+    for bad in (["Only one"], [str(n) for n in range(popup.CHOICES + 1)], ["Leave", ""]):
+        with pytest.raises(ValueError):
+            popup.choose("Too few, too many, unnamed", "", bad)
+    run = app.program("Run", lambda answer: None)
+    for bad in (opened("One", kind="choose", options=["a"]), opened("Text", kind="choose", options="ab"),
+                opened("Blank", kind="choose", options=["a", ""])):
+        run.take(bad)
+    run.take(opened("Kept", kind="choose", options=["a", "b"]))
+    assert titles(view) == ["Kept"]
+    run.ended()                                         # a choice closes with its program
+    assert view.shown == []
+
+
+def test_with_no_app_a_choice_lists_its_options(capsys):
+    popup.choose("Pick", "Which?", ["Save", "Send"])
+    assert capsys.readouterr().out == "[pop-up] Pick: Which? [Save / Send]\n"
+
+
 def test_a_run_shows_its_pop_ups_in_the_app_and_gets_the_answers(tmp_path):
     """End to end: the child's `[popup]` lines stay out of the log, the button's answer reaches its callback
     on the child's stdin, and Stop still interrupts it."""
