@@ -305,6 +305,9 @@ class Radio:
         self._out: collections.deque = collections.deque()
         self._out_cv = threading.Condition()
         self._written = self._credited = 0
+        # The bytes of the frame being written: the board counts them as they arrive, so a CREDIT can
+        # name them before the write returns.
+        self._sending = 0
         self._credit_seen = 0.0
         self._lost = 0  # bytes a resync wrote off; the board's count stays behind by them
         self._flow = False
@@ -506,6 +509,8 @@ class Radio:
                 self._lose(RadioError("The board stopped answering over USB"))
                 return
             self._record(">", msg_type, payload)
+            with self._out_cv:
+                self._sending = len(frame)
             try:
                 with self._write_lock:
                     written = self._stream.write(frame)
@@ -517,6 +522,7 @@ class Radio:
                 return
             with self._out_cv:
                 self._written += len(frame)
+                self._sending = 0
                 if msg_type == CMD_HELLO:
                     # The board restarts its count after a HELLO's delimiter and answers CREDIT 0
                     # (firmware wire_credit_reset); the window stays shut across it.
@@ -609,13 +615,18 @@ class Radio:
             credit = struct.unpack("<I", payload)[0]
             self._record("<", msg_type, payload)
             with self._out_cv:
+                # The frame being written counts: the board credits every 1024 bytes it reads, so a
+                # 1.5 KB frame is often credited before its write returns. Refusing that count leaves
+                # the frame's tail short of the next step, and the window shut until the board's
+                # idle CREDIT about 20 ms later.
+                sent = self._written + self._sending
                 # The board counts in a u32 (wire.c s_consumed): one update stream passes 4 GiB.
-                credit += max(0, self._written - credit) >> 32 << 32
+                credit += max(0, sent - credit) >> 32 << 32
                 self._credit_seen = time.monotonic()
                 # More than was written since the HELLO is a count from before it. A count past
                 # what the written-off bytes allow means a resync wrote off bytes the board had.
-                if credit <= self._written:
-                    self._lost = min(self._lost, self._written - credit)
+                if credit <= sent:
+                    self._lost = min(self._lost, sent - credit)
                     self._credited = max(self._credited, credit + self._lost)
                     self._flow = True
                     self._out_cv.notify_all()
