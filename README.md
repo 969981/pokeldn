@@ -87,7 +87,7 @@ Contributors to this repository (GitHub does not list contributors on a fork):
 - [Gr3nSkyDragon](https://github.com/Gr3nSkyDragon): ESP32-S3 firmware
 - [ismailhasannnnnn](https://github.com/ismailhasannnnnn): Scarlet/Violet Tera Raid hosting and joining,
   reverse engineering and reconstruction of the RaidPoint structure, including reward encoding and
-  raid bootstrap compression
+  raid bootstrap compression, and hosted raid reward templates
 - [easyworld](https://github.com/easyworld): ESP32 serial reconnects after a high-baud session
 - [capito27](https://github.com/capito27): Scarlet/Violet event Tera Raids, the raid finder's reward
   filter, its full seed search, its ranking by rewards and its size mark filter, and the Tera Raid

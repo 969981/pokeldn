@@ -38,8 +38,10 @@ class PixelActivity(ft.Container):
                 pixel.opacity = max(0.18, 1 - ((phase - i) % 8) * 0.22)
             try:
                 self.update()
-            except RuntimeError:
+            except RuntimeError as error:
                 # An async list can replace its loading icon between the wake-up and update.
+                if "must be added to the page" not in str(error):
+                    raise
                 return
 
 

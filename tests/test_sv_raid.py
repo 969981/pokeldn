@@ -622,7 +622,7 @@ class RaidGuestConsole:
 
 
 def run_raid_host(monkeypatch, tmp_path, rewards=(), extra=(), ready_after=2.4, seconds=60,
-                  consoles=None):
+                  consoles=None, bag=None):
     """-> the scripted console (or the list given in `consoles`, made with the clock) and the clock,
     after the host has run against them."""
     clock = Clock()
@@ -674,7 +674,7 @@ def run_raid_host(monkeypatch, tmp_path, rewards=(), extra=(), ready_after=2.4, 
     monkeypatch.setattr(sv_host, "needs_root", lambda: False)
     monkeypatch.setattr(sv_host.pokemon_service, "prepare_file", lambda game, path, **kw: path)
     monkeypatch.setattr(sv_host.pokemon_service.SERVICE, "names",
-                        lambda game, kind: [{"id": 15, "name": "Quick Ball"}])
+                        lambda game, kind: bag if bag is not None else [{"id": 15, "name": "Quick Ball"}])
     tool = next(t for game in GAMES for t in game.tools if t.key == "sv-raid-host")
     args = build(tool, {"--raid-pokemon": {"file": str(ours)}, "--raid-seed": "000F34C3",
                         "--raid-reward": [{"item_id": str(i), "quantity": str(q)} for i, q in rewards]},

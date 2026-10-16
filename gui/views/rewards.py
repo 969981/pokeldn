@@ -15,6 +15,10 @@ TEMPLATES = (
 TEMPLATE_ITEMS = {key: items for key, _, items in TEMPLATES}
 
 
+def quantity_error(value: str) -> str | None:
+    return None if value.isascii() and value.isdigit() and 1 <= int(value) <= 999 else "1 to 999"
+
+
 class RewardPicker:
     """A raid's reward rows in order, each an item from the game's bag list and a quantity. The value
     is [{"item_id", "quantity"}]; an empty list keeps the raid's own rewards."""
@@ -31,10 +35,9 @@ class RewardPicker:
         self.quantity = t.field(value=self.template_quantity, mono=True, width=110,
                                 keyboard_type=ft.KeyboardType.NUMBER,
                                 on_change=self._set_template_quantity)
-        self.template_quantity_control = ft.Column([
-            t.text("Quantity each", 11, t.MUTED), self.quantity], spacing=4)
+        self.template_quantity_control = t.labeled_control("Quantity each", self.quantity)
         self.template_controls = ft.Row([
-            ft.Column([t.text("Template", 11, t.MUTED), self.templates], spacing=4, expand=True),
+            t.labeled_control("Template", self.templates, expand=True),
             self.template_quantity_control,
         ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.END)
         self.add = t.secondary_button("Add reward", self._add, "plus")
@@ -42,24 +45,28 @@ class RewardPicker:
         self._render(update=False)
 
     def _template_of(self) -> str:
-        items = tuple(int(row.get("item_id", 0) or 0) for row in self.value)
+        items = tuple(str(row.get("item_id", "")) for row in self.value)
         if not items:
             return "seed"
-        return next((key for key, expected in TEMPLATE_ITEMS.items() if items == expected), "custom")
+        quantities = {str(row.get("quantity", "")) for row in self.value}
+        if len(quantities) != 1 or quantity_error(next(iter(quantities))):
+            return "custom"
+        return next((key for key, expected in TEMPLATE_ITEMS.items()
+                     if items == tuple(map(str, expected))), "custom")
 
     def _template_quantity(self) -> str:
         quantities = {str(row.get("quantity", "")) for row in self.value}
         if len(quantities) == 1:
             quantity = quantities.pop()
-            if quantity.isdigit():
+            if quantity_error(quantity) is None:
                 return quantity
         return "50"
 
     def _set(self, index: int, key: str, value: str) -> None:
         self.value[index][key] = value
         self.template = "custom"
-        self.templates.value = self.template
-        self.templates.update()
+        self._show_template()
+        self.control.update()
         self.on_change([dict(row) for row in self.value])
 
     def _choose_template(self, event) -> None:
@@ -73,13 +80,13 @@ class RewardPicker:
 
     def _set_template_quantity(self, event) -> None:
         text = event.control.value
-        event.control.error = None if text.isdigit() and 1 <= int(text) <= 999 else "1 to 999"
-        event.control.update()
-        if event.control.error is None:
-            self.template_quantity = text
-            if self.template in TEMPLATE_ITEMS:
-                self._apply_template()
-                self._render()
+        self.template_quantity = text
+        self.quantity.error = quantity_error(text)
+        if self.template in TEMPLATE_ITEMS:
+            self._apply_template()
+            for field in self.quantities:
+                field.value, field.error = text, self.quantity.error
+        self.control.update()
 
     def _apply_template(self) -> None:
         self.value = [{"item_id": str(item), "quantity": self.template_quantity}
@@ -88,8 +95,7 @@ class RewardPicker:
 
     def _quantity(self, event, index: int) -> None:
         text = event.control.value
-        event.control.error = None if text.isdigit() and 1 <= int(text) <= 999 else "1 to 999"
-        event.control.update()
+        event.control.error = quantity_error(text)
         self._set(index, "quantity", text)
 
     def _add(self, _event) -> None:
@@ -103,12 +109,13 @@ class RewardPicker:
     def _remove(self, index: int) -> None:
         self.value.pop(index)
         self.template = self._template_of()
-        self.templates.value = self.template
+        self.template_quantity = self._template_quantity()
         self.on_change([dict(row) for row in self.value])
         self._render()
 
     def _render(self, update: bool = True) -> None:
         rows = []
+        self.quantities = []
         for index, row in enumerate(self.value):
             item = NamePicker(self.app, self.game, "bag", str(row.get("item_id", "")),
                               lambda value, n=index: self._set(n, "item_id", value),
@@ -116,6 +123,8 @@ class RewardPicker:
             quantity = t.field(value=str(row.get("quantity", "1")), mono=True, width=110,
                                keyboard_type=ft.KeyboardType.NUMBER,
                                on_change=lambda event, n=index: self._quantity(event, n))
+            quantity.error = quantity_error(quantity.value)
+            self.quantities.append(quantity)
             rows.append(ft.Row([
                 ft.Container(t.text(str(index + 1), 11, t.BLUE, weight=ft.FontWeight.W_700), width=24, height=24,
                              margin=ft.Margin(0, 0, 0, 5), alignment=ft.Alignment.CENTER, border_radius=12,
@@ -129,7 +138,13 @@ class RewardPicker:
                                 t.text("The raid's own rewards, shown with the raid above.", 12, t.MUTED)],
                                spacing=8))
         self.rows.controls = rows
-        self.template_quantity_control.visible = self.template in TEMPLATE_ITEMS
+        self._show_template()
         self.add.disabled = len(self.value) >= REWARD_ROWS
         if update:
             self.control.update()
+
+    def _show_template(self) -> None:
+        self.templates.value = self.template
+        self.quantity.value = self.template_quantity
+        self.quantity.error = quantity_error(self.template_quantity)
+        self.template_quantity_control.visible = self.template in TEMPLATE_ITEMS
