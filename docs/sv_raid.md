@@ -1107,6 +1107,16 @@ In 224 of 233 oracle battles the events run in the battlers' speed order (party 
 involve Unnerve (127), which acts first, or speed ties. Over the same battles, 161 abilities produced no
 switch-in event and, of the items Leftovers (234), Life Orb (247), 270 and Focus Sash (275), none did.
 
+Intimidate opens with `0x25 (I)` and `0xc7 (I, 0)`, then for each foe in id order (the four players
+for the boss, the boss for a player) `0x0d (F, 1, 1)`, `0x93 (F, 1, 1, 0)` and `0xcb (I, 32, F, 1,
+0xffff0000)`, and closes with `0xc8 (I)`. A foe with Own Tempo answers inside it with its own
+`0x25`/`0xc7`, `0xcb (F, 69, F, 0xffff0000)` and `0xc8`, and loses nothing. A foe with Defiant answers
+after its drop with `0x0c (F, 1, 2)`, `0x92 (F, 1, 2, 0)` and `0xcb (F, 18, F, 0xffff0000)`. Frisk
+names the first foe that holds an item with `0xcb (0, 146, I, F, item, 0xffff0000)` and each later
+one with `0xca (0, 752, F, item, 0xffff0000)`; with no item among the foes it has no event. Defiant,
+Hyper Cutter, Klutz, Light Metal, Moxie, Poison Touch and Wind Power have no start event. Built this
+way, 392 of 554 oracle start bodies are equal and none differ.
+
 ### The server's messages
 
 Every message the server sends is one step of `0x113bad8(server, kind, destination)`:
