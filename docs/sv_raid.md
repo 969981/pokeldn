@@ -1387,6 +1387,41 @@ A weak-handle entry is 0x20 bytes: u64 id (u32 index | u32 generation << 32), +8
 +0x10 the object, u16 +0x18 weak count, u16 +0x1a strong count, u32 +0x1c state (-1 freed, -2 live).
 Blocks hold 0x400 entries (`0xc1adec`); freed ids go to a `deque<u32>` grown by `0xb44724`.
 
+### Serving the battle
+
+`bin/sv_host.py --raid-serve DIR` keeps the network through the battle and serves it from the host's
+station with `pokeldn.sv.raid_battle.RaidBattle`: the session the engine builds from the bootstrap
+(`standalone.battle`, slot 0), `Server` over it, and the stations a console host keeps for itself. DIR
+holds Scarlet 4.0.0's image and tables (`python -m pokeldn.sv.battle.game`). The engine's session
+seats our Pokemon, the boss, one console at station index 1 (bootstrap participant 1, slot 2) and two
+NPC partners, so the flag takes one console and refuses `--violet`.
+
+| part | what the host sends |
+|---|---|
+| the server's messages to the console | frames addressed (0x2713, 1, 2) |
+| slots 0, 1, 3 and 4 | each odd step answered with type + 1 after 0.05 s; a request (5) for slots 0, 3 and 4 with a type-6 command in which the slot's Pokemon uses its first move on the boss and the boss its first move on that Pokemon ([Actions](#actions)) |
+| every message the server reads, the console's own included | relayed to the console, addressed (0x2713, 3, 5) |
+| each server frame whose job graph moved | after that frame's messages, a notice 0x46 from slot 0 (step 0, a 4-byte zero body), addressed (0x2713, 3, 5) |
+
+Each frame goes on 0x80 port 0 as one deflated reliable message (flags `COMPLETE_ZLIB`); the largest
+seen deflated to 903 bytes. The served battle's first six frames equal the six battle-start messages
+a retail host sent (`raid.HANDOFF`) outside the header bytes its stack filled, in the same order,
+so `--raid-serve` sends them in place of `HANDOFF`.
+
+The host stops serving once the console answered 0x37, or 5 s after 0x37 was sent, and closes the
+network. Answering 0x37 itself re-runs the time-up on the server ([The server's flow](#the-servers-flow)),
+so the local stations leave it unanswered. A failure (a function not ported, `UnliftedCall`, or the
+session failing to build) stops the serving and hands the network over as a host without the flag
+does; the console then fails over and fights its own battle ([Which station runs the
+server](#which-station-runs-the-server)).
+
+Offline, against a console scripted to answer every odd step 0.3 s later and every request with its
+first move: from the rme10 bootstrap the battle runs to 0x25, 0x29, 0x49, 0x35 and 0x37
+(`tests/test_sv_raid_battle.py`), and through `bin/sv_host.py` with the scripted raid console
+(`tests/test_sv_raid.py`). The port covers the moves, abilities and items of the recorded battles;
+another Pokemon reaches functions not yet ported (a Pikachu and a Greninja with Tackle against raid
+`000F34C3` reached `0x2850db0` or `0x2d176a0`), and that battle falls back.
+
 ## Joining
 
 `bin/sv_join.py --raid-pokemon FILE` joins a scene-7 network and takes part as a guest. The

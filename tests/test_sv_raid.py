@@ -16,7 +16,7 @@ from pokeldn.app.catalog import GAMES
 from pokeldn.app.command import build
 from pokeldn.app.settings import Settings
 from pokeldn.ldn import channel_table, game_channel, pia6, pia_connect, reliable5
-from pokeldn.sv import (lz4, port2, raid, raid_encounter, raid_event, raid_partners, raid_scan, raid_search,
+from pokeldn.sv import (lz4, port2, raid, raid_battle, raid_encounter, raid_event, raid_partners, raid_scan, raid_search,
                         streams)
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -1066,3 +1066,57 @@ def test_our_guest_joins_a_console_s_raid_and_leaves_its_pokemon_in_the_battle(m
     battle_ack = [r for r in got if (r["protocol"], r["port"]) == (0x80, 0) and "data" not in r]
     leave = [r for r in got if r["protocol"] == 0x98 and r["payload"][0] == 3]
     assert len(leave) == 1 and leave[0] is got[-1] and leave[0]["t"] - battle_ack[-1]["t"] < 0.06
+
+
+class ServedBattleConsole(RaidGuestConsole):
+    """The scripted console, then at battle slot 2 of a served battle (pokeldn.sv.raid_battle) whose
+    bootstrap is `boot`: each odd server step answered 0.3 s later, a request with its Pokemon's first
+    move on the boss and the boss's first move on it, on 0x80 port 0 as its battle-start frames."""
+
+    def __init__(self, clock, boot):
+        super().__init__(clock)
+        self.battle = []                        # (x, message) received in the battle
+        self.boot = boot
+
+    def answer_data(self, protocol, port, rm, body):
+        super().answer_data(protocol, port, rm, body)
+        if (protocol, port) != (0x80, 0):
+            return
+        framed = raid_battle.unframe(body)
+        if framed is None:
+            return
+        x, _, msg = framed
+        self.battle.append((x, msg))
+        if x != raid_battle.SERVER:
+            return
+        if msg[0] == raid_battle.REQUEST:
+            moves = [raid_battle.first_move(self.boot[o:o + gen9.SIZE_PARTY])
+                     for o in (gen9.SIZE_PARTY, 4 * gen9.SIZE_PARTY)]
+            reply = raid_battle.command(msg, 2, *moves)
+        elif msg[0] & 1:
+            reply = raid_battle.answer(msg, 2)
+        else:
+            return
+        self.send_data(0.3, 0x80, 0, raid_battle.frame(3, 5, reply), compressed=True)
+
+
+def test_a_console_fights_the_battle_we_serve(monkeypatch, tmp_path, capsys):
+    """The launcher's served battle through the scripted console. The battle is built from the recorded
+    rme10 bootstrap, whose Pokemon the port covers (docs/sv_raid.md, Serving the battle), in place of
+    the lobby's."""
+    from test_sv_battle_served import DATA, game_files
+    from pokeldn.sv.battle import game
+    game_files()
+    recorded = bytes.fromhex(DATA["bootstrap"])
+    plain = raid_battle.RaidBattle
+    monkeypatch.setattr(raid_battle, "RaidBattle", lambda scarlet, _bootstrap: plain(scarlet, recorded))
+    cache = os.environ.get("POKELDN_SV_GAME_CACHE",
+                           os.path.join(os.path.dirname(__file__), "..", "scratchpad", "sv", "game"))
+    assert game.ready(cache)
+    made, _ = run_raid_host(monkeypatch, tmp_path, extra=["--raid-serve", cache], seconds=900,
+                            consoles=lambda clock: [ServedBattleConsole(clock, recorded)])
+    console = made[0]
+    kinds = [m[0] for x, m in console.battle if x == raid_battle.SERVER]
+    assert kinds[:3] == [0x01, 0x11, 0x05] and kinds[-2:] == [0x35, 0x37]
+    assert not [r for r in console.seen if r["protocol"] == 0x98 and r["data"][0] == 7]   # no handover
+    assert "the served battle is over" in capsys.readouterr().out
