@@ -1,19 +1,18 @@
-# pokeldn 0.27.0
+# pokeldn 0.28.0
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- Plugin sources. The Plugins page has three tabs: Installed, Browse and Sources. A source is a
-  listing of plugins someone publishes; Browse lists every plugin the followed sources name, with
-  Install, Update and Remove in one press. Add a source as `OWNER/REPO` or an HTTPS address. Every
-  download is checked against the SHA-256 its source lists, then goes through the same risk screen
-  and signature check as a file.
-- The app follows Decrypt's plugin source from the start, with the Tera Raid battle server plugin
-  that lets the Scarlet and Violet host serve a raid battle (`--raid-serve`).
-- `scripts/plugin_source.py` writes a source listing from packages; `pack_plugin.py` leaves hidden
-  files and the paths `exclude` in `plugin.toml` names out of a package.
+- Plugin API 1.7. A plugin can join or host an LDN network of its own (`pokeldn.ldn.network`) and
+  carry any IP protocol over the board, ask the player to pick one of several options mid-run, show
+  a progress bar with rate and time left, and keep player-visible files in a library folder under
+  `Documents/pokeldn` that the Games page lists and removing the plugin leaves. Details in the
+  Plugins documentation.
+- A transfer through the ESP32 board past 4 GB no longer stalls, and serial reads no longer wait
+  for a full buffer, which speeds long transfers on Windows.
+- The Plugin Test Kit checks all of the above.
 
 The radio firmware stays at 1.6.2 and the controller firmware at 1.3.0; no board update is needed.
 
