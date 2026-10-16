@@ -910,6 +910,59 @@ A draw adds `s0 + s1` and steps the state; the count rises by one per call, not 
 
 Many round functions inline the step instead of calling these.
 
+### Damage and draws per move
+
+Measured on oracle battles of random Pokemon against standard raids (233 battles, 29 with every draw
+logged). A move use draws, in this order:
+
+| draw | when | what it decides |
+|---|---|---|
+| `chance(25)` | the user is paralysed | a full paralysis |
+| `chance(accuracy)` | the move has an accuracy; 100 still draws | a hit |
+| `below(24)`, `below(8)`, `below(2)` | a damaging move, by critical-hit stage 0, 1, 2 | a critical hit when 0 |
+| `below(16)` | a damaging move | the roll r: the damage times (100 − r) / 100 |
+| `chance(p)` | a secondary effect of chance p (Body Slam's 30) | the effect |
+
+A battle draws `below(100)` once before its first round. The damage is Showdown's Gen 9 formula (data
+from Pokemon Showdown's `moves.json` and `typechart`) with the party record's stats and the boss
+defending as its Tera type only: 921 of 1346 hits on the boss before any stat stage change fit it, and
+for 137 of 140 hits with every draw logged the logged roll and critical draw give the recorded damage.
+Hits that do not fit come during the boss's shield (about 0.45 of the formula), from moves with their
+own rules (Body Press, Rising Voltage, multi-hit moves) or are capped at the HP left.
+
+A boss's HP pool is its record's HP times the raid's multiplier: battles won at one and two stars
+ended after exactly five times the record's HP in `0x02` damage.
+
+### A move in the round queue
+
+In a round's queue a battler's move is one run of commands. A battler's client position is 0 to 3 for
+battlers 1, 3, 4 and 5 and 4 for the boss; A is the user, T the target, M the move, `type` the move's
+type index and `cat` its category (1 physical, 2 special). Measured on oracle rounds where a player's
+move hits the boss and the boss's reply hits a player:
+
+| command | meaning |
+|---|---|
+| `0x05 (A, 0, 1)` | a player's move begins; the boss's has none |
+| `0x07 (A, 0)` | the move is used |
+| `0xc9 (A, 0, M, T's position, 0)` | the move and its target |
+| `0x7b (M, n, A)` | n counts the rounds before this one |
+| six `0xcf` groups of zeros | 20, 5, 5, 5, 19 and 20 bytes |
+| `0x7e (0, ...)`, `0x7e (1, 0, 0, 0, 0, 0)`, `0x7e (2, e, e, e, e, e)` | the first: 1 at T's position + 1; the third: an effectiveness code per position, 7 for none |
+| `0x8b (A's position, T's position, M, type, 0, 0, 1, 0, 0, 0)` | the hit |
+| `0x37 (T, 2, damage)`, `0x37 (T, 5, 1)`, `0x02 (T, A, damage, 3)` | the damage |
+| `0xd0` with bytes `T, e` | e is the effectiveness: 7 neutral, 6 not very effective |
+| `0x8e (1, 1, M)`, or `0x8e (1, 3, M)` and `0xca (A, 575, 0xffff0000)` when not very effective | the effectiveness message |
+| `0x42 (T, A, A's position, type, cat, M, damage)` | the hit's record |
+| the secondary effect, if any | for example a paralysis: `0x13`, `0x90`, `0xa7`, `0xcb (2, 92, T)` |
+| `0xd1` with bytes `01 00`, `0x2e (2, A − 1)` | |
+| `0x85 (7, damage)` | only for damage to the boss |
+| `0x7c ()`, `0x08 (A, 0)`, `0x1d (A, T's position, type, 1, 0, M, M)`, `0x5b (A, M)` twice, `0x1e (A, 0)` | the move ends |
+
+A round ends with `0xb2 (0)`, `0x37 (b, 7, 1)` for each battler that moved, `0x75 (3, n)`, `0xc5 (1)`,
+`0x43 (b)` for each battler, `0x23 (b)` for each battler that moved or for all five in a round's first
+command, and `0x2d (0)`. It starts with `0xb5 (0)` and runs of `0x51 (b, 1)`, `0x5a (b, M, x)` and
+`0x5b (b, M)` before the first move.
+
 ### Actions
 
 A round's action header (the request block, 0x238 bytes) is five 0x70-byte blocks, one per client
