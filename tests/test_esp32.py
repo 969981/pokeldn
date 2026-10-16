@@ -190,6 +190,52 @@ def test_the_window_stays_open_across_the_boards_u32_count():
     assert (board.frames, radio.flow_resyncs, radio.tx_dropped, radio.lost) == (2000, 0, 0, None)
 
 
+class _MidWriteBoard:
+    """Credits as the USB firmware does, every 1024 bytes it reads, and reads a frame while the host's write
+    of it is still running: the CREDIT for its first part arrives before the write returns. It never sends
+    the idle CREDIT that would cover a frame's tail."""
+
+    def __init__(self):
+        self.radio = None
+        self.consumed = self.credited = 0
+
+    def write(self, data):
+        for part in (data[:1100], data[1100:]):
+            self.consumed += len(part)
+            if self.consumed - self.credited >= 1024:
+                self.credited = self.consumed
+                self.radio._dispatch(esp32.MSG_CREDIT, struct.pack("<I", self.consumed))
+        return len(data)
+
+    def read(self, n):
+        time.sleep(0.005)
+        return b""
+
+    def close(self):
+        pass
+
+
+def test_a_credit_for_a_frame_still_being_written_counts():
+    """Frames sent one at a time, each credited before its write returns, never wait on the window: a
+    refused count shuts it every few frames until the board's idle CREDIT, which this board never sends."""
+    board = _MidWriteBoard()
+    radio = esp32.Radio(board)
+    board.radio = radio
+    try:
+        with radio._out_cv:
+            radio._flow = True
+        frame = b"\xff" * 6 + bytes(6) + b"\x08\x00" + bytes(range(256)) * 6
+        started = time.monotonic()
+        for _ in range(12):
+            radio.send_ethernet(frame)
+            assert radio.drain(2)
+        took = time.monotonic() - started
+    finally:
+        radio.close()
+    assert radio.flow_resyncs == 0 and took < esp32.FLOW_STALL
+    assert radio._written - radio._credited < 1024
+
+
 def test_bytes_lost_on_the_line_close_the_window_once_each():
     """9 KB lost in three pieces shuts the window once; one resync writes it off."""
     board = _RingBoard(losses=[(100_000, 3000), (200_000, 3000), (300_000, 3000)])

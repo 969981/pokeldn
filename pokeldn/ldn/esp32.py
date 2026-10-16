@@ -305,6 +305,7 @@ class Radio:
         self._out: collections.deque = collections.deque()
         self._out_cv = threading.Condition()
         self._written = self._credited = 0
+        self._sending = 0  # the frame on the line; the board credits it before the write returns
         self._credit_seen = 0.0
         self._lost = 0  # bytes a resync wrote off; the board's count stays behind by them
         self._flow = False
@@ -502,6 +503,7 @@ class Radio:
                     self._writing = False
                     self._out_cv.notify_all()
                     return
+                self._sending = len(frame)
             if silent:
                 self._lose(RadioError("The board stopped answering over USB"))
                 return
@@ -517,6 +519,7 @@ class Radio:
                 return
             with self._out_cv:
                 self._written += len(frame)
+                self._sending = 0
                 if msg_type == CMD_HELLO:
                     # The board restarts its count after a HELLO's delimiter and answers CREDIT 0
                     # (firmware wire_credit_reset); the window stays shut across it.
@@ -609,13 +612,15 @@ class Radio:
             credit = struct.unpack("<I", payload)[0]
             self._record("<", msg_type, payload)
             with self._out_cv:
+                # A CREDIT may count part of the frame still on the line (docs/hardware_esp32.md).
+                sent = self._written + self._sending
                 # The board counts in a u32 (wire.c s_consumed): one update stream passes 4 GiB.
-                credit += max(0, self._written - credit) >> 32 << 32
+                credit += max(0, sent - credit) >> 32 << 32
                 self._credit_seen = time.monotonic()
                 # More than was written since the HELLO is a count from before it. A count past
                 # what the written-off bytes allow means a resync wrote off bytes the board had.
-                if credit <= self._written:
-                    self._lost = min(self._lost, self._written - credit)
+                if credit <= sent:
+                    self._lost = min(self._lost, sent - credit)
                     self._credited = max(self._credited, credit + self._lost)
                     self._flow = True
                     self._out_cv.notify_all()
