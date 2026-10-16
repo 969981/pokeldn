@@ -1,18 +1,13 @@
-# pokeldn 0.28.0
+# pokeldn 0.28.1
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- Plugin API 1.7. A plugin can join or host an LDN network of its own (`pokeldn.ldn.network`) and
-  carry any IP protocol over the board, ask the player to pick one of several options mid-run, show
-  a progress bar with rate and time left, and keep player-visible files in a library folder under
-  `Documents/pokeldn` that the Games page lists and removing the plugin leaves. Details in the
-  Plugins documentation.
-- A transfer through the ESP32 board past 4 GB no longer stalls, and serial reads no longer wait
-  for a full buffer, which speeds long transfers on Windows.
-- The Plugin Test Kit checks all of the above.
+- The app now ships the whole of every library a plugin may import (pycryptodome, trio, zstandard,
+  pyserial, websockets, certifi). 0.28.0 carried only the parts pokeldn used itself, so a plugin
+  importing `Crypto.PublicKey.RSA` or `Crypto.Signature` failed in the released app.
 
 The radio firmware stays at 1.6.2 and the controller firmware at 1.3.0; no board update is needed.
 
