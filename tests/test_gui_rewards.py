@@ -10,6 +10,7 @@ pytest.importorskip("flet")
 import flet as ft
 
 from gui.views import rewards
+from gui import theme as t
 from gui.views.widgets import PixelActivity
 from pokeldn import pokemon
 from pokeldn.app.catalog import GAMES
@@ -74,12 +75,17 @@ def test_invalid_bulk_quantity_blocks_launch_and_keeps_the_item_controls(picker,
     quantity(picker, text)
     tool, values = launch(picker.saved[-1])
     assert problems(tool, values)
-    assert picker.quantity.error and all(f.error for f in picker.quantities)
+    assert picker.problem.visible
+    for field in [picker.quantity, *picker.quantities]:
+        field.before_update()
+        assert field.height == t.CONTROL_HEIGHT and field.error is None
+        assert field.border[ft.ControlState.DEFAULT].side.color == t.RED
     assert all(a is b for a, b in zip(item_rows, picker.rows.controls))
     assert all(row["quantity"] == text for row in picker.saved[-1])
     quantity(picker, "1")
     assert not problems(tool, launch(picker.saved[-1])[1])
-    assert picker.quantity.error is None and all(f.error is None for f in picker.quantities)
+    assert not picker.problem.visible
+    assert all(f.border[ft.ControlState.DEFAULT].side.color != t.RED for f in picker.quantities)
 
 
 def test_individual_edits_and_removal_keep_template_controls_in_sync(picker):

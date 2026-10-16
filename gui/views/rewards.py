@@ -34,14 +34,17 @@ class RewardPicker:
                                     on_select=self._choose_template)
         self.quantity = t.field(value=self.template_quantity, mono=True, width=110,
                                 keyboard_type=ft.KeyboardType.NUMBER,
+                                tooltip="Quantity for every item, from 1 to 999",
                                 on_change=self._set_template_quantity)
         self.template_quantity_control = t.labeled_control("Quantity each", self.quantity)
         self.template_controls = ft.Row([
             t.labeled_control("Template", self.templates, expand=True),
             self.template_quantity_control,
-        ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.END)
+        ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.START)
+        self.problem = t.text("Quantities must be from 1 to 999.", 12, t.RED)
         self.add = t.secondary_button("Add reward", self._add, "plus")
-        self.control = ft.Column([self.template_controls, self.rows, self.add], spacing=10, tight=True)
+        self.control = ft.Column([self.template_controls, self.problem, self.rows, self.add],
+                                 spacing=10, tight=True)
         self._render(update=False)
 
     def _template_of(self) -> str:
@@ -81,11 +84,12 @@ class RewardPicker:
     def _set_template_quantity(self, event) -> None:
         text = event.control.value
         self.template_quantity = text
-        self.quantity.error = quantity_error(text)
         if self.template in TEMPLATE_ITEMS:
             self._apply_template()
             for field in self.quantities:
-                field.value, field.error = text, self.quantity.error
+                field.value = text
+                t.mark_invalid(field, bool(quantity_error(text)))
+        self._show_template()
         self.control.update()
 
     def _apply_template(self) -> None:
@@ -95,14 +99,13 @@ class RewardPicker:
 
     def _quantity(self, event, index: int) -> None:
         text = event.control.value
-        event.control.error = quantity_error(text)
+        t.mark_invalid(event.control, bool(quantity_error(text)))
         self._set(index, "quantity", text)
 
     def _add(self, _event) -> None:
         if len(self.value) < REWARD_ROWS:
             self.value.append({"item_id": "", "quantity": "1"})
             self.template = "custom"
-            self.templates.value = self.template
             self.on_change([dict(row) for row in self.value])
             self._render()
 
@@ -122,17 +125,19 @@ class RewardPicker:
                               optional=False).control
             quantity = t.field(value=str(row.get("quantity", "1")), mono=True, width=110,
                                keyboard_type=ft.KeyboardType.NUMBER,
+                               tooltip="Quantity from 1 to 999",
                                on_change=lambda event, n=index: self._quantity(event, n))
-            quantity.error = quantity_error(quantity.value)
+            t.mark_invalid(quantity, bool(quantity_error(quantity.value)))
             self.quantities.append(quantity)
             rows.append(ft.Row([
                 ft.Container(t.text(str(index + 1), 11, t.BLUE, weight=ft.FontWeight.W_700), width=24, height=24,
-                             margin=ft.Margin(0, 0, 0, 5), alignment=ft.Alignment.CENTER, border_radius=12,
+                             margin=ft.Margin(0, 25, 0, 0), alignment=ft.Alignment.CENTER, border_radius=12,
                              bgcolor=ft.Colors.with_opacity(0.12, t.BLUE)),
-                ft.Column([t.text("Item", 11, t.MUTED), item], spacing=4, expand=True),
-                ft.Column([t.text("Quantity", 11, t.MUTED), quantity], spacing=4),
-                t.icon_button("close", lambda _e, n=index: self._remove(n), "Remove reward"),
-            ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.END))
+                t.labeled_control("Item", item, expand=True),
+                t.labeled_control("Quantity", quantity),
+                ft.Container(t.icon_button("close", lambda _e, n=index: self._remove(n), "Remove reward"),
+                             margin=ft.Margin(0, 20, 0, 0)),
+            ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.START))
         if not rows:
             rows.append(ft.Row([t.pixel_icon("gift", color=t.FAINT),
                                 t.text("The raid's own rewards, shown with the raid above.", 12, t.MUTED)],
@@ -146,5 +151,6 @@ class RewardPicker:
     def _show_template(self) -> None:
         self.templates.value = self.template
         self.quantity.value = self.template_quantity
-        self.quantity.error = quantity_error(self.template_quantity)
+        t.mark_invalid(self.quantity, bool(quantity_error(self.template_quantity)))
         self.template_quantity_control.visible = self.template in TEMPLATE_ITEMS
+        self.problem.visible = any(quantity_error(str(row.get("quantity", ""))) for row in self.value)
