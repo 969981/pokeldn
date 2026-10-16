@@ -418,6 +418,17 @@ event is in use. An event the copy lacks (not downloaded, or an update dropped i
 header reads "Missing: Event" in red, and the run refuses it until the copy has it or another event
 is chosen (`pokeldn.app.command.code_error`).
 
+## Hosted raid rewards
+
+The Tera Raid (Host) tool's Rewards card offers training items, Tera Shards (Stellar included),
+Herba Mystica, treasure and balls as templates. Choosing a bundle replaces the current reward rows.
+Quantity each changes every row in that bundle, from 1 to 999. Editing an item or an individual
+quantity switches to Custom rewards; rows can be added or removed, up to 45. Incomplete rows or
+invalid quantities prevent a launch. The saved selection keeps the items and quantities.
+
+Raid's own rewards clears the overrides and uses the selected raid's reward tables
+([Hosting](sv_raid.md#hosting); `gui/views/rewards.py`).
+
 ## Raid NPC partners
 
 The Tera Raid (Host) tool's Raid NPC partners card, below Consoles joining, chooses the NPC trainers
