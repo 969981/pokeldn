@@ -1,19 +1,12 @@
-# pokeldn 0.26.0
+# pokeldn 0.26.1
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- Community language packs: the app's text can be translated by a plugin. Settings, Language picks
-  an installed pack and applies it on restart; any text a pack lacks stays in English. The app
-  ships English only and bundles a Simplified Chinese font. Translators start from
-  `pokeldn/app/data/strings.en.toml`; see Language packs in the plugin documentation (API 1.5).
-- Scarlet/Violet Tera Raid hosting: reward bundles (training items, Tera Shards, Herba Mystica,
-  treasure, balls) fill the reward rows as templates, with one quantity for a whole bundle.
-- Windows: an optional USB Wi-Fi radio through a separately installed ldnrs daemon, under Plugins,
-  Radio.
-- Sword/Shield Mystery Gift: a card with no date receives today's date on delivery.
+- The navigation rail floats as a glass panel again, and the checkerboard runs under the whole
+  window, the header strip included.
 
 The radio firmware stays at 1.6.2 and the controller firmware at 1.3.0; no board update is needed.
 
