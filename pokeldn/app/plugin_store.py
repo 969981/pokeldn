@@ -311,9 +311,19 @@ def accept(plugin: plugins.Plugin, key: str = "") -> None:
                                                      "source": "folder"}), encoding="utf-8")
 
 
-def install(package: Package) -> Path:
+def origin(plugin: plugins.Plugin) -> str:
+    """The source listing a plugin was installed from (pokeldn.app.plugin_sources), or ""."""
+    try:
+        consent = json.loads((plugin.folder / CONSENT).read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return ""
+    return str(consent.get("origin", "")) if isinstance(consent, dict) else ""
+
+
+def install(package: Package, origin: str = "") -> Path:
     """Extracts the package as plugins/<id>, replacing an installed copy only once the new one is
-    whole. The caller has shown the risks and the user accepted them."""
+    whole; `origin` is the source listing it came from. The caller has shown the risks and the user
+    accepted them."""
     current = read(package.source)
     if (current.id, current.version, current.key, current.digest) != (package.id, package.version, package.key, package.digest):
         raise PackageError("The package changed after it was checked.")
@@ -336,7 +346,8 @@ def install(package: Package) -> Path:
                     archives.copy(src, dst, archive.getinfo(name).file_size)
         (staging / CONSENT).write_text(json.dumps({"accepted": time.strftime("%Y-%m-%d %H:%M"),
                                                    "source": os.path.basename(package.source),
-                                                   "version": package.version}), encoding="utf-8")
+                                                   "version": package.version,
+                                                   **({"origin": origin} if origin else {})}), encoding="utf-8")
         old = root / f".old-{package.id}"
         shutil.rmtree(old, ignore_errors=True)
         if target.exists():
@@ -370,15 +381,21 @@ def kept_data(plugin_id: str) -> int:
 
 def pack(folder: str, out: str, key=None) -> Package:
     """Writes a folder holding plugin.toml as a package, signed with the author's `key`, then reads it
-    back as the app would."""
+    back as the app would. Hidden files and plugin.toml's `exclude` paths stay out."""
     source = Path(folder)
+    meta = tomllib.loads((source / "plugin.toml").read_text(encoding="utf-8"))
+    exclude = meta.get("exclude", [])
+    exclude = [PurePosixPath(e).parts for e in exclude if isinstance(e, str) and e] if isinstance(exclude, list) else []
+
+    def kept(parts: tuple) -> bool:
+        return not any(part in SKIP or part.startswith(".") for part in parts) and \
+            not any(parts[:len(e)] == e for e in exclude)
     files = {p.relative_to(source).as_posix(): p.read_bytes() for p in sorted(source.rglob("*"))
-             if p.is_file() and not any(part in SKIP for part in p.relative_to(source).parts)}
+             if p.is_file() and kept(p.relative_to(source).parts)}
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as archive:
         for name, data in files.items():
             archive.writestr(name, data)
         if key is not None:
-            meta = tomllib.loads(files["plugin.toml"].decode("utf-8"))
             archive.writestr(SIGNATURE, _sign(key, str(meta.get("id", "")), str(meta.get("version", "")), files))
     return read(out)
 

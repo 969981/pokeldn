@@ -16,7 +16,8 @@ two files; `examples/plugins/test_kit` uses every part of the API.
 ## Installing a plugin
 
 1. Open **Plugins** at the bottom of the side menu.
-2. Drop the `.pokeplugin` file on the page, or press **Add a plugin** and choose it.
+2. Under **Browse**, press **Install** on a plugin a followed source lists; or drop a `.pokeplugin`
+   file on the **Installed** tab, or press **Add a plugin** and choose it.
 3. Read what the plugin is and the risks, tick the acknowledgement, and press **Install**.
 
 The plugin's tools appear on the Games page at once, marked with a plug and "Plugin: ...".
@@ -30,6 +31,55 @@ names it. Removing a plugin asks whether to delete what it saved as well.
 
 A plugin runs as Python inside pokeldn, with the same access to files, keys, the network and the
 board. Nothing in a package runs before it is installed and turned on.
+
+### Sources
+
+A source is a JSON listing of plugins that someone publishes. The Plugins page's **Sources** tab
+follows sources; **Browse** lists every plugin they name with **Install**, **Update to N** or
+**Installed**, and a remove button. The app follows `Decryptu/pokeldn-decrypt-plugins` from the start,
+and that source cannot be removed. Removing another source keeps the plugins installed from it.
+
+| typed under Sources | the listing read |
+|---|---|
+| `OWNER/REPO` or `https://github.com/OWNER/REPO` | `https://raw.githubusercontent.com/OWNER/REPO/HEAD/pokeldn-source.json` |
+| an HTTPS address ending in `.json` | that file |
+| any other HTTPS address | `pokeldn-source.json` in that folder |
+
+```json
+{
+  "schema": 1,
+  "name": "My plugins",
+  "homepage": "https://github.com/me/my-plugins",
+  "plugins": [
+    {"id": "my-plugin", "name": "My plugin", "version": "1.0.0", "api": "1.6",
+     "description": "...", "author": "me",
+     "download": "https://github.com/me/my-plugins/releases/download/my-plugin-1.0.0/my-plugin-1.0.0.pokeplugin",
+     "sha256": "64 hex digits", "size": 46302,
+     "icon": "https://.../icon.png", "homepage": "https://..."}
+  ]
+}
+```
+
+`id`, `version`, an HTTPS `download` and the package's `sha256` are required; an entry missing one,
+or repeating an id, is left out. A listing with another `schema` is refused. A download whose SHA-256
+differs from the listing is refused before it is read, and a package whose id differs from the entry's
+is refused before the risk screen. The listing proves nothing about the author: the risk screen and
+the signature check run as for a file.
+
+The app reads every followed source at start (with Settings, Updates on) and on the page's refresh,
+and keeps the last listing in `plugins/.source-cache/`, shown when a source does not answer. The
+followed list is `plugins/.sources.json`. An installed plugin records the source it came from and takes
+its updates from that source; a plugin installed from a file takes them from the first source that
+lists it, then from its own `updates` address.
+
+`scripts/plugin_source.py` writes a listing from packages, reading each as the app would:
+
+```bash
+python scripts/plugin_source.py my-plugin-1.0.0.pokeplugin -o pokeldn-source.json --name "My plugins" \
+    --download "https://github.com/me/my-plugins/releases/download/{id}-{version}/{file}"
+```
+
+An entry already listed at a higher version is kept.
 
 ### Guardrails
 
@@ -76,6 +126,7 @@ updates = "https://github.com/you/my-plugin" # optional, where newer versions ar
 api = "1.1"                 # required: the plugin API it needs (see Versions); 1 means 1.0
 icon = "icon.png"           # optional; a square PNG, 96 x 96 looks sharp
 module = "plugin"           # optional; the module holding register()
+exclude = ["tests"]         # optional; folders and files pack_plugin.py leaves out of the package
 ```
 
 ### plugin.py
@@ -261,7 +312,8 @@ def register(api):
 python scripts/pack_plugin.py my-plugin --key ~/my-plugin-signing.pem
 ```
 
-writes `my-plugin-1.0.0.pokeplugin`, signed, and checks it the way the app does before installing. Any zip
+writes `my-plugin-1.0.0.pokeplugin`, signed, and checks it the way the app does before installing.
+Hidden files and the folders `exclude = ["tests", "tools"]` in `plugin.toml` names stay out of the package. Any zip
 works if `plugin.toml` sits at its top or inside one top folder, with no path leaving that folder
 and no symbolic link.
 

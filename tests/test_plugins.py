@@ -554,3 +554,162 @@ def test_plugin_source_review_is_bounded_before_parsing(tmp_path):
                                              "plugin.py": "#" * (plugin_store.MAX_SOURCE + 1)})
     with pytest.raises(plugin_store.PackageError, match="source"):
         plugin_store.read(str(path))
+
+
+def test_a_source_lists_plugins_that_install_update_and_stay_when_the_source_goes(isolated, tmp_path, monkeypatch):
+    """A followed listing on a local server: the built-in source comes first, a download that is not
+    the file the listing hashes is refused, an install records its source, a newer listing offers the
+    update, and removing the source keeps the plugin."""
+    import http.server
+    import threading
+    from pokeldn.app import plugin_sources, plugin_store, plugin_updates
+    from scripts import plugin_source
+    key = plugin_store.signing_key(str(tmp_path / "author.pem"), create=True)
+    source = tmp_path / "src"
+    shutil_copy(KIT, source)
+    toml = (source / "plugin.toml").read_text()
+    served = tmp_path / "served"
+    served.mkdir()
+
+    class Quiet(http.server.SimpleHTTPRequestHandler):
+        def __init__(self, *a, **k):
+            super().__init__(*a, directory=str(served), **k)
+
+        def log_message(self, *a):
+            pass
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Quiet)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{server.server_address[1]}"
+    listing = served / plugin_sources.FILE
+
+    def publish(version):
+        (source / "plugin.toml").write_text(toml.replace("1.1.0", version))
+        path = served / f"test-kit-{version}.pokeplugin"
+        plugin_store.pack(str(source), str(path), key)
+        assert plugin_source.main([str(path), "-o", str(listing), "--name", "Local",
+                                   "--download", base + "/{file}"]) == 0
+    try:
+        publish("1.1.0")
+        assert plugin_sources.followed() == [plugin_sources.BUILT_IN]
+        added = plugin_sources.add(base + "/")
+        assert (added.url, added.name, [e.id for e in added.entries]) == (str(listing).replace(str(served), base), "Local", ["test-kit"])
+        assert plugin_sources.followed() == [plugin_sources.BUILT_IN, added.url]
+        with pytest.raises(plugin_sources.SourceError, match="already"):
+            plugin_sources.add(added.url)
+        entry = added.entry("test-kit")
+        assert plugin_sources.state(entry, None) == "install"
+        offer = plugin_updates.Available(entry.id, entry.version, entry.download, "", entry.sha256, added.url)
+        wrong = plugin_updates.Available(entry.id, entry.version, entry.download, "", "0" * 64, added.url)
+        with pytest.raises(OSError, match="not the file its source lists"):
+            plugin_updates.download(wrong, tmp_path / "dl")
+        assert not list((tmp_path / "dl").iterdir())
+        package = plugin_store.read(str(plugin_updates.download(offer, tmp_path / "dl")))
+        plugin_store.install(package, added.url)
+        kit = plugin_store.installed("test-kit")
+        assert plugin_store.origin(kit) == added.url and plugin_sources.state(entry, kit) == "installed"
+        assert plugin_updates.check(plugins.discover(), [plugin_sources.fetch(added.url)]) == {}
+        publish("1.3.0")
+        publish("1.2.0")       # an older package never replaces a newer listing
+        fresh = plugin_sources.fetch(added.url)
+        assert [e.version for e in fresh.entries] == ["1.3.0"]
+        found = plugin_updates.check(plugins.discover(), [fresh])
+        assert (found["test-kit"].version, found["test-kit"].source) == ("1.3.0", added.url)
+        update = plugin_store.read(str(plugin_updates.download(found["test-kit"], tmp_path / "dl")))
+        assert (update.version, plugin_store.trust(update)) == ("1.3.0", "same")
+        server.shutdown()
+        server.server_close()
+        offline = plugin_sources.fetch(added.url)       # the cached listing still shows
+        assert offline.error and [e.version for e in offline.entries] == ["1.3.0"]
+        plugin_sources.remove(added.url)
+        assert plugin_sources.followed() == [plugin_sources.BUILT_IN]
+        assert plugin_store.installed("test-kit") is not None
+        with pytest.raises(plugin_sources.SourceError):
+            plugin_sources.remove(plugin_sources.BUILT_IN)
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+@pytest.mark.parametrize("typed, feed", [
+    ("Decryptu/pokeldn-decrypt-plugins",
+     "https://raw.githubusercontent.com/Decryptu/pokeldn-decrypt-plugins/HEAD/pokeldn-source.json"),
+    ("https://github.com/Decryptu/pokeldn-decrypt-plugins.git",
+     "https://raw.githubusercontent.com/Decryptu/pokeldn-decrypt-plugins/HEAD/pokeldn-source.json"),
+    ("https://github.com/Decryptu/pokeldn-decrypt-plugins/tree/main",
+     "https://raw.githubusercontent.com/Decryptu/pokeldn-decrypt-plugins/HEAD/pokeldn-source.json"),
+    ("https://example.org/plugins/", "https://example.org/plugins/pokeldn-source.json"),
+    ("https://example.org/list.json", "https://example.org/list.json"),
+    ("http://example.org/list.json", None), ("file:///etc/passwd", None), ("", None),
+])
+def test_a_typed_source_resolves_to_its_listing(typed, feed):
+    from pokeldn.app import plugin_sources
+    if feed is None:
+        with pytest.raises(plugin_sources.SourceError):
+            plugin_sources.resolve(typed)
+    else:
+        assert plugin_sources.resolve(typed) == feed
+
+
+def test_a_listing_keeps_only_entries_it_can_check():
+    from pokeldn.app import plugin_sources
+    good = {"id": "a", "version": "1.0", "download": "https://x/a.pokeplugin", "sha256": "a" * 64, "api": "1.6"}
+    listing = {"schema": 1, "plugins": [
+        good, dict(good),                                         # a duplicate id
+        {**good, "id": "b", "sha256": ""}, {**good, "id": "c", "download": "http://x/c"},
+        {**good, "id": "../d"}, {**good, "id": "e", "version": "latest"}, "junk",
+        {**good, "id": "f", "icon": "javascript:alert(1)", "api": "9.0"}]}
+    source = plugin_sources.parse("https://x/l.json", json.dumps(listing).encode())
+    assert [e.id for e in source.entries] == ["a", "f"]
+    assert source.entry("f").icon == "" and plugin_sources.state(source.entry("f"), None) == "incompatible"
+    with pytest.raises(plugin_sources.SourceError, match="another pokeldn"):
+        plugin_sources.parse("https://x", json.dumps({**listing, "schema": 2}).encode())
+
+
+def test_the_browse_tab_installs_a_listed_plugin_through_the_risk_screen(isolated, tmp_path, monkeypatch):
+    pytest.importorskip("flet")
+    import hashlib
+    import time
+    import flet as ft
+    from types import SimpleNamespace
+    from gui.views import plugins as view
+    from pokeldn.app import plugin_sources, plugin_store, plugin_updates
+    from pokeldn.app.settings import Settings
+    from pokeldn.app import settings as settings_module
+    monkeypatch.setattr(ft.BaseControl, "update", lambda self: None)
+    monkeypatch.setattr(settings_module, "PATH", isolated / "settings.json")
+    package = plugin_store.pack(str(KIT), str(tmp_path / "kit.pokeplugin"))
+    digest = hashlib.sha256(Path(package.source).read_bytes()).hexdigest()
+    listed = plugin_sources.parse("https://x/l.json", json.dumps({"schema": 1, "name": "Mine", "plugins": [
+        {"id": "test-kit", "name": "Kit", "version": package.version, "api": "1.0",
+         "download": "https://x/kit.pokeplugin", "sha256": digest}]}).encode())
+    asked = []
+    monkeypatch.setattr(plugin_updates, "download", lambda a, folder: asked.append(a) or Path(package.source))
+    monkeypatch.setattr(plugin_sources, "followed", lambda: [listed.url])
+    shown = []
+    app = SimpleNamespace(settings=Settings(), navigate=lambda *a, **k: None, ui=lambda f: f(), plugin_updates={},
+                          plugin_update_listeners=[], plugin_sources=[listed],
+                          page=SimpleNamespace(show_dialog=shown.append, pop_dialog=lambda: None))
+    page = view.PluginsView(app)
+    page._tab("browse")
+
+    def walk(control):
+        yield control
+        for name in ("content", "controls", "actions"):
+            child = getattr(control, name, None)
+            for c in (child if isinstance(child, list) else [child] if child is not None else []):
+                yield from walk(c)
+    install = next(c for c in walk(page.column) if isinstance(c, ft.Button) and c.content == "Install")
+    install.on_click(None)
+    for _ in range(100):
+        if shown:
+            break
+        time.sleep(0.05)
+    assert asked[0].sha256 == digest and asked[0].source == listed.url
+    controls = list(walk(shown[0]))
+    tick = next(c for c in controls if isinstance(c, ft.Container) and c.on_click and any(
+        isinstance(x, ft.Text) and x.value.startswith("I understand") for x in walk(c)))
+    tick.on_click(None)
+    next(c for c in controls if isinstance(c, ft.Button) and c.content == "Install").on_click(None)
+    assert plugin_store.origin(plugin_store.installed("test-kit")) == listed.url
+    page.render()
+    assert not any(isinstance(c, ft.Button) and c.content == "Install" for c in walk(page.column))
