@@ -27,7 +27,7 @@ def __getattr__(name):
 
 # docs/plugins.md, Versions: a removal or a change of meaning raises the major, an addition the level.
 API_VERSION = 1                    # the major this pokeldn serves
-API_LEVEL = 5                      # 1.5 language packs; docs/plugins.md, Versions
+API_LEVEL = 6                      # 1.6 battle servers; docs/plugins.md, Versions
 API_OLDEST = 1                     # an older major is refused
 DEPRECATED: dict[int, str] = {}    # a served major due for removal -> the release that drops it
 ENTRY_POINT_GROUP = "pokeldn.plugins"
@@ -54,6 +54,16 @@ class Plugin:
     tools: list = field(default_factory=list)    # (game key, Tool)
     games: list = field(default_factory=list)
     radios: list = field(default_factory=list)   # scheme names
+    battle_servers: list = field(default_factory=list)   # (game, name)
+
+
+@dataclass(frozen=True)
+class BattleServer:
+    game: str
+    name: str
+    label: str
+    factory: Callable      # (bootstrap, partners) -> a server (docs/plugins.md, A battle server)
+    plugin: str = ""
 
 
 @dataclass(frozen=True)
@@ -116,6 +126,16 @@ class API:
         _radios[scheme] = Radio(scheme, label or scheme, install, self.plugin.id)
         self.plugin.radios.append(scheme)
 
+    def add_battle_server(self, game: str, name: str, factory: Callable, label: str = "") -> None:
+        """Lets a host launcher serve `game`'s raid battle itself: `factory(bootstrap, partners)`
+        returns the battle server for one raid (1.6; only "sv" takes one)."""
+        if game not in BATTLE_GAMES:
+            raise ValueError(f"no battle server is taken for game {game!r}")
+        if not name.isidentifier() or (game, name) in _battle_servers:
+            raise ValueError(f"battle server {name!r} is already taken or not a plain name")
+        _battle_servers[(game, name)] = BattleServer(game, name, label or name, factory, self.plugin.id)
+        self.plugin.battle_servers.append((game, name))
+
 
 def parse_api(value) -> tuple | None:
     """plugin.toml's api: 1 is (1, 0), "1.1" is (1, 1)."""
@@ -149,6 +169,8 @@ def compatibility(api: tuple | None) -> tuple[str, str]:
 
 _loaded: dict[str, Plugin] = {}
 _radios: dict[str, Radio] = {}
+_battle_servers: dict[tuple, BattleServer] = {}
+BATTLE_GAMES = ("sv",)
 _done = False
 generation = 0          # counts reloads, so a view knows its catalog is stale
 
@@ -273,7 +295,7 @@ def load() -> list[Plugin]:
         _loaded[plugin.id] = plugin
         if plugin.error:          # plugin.toml did not parse
             continue
-        radios_before = dict(_radios)
+        radios_before, servers_before = dict(_radios), dict(_battle_servers)
         if watch:
             _marker().write_text(plugin.id, encoding="utf-8")
         try:
@@ -286,6 +308,9 @@ def load() -> list[Plugin]:
             plugin.radios.clear()
             _radios.clear()
             _radios.update(radios_before)
+            plugin.battle_servers.clear()
+            _battle_servers.clear()
+            _battle_servers.update(servers_before)
         finally:
             if watch:
                 _marker().unlink(missing_ok=True)
@@ -370,6 +395,17 @@ def radios() -> list[Radio]:
     return list(_radios.values())
 
 
+def battle_servers(game: str) -> list[BattleServer]:
+    load()
+    return [s for s in _battle_servers.values() if s.game == game]
+
+
+def battle_server(game: str, name: str = "") -> BattleServer | None:
+    """The loaded plugin battle server for `game` named `name`, or the first one when `name` is empty."""
+    found = [s for s in battle_servers(game) if not name or s.name == name]
+    return found[0] if found else None
+
+
 def _reset() -> None:
     """Forgets every loaded plugin; for tests."""
     global _done
@@ -377,6 +413,7 @@ def _reset() -> None:
     _done = False
     _loaded.clear()
     _radios.clear()
+    _battle_servers.clear()
     plugin_guard.clear()
 
 

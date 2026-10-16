@@ -1,10 +1,10 @@
-"""A Scarlet 4.0.0 Tera Raid battle served from the host's station (docs/sv_raid.md, Serving the battle):
-the battle server the engine runs (`pokeldn.sv.battle.engine.server.Server`) over the session it builds
-from the bootstrap, and the stations the host keeps for itself: our Pokemon (slot 0), the boss (slot 1)
-and the NPC partners. A console's battle messages go in with `receive`; `poll` returns the battle-start
-frames for each console, the server's own and the relayed messages of every station.
+"""A Scarlet / Violet Tera Raid battle served from the host's station (docs/sv_raid.md, Serving the
+battle): a plugin's battle server (docs/plugins.md, A battle server) and the stations the host keeps for
+itself: our Pokemon (slot 0), the boss (slot 1) and the NPC partners. A console's battle messages go in
+with `receive`; `poll` returns the battle-start frames for each console, the server's own and the
+relayed messages of every station.
 
-    battle = RaidBattle(game, bootstrap, consoles={2})
+    battle = RaidBattle(factory, bootstrap, consoles={2})
     battle.start(now)
     battle.receive(2, message, now)
     for slot, frame in battle.poll(now): ...
@@ -14,6 +14,7 @@ import heapq
 import struct
 
 from pokeldn import gen9
+from pokeldn.sv import raid_partners
 
 KEY = 0x007B
 ADDRESS = 0x2713                        # setup +0x2c, the battle's port address
@@ -74,26 +75,31 @@ def first_move(record):
     return next((m for m in moves if m), 0)
 
 
+def generated_partners(bootstrap, count=raid_partners.HOSTED):
+    """-> the NPC partners' records from the bootstrap alone: the RaidPoint's randSeed and unlock stage
+    draw the trainers (raid_partners.draw) and seed their records (raid_partners.record), at four
+    fifths of the level of the Pokemon in slot 0."""
+    seed, stage = struct.unpack_from("<QI", bootstrap, 5 * PARTY_RECORD + 0x3D8)
+    level = int(0.8 * gen9.read(gen9.decrypt(bytes(bootstrap[:PARTY_RECORD])))["level"])
+    return [raid_partners.record(seed, stage, i, level) for i in raid_partners.draw(seed, stage, count)]
+
+
 class RaidBattle:
-    """The battle server and the host's own stations for one bootstrap. `consoles` are the player slots
-    a console holds (the engine's session seats one console, at slot 2); every other slot, the boss
+    """The battle server `factory(bootstrap, partners)` builds and the host's own stations for one
+    bootstrap. `consoles` are the player slots a console holds (one console, at slot 2); every other slot, the boss
     included, is answered here: each odd step with its answer, a request (5) with a command in which
     the slot's Pokemon uses its first move on the boss and the boss its first move on that Pokemon.
     Every message the server reads, the consoles' own included, is relayed to each console (x 3, as
-    a console host relays them), and each server frame whose job graph moved sends, after that frame's
+    a console host relays them), and each server frame that moved the battle sends, after that frame's
     messages, a notice 0x46 from slot 0. `over` is set once every console answered 0x37 or END_WAIT passed after it."""
 
-    def __init__(self, game, bootstrap, consoles=(2,), partners=None, moves=None, machine=None):
-        from pokeldn.sv.battle import standalone
-        from pokeldn.sv.battle.engine import server
+    def __init__(self, factory, bootstrap, consoles=(2,), partners=None, moves=None):
         if set(consoles) != {2}:
-            raise ValueError("the battle engine seats one console, at slot 2")
+            raise ValueError("a served battle seats one console, at slot 2")
         self.consoles = tuple(consoles)
         if partners is None:
-            partners = standalone.generated_partners(bootstrap)
-        self.m, self.n = standalone.battle(game, bootstrap, partners, slot=OURS,
-                                           machine=machine or standalone.Standalone)
-        self.server = server.Server(self.m, self.n)
+            partners = generated_partners(bootstrap)
+        self.server = factory(bytes(bootstrap), list(partners))
         records = {0: bootstrap[:PARTY_RECORD], 3: partners[0], 4: partners[1]}
         boss = first_move(bootstrap[4 * PARTY_RECORD:5 * PARTY_RECORD])
         self.moves = {s: (first_move(r), boss) for s, r in records.items()}
@@ -111,8 +117,7 @@ class RaidBattle:
 
     def start(self, now):
         """The server's first frame: the battle timer and Wild::Setup, then message 1."""
-        self.server.clock(now)
-        self._serve(lambda: self.server.run())
+        self._serve(lambda: self.server.start(now))
 
     def receive(self, slot, message, now):
         """A console's battle message (32-byte header and body) from the console at `slot`."""
@@ -155,17 +160,7 @@ class RaidBattle:
 
     def _serve(self, run):
         """Run server frames, a notice for each that moved, then route what the server queued."""
-        step, moves = self.server.step, []
-
-        def counted():
-            moved = step()
-            moves.append(moved)
-            return moved
-        self.server.step = counted
-        try:
-            run()
-        finally:
-            del self.server.step
+        moved = run()
         t = self.server.t
         for slot in ROUTE:
             for message in self.server.sent(slot):
@@ -180,7 +175,7 @@ class RaidBattle:
                     self.order += 1
         notice = bytes([NOTICE]) + bytes(0x17) + bytes([EVERY, OURS]) + bytes(6) + bytes(4)
         for console in self.consoles:
-            self.out += [(console, frame(RELAY, EVERY, notice))] * sum(1 for moved in moves if moved)
+            self.out += [(console, frame(RELAY, EVERY, notice))] * moved
         if self.ended_at is None and all((s, FADE_END) in self.sent_types for s in range(5)):
             self.ended_at = t
             self.queue.clear()

@@ -422,11 +422,10 @@ def build_parser():
                     help="the unlock stage the partners come from, which sets their pool, their "
                          "level being four fifths of --raid-pokemon's; by default --raid-progress's, "
                          "six stars for a black crystal or a seven-star event raid")
-    ap.add_argument("--raid-serve", metavar="DIR",
-                    help="serve the raid battle from this station with Scarlet 4.0.0's own battle "
-                         "code, read from the image and tables in DIR (python -m pokeldn.sv.battle.game "
-                         "prepares them from the dump): the console and our Pokemon fight one battle; "
-                         "one console only; a failure hands the network over as without it "
+    ap.add_argument("--raid-serve", metavar="NAME", nargs="?", const="", default=None,
+                    help="serve the raid battle from this station with a plugin's battle server "
+                         "(NAME, or the first one loaded): the console and our Pokemon fight one "
+                         "battle; one console only; a failure hands the network over as without it "
                          "(docs/sv_raid.md, Serving the battle)")
     ap.add_argument("--send", action="append", default=[],
                     help="PROTO:PORT:HEX, a reliable data message to send once the console has "
@@ -484,16 +483,15 @@ def prepare_raid(ap, args):
                              "to NPC partners")
         partner_seed = raid_partners.seed_for(stage, wanted)
         serve = None
-        if args.raid_serve:
+        if args.raid_serve is not None:
+            from pokeldn import plugins
             from pokeldn.sv import raid_battle
-            from pokeldn.sv.battle import game
-            if args.violet:
-                raise ValueError("--raid-serve: the battle engine is Scarlet 4.0.0's")
-            try:
-                scarlet = game.load(args.raid_serve)
-            except OSError as exc:
-                raise ValueError(f"--raid-serve: {exc}")
-            serve = lambda bootstrap: raid_battle.RaidBattle(scarlet, bootstrap)  # noqa: E731
+            server = plugins.battle_server("sv", args.raid_serve)
+            if server is None:
+                raise ValueError("--raid-serve: no plugin battle server for Scarlet / Violet is loaded"
+                                 + (f" named {args.raid_serve!r}" if args.raid_serve else ""))
+            print(f"[sv] serving the raid battle with {server.label} (plugin {server.plugin})")
+            serve = lambda bootstrap: raid_battle.RaidBattle(server.factory, bootstrap)  # noqa: E731
         group = raid.RaidGroup(found, record, args.raid_reward or None, players=args.raid_players,
                                partner_seed=partner_seed, stage=stage, serve=serve)
     except ValueError as exc:

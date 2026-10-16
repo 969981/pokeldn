@@ -954,9 +954,8 @@ A round's block therefore holds one slot's actions. The 4 unwritten bytes of eac
 0x235..0x237 come from the poster's stack and reach the type-0x15 body unchanged; the round reads
 none of them. Each type-0x15 record between two emulated Scarlet 4.0.0 equals, outside those bytes,
 the block built from the type-6 command of its acting slot (10 of 10 records whose command was on the
-wire; the boss's own slot-1 blocks have none: [The boss's actions](#the-bosss-actions)). The rounds of four emulated sessions run from their
-actions alone (`pokeldn.sv.battle.engine.requests.run_round`) give the console's 20576-byte bodies
-outside those bytes.
+wire; the boss's own slot-1 blocks have none: [The boss's actions](#the-bosss-actions)). The rounds of four emulated sessions,
+run from their actions alone, give the console's 20576-byte bodies outside those bytes.
 
 ### The server command queue
 
@@ -976,7 +975,7 @@ table `0x3c6a90c`):
 | 0xd3 | one byte |
 | 0xd4 | none |
 
-Format bytes and their argument widths in bits (`pokeldn.sv.battle.queue.FORMATS`):
+Format bytes and their argument widths in bits:
 
 | format | widths | format | widths |
 |---|---|---|---|
@@ -1005,7 +1004,7 @@ Format bytes and their argument widths in bits (`pokeldn.sv.battle.queue.FORMATS
 Every queue starts with command 0xb5. A round in which slot 2 used Hex (move 506) on the boss
 carried `0x5a (3, 506, 212)`, `0x5b (3, 506)` and `0xc9 (3, 0, 506, 4, 0)`. Every queue recorded
 from emulated Scarlet 4.0.0 servers and the type-0x15 records between two emulated consoles, 20 in
-all, decodes to its last byte and encodes back to the same bytes (`tests/test_sv_battle_queue.py`).
+all, decodes to its last byte and encodes back to the same bytes.
 The 0xcf groups seen so far are zero-filled.
 
 ### The server's messages
@@ -1166,7 +1165,6 @@ message but 5 and 0x37 0.1 s later and send no command, the clock run to 700 s i
 server code under unicorn and `Server` send every slot the same messages in the same order, byte for byte
 outside the unwritten bytes. They are the boss's round of its last timed action (kind 3, 10 percent of the
 time left), then 0x2b with the body `00 00 00 00 02 00` (slot 0, outcome 0, decided by 2), 0x35 and 0x37.
-`tests/test_sv_battle_served.py` checks `Server` against those messages.
 
 A raid the boss wins ends the same way. On the same session from 414.5 s, with stations that answer every
 request with a command in which their Pokemon uses Growl (move 45) on the boss and the boss answers with
@@ -1251,10 +1249,9 @@ messages in the relayed order at their capture times) sends the guest the consol
 byte for byte outside the header's and the request blocks' unwritten bytes. Without the incoming-link
 step the 0x51 copy never reaches the boss list and the 80 percent action never fires.
 
-`pokeldn.sv.battle.engine.server.Server` runs this flow over a session the engine built: each frame is
-the server's part of the run step (`0xe0f040`, `0xe0fd68`, `0xe0f854`, `0xfc363c(G, 1)`, and `0x2898350`
-when that step moved), ported (`pokeldn.sv.battle.engine` modules `links`, `scheduler`, `frame`,
-`reader`, `jobs`; a path into a function not ported raises `UnliftedCall`), at 30 frames a second on
+`Server`, a Python port of this flow over a built session, runs each frame as the server's part of the
+run step (`0xe0f040`, `0xe0fd68`, `0xe0f854`, `0xfc363c(G, 1)`, and `0x2898350` when that step moved), at
+30 frames a second on
 the machine's clock up to the time of each message it is given, and for one frame period after each.
 No frame can be skipped as idle: a reader waiting on a fainted slot's timer makes the machine report a
 move every frame, and each such frame queues a message 0x46 on the server's own link. Under unicorn the
@@ -1271,7 +1268,7 @@ machine's clock, the server sends the guest all 24 of the console's frames in th
 one is byte for byte the console's outside the header's unwritten bytes and the request blocks'
 ([Actions](#actions)); the boss's timed action fires at the console's frame from the timer's own start.
 Under unicorn, the game's own code for every lifted step leaves the same pages through the whole served
-battle. `tests/test_sv_battle_served.py` serves it from the recorded messages.
+battle.
 
 ### Reproducing a round
 
@@ -1281,7 +1278,7 @@ touches it, the thread-local page behind `tpidrro_el0` is a stand-in whose `+0x1
 thread, and SVCs 0x10, 0x11, 0x12, 0x1a, 0x1b, 0x1d and 0x1e return 0. Eleven replayed rounds
 equalled, byte for byte, the bodies the console then built itself; a round touched 159 to 353 pages.
 
-`pokeldn.sv.battle` is a Python port of the server, one function per game function, keyed by its
+A Python port of the server runs it, one function per game function, keyed by its
 offset from main. The builder `0x113c8a0` runs in Python for message kinds 1, 5, 17 and 21: the
 round driver `0x113e3d0` with move selection, damage `0xf7c344`, fainting `0x1144df8` and end of
 turn `0x114a094`, and the battle start `0x113dca8` with its send-out, item, ability and entry
@@ -1318,9 +1315,9 @@ come out of `arc/data.trpfs` (`tools/switch/trpfs_read.py`; Oodle entries throug
 `OodleLZ_Decompress` at `0xcc8750`), and every byte of them held by 97 halted consoles equals the
 extracted file.
 
-The battle start also runs with no halted console (`pokeldn.sv.battle.standalone`). From the static
+The battle start also runs in the port with no halted console. From the static
 image and the romfs alone, the
-port builds the game heap (`pokeldn.sv.battle.engine.arena`), the "Application" counted allocator
+port builds the game heap, the "Application" counted allocator
 (`0x3b78d3d`, limit 0xa0000000, over the GlobalHeap allocator 0x4763918), the weak-handle table
 (`0x165dd08`) and the five data tables (personal `0x164498c`, id-hash `0x1730f6c`). The session and
 the server object N then come from the game's own creators (below), with the raid start's setup
@@ -1332,8 +1329,7 @@ and changes 123 bytes of a round. Neither heap addresses nor weak-handle ids rea
 console's ids are 0x1b5xx of generation 3, and the port's are 0..0x58 with all its objects at other
 addresses.
 
-The session is made in four steps, each by the game's code ported to Python
-(`pokeldn.sv.battle.engine.session` and `.network`):
+The session is made in four steps:
 
 | step | code | what it makes |
 |---|---|---|
@@ -1375,7 +1371,7 @@ The data system's init `0x1641afc` runs `0x1643a48` (personal, growth), `0x1641c
 `0x1641d78` (abilities). Each table is created from the allocator, reset into its static (`0x1643e68`)
 and appended through `0xf0ba9c` to the registry at 0x4763a18 (count u32 0x4765a18, at most 0x400).
 Inserting a file's records in file order, after reserving their count, gives the console's node list.
-The static image and the five tables come from the player's own dump (`pokeldn.sv.battle.game`):
+The static image and the five tables come from the player's own dump:
 main and the SDK from the v4.0.0 update's ExeFS (main's build id
 `421c5411b487eb4d049dd065fec9547773e8e598`), each NSO's segments at their memory offsets with .bss, RELATIVE relocations at main
 `0x8504000` and SDK main + `0x4e6d000`, then the GLOB_DAT, JUMP_SLOT and ABS64 slots bound to the
@@ -1389,38 +1385,30 @@ Blocks hold 0x400 entries (`0xc1adec`); freed ids go to a `deque<u32>` grown by 
 
 ### Serving the battle
 
-`bin/sv_host.py --raid-serve DIR` keeps the network through the battle and serves it from the host's
-station with `pokeldn.sv.raid_battle.RaidBattle`: the session the engine builds from the bootstrap
-(`standalone.battle`, slot 0), `Server` over it, and the stations a console host keeps for itself. DIR
-holds Scarlet 4.0.0's image and tables (`python -m pokeldn.sv.battle.game`). The engine's session
-seats our Pokemon, the boss, one console at station index 1 (bootstrap participant 1, slot 2) and two
-NPC partners, so the flag takes one console and refuses `--violet`.
+`bin/sv_host.py --raid-serve [NAME]` keeps the network through the battle and serves it from the
+host's station with `pokeldn.sv.raid_battle.RaidBattle`: a plugin's battle server ([A battle
+server](plugins.md#a-battle-server)) built from the bootstrap and two NPC partners, and the stations a
+console host keeps for itself. pokeldn ships no battle server; without a plugin that adds one, the flag
+is refused. The served session seats our Pokemon, the boss, one console at station index 1 (bootstrap
+participant 1, slot 2) and two NPC partners, so the flag takes one console.
 
 | part | what the host sends |
 |---|---|
 | the server's messages to the console | frames addressed (0x2713, 1, 2) |
 | slots 0, 1, 3 and 4 | each odd step answered with type + 1 after 0.05 s; a request (5) for slots 0, 3 and 4 with a type-6 command in which the slot's Pokemon uses its first move on the boss and the boss its first move on that Pokemon ([Actions](#actions)) |
 | every message the server reads, the console's own included | relayed to the console, addressed (0x2713, 3, 5) |
-| each server frame whose job graph moved | after that frame's messages, a notice 0x46 from slot 0 (step 0, a 4-byte zero body), addressed (0x2713, 3, 5) |
+| each server frame that moved the battle | after that frame's messages, a notice 0x46 from slot 0 (step 0, a 4-byte zero body), addressed (0x2713, 3, 5) |
 
 Each frame goes on 0x80 port 0 as one deflated reliable message (flags `COMPLETE_ZLIB`); the largest
-seen deflated to 903 bytes. The served battle's first six frames equal the six battle-start messages
-a retail host sent (`raid.HANDOFF`) outside the header bytes its stack filled, in the same order,
-so `--raid-serve` sends them in place of `HANDOFF`.
+seen deflated to 903 bytes. A server that reproduces Scarlet 4.0.0's sends, as its first six frames,
+the six battle-start messages a retail host sent (`raid.HANDOFF`) outside the header bytes its stack
+filled, in the same order, so `--raid-serve` sends them in place of `HANDOFF`.
 
 The host stops serving once the console answered 0x37, or 5 s after 0x37 was sent, and closes the
 network. Answering 0x37 itself re-runs the time-up on the server ([The server's flow](#the-servers-flow)),
-so the local stations leave it unanswered. A failure (a function not ported, `UnliftedCall`, or the
-session failing to build) stops the serving and hands the network over as a host without the flag
-does; the console then fails over and fights its own battle ([Which station runs the
-server](#which-station-runs-the-server)).
-
-Offline, against a console scripted to answer every odd step 0.3 s later and every request with its
-first move: from the rme10 bootstrap the battle runs to 0x25, 0x29, 0x49, 0x35 and 0x37
-(`tests/test_sv_raid_battle.py`), and through `bin/sv_host.py` with the scripted raid console
-(`tests/test_sv_raid.py`). The port covers the moves, abilities and items of the recorded battles;
-another Pokemon reaches functions not yet ported (a Pikachu and a Greninja with Tackle against raid
-`000F34C3` reached `0x2850db0` or `0x2d176a0`), and that battle falls back.
+so the local stations leave it unanswered. A failure (the server raising, or failing to build) stops
+the serving and hands the network over as a host without the flag does; the console then fails over
+and fights its own battle ([Which station runs the server](#which-station-runs-the-server)).
 
 ## Joining
 

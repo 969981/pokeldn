@@ -229,6 +229,32 @@ def register(api):
 interface. The app runs a plugin radio as `POKELDN_RADIO=myradio:` with an empty argument; from the
 command line the argument is what follows the colon.
 
+### A battle server
+
+A battle server runs a raid battle for a host launcher, so the console and the program's Pokemon
+fight one battle ([Serving the battle](sv_raid.md#serving-the-battle)). Scarlet / Violet (`"sv"`) is
+the only game that takes one. `api.add_battle_server(game, name, factory, label)` registers it; a run
+of `bin/sv_host.py --raid-serve NAME` (or `--raid-serve` alone, the first one loaded) calls
+`factory(bootstrap, partners)` once the console sends the battle bootstrap, off the network loop.
+`bootstrap` is the battle bootstrap's bytes, `partners` the two NPC partners' 0x158-byte party
+records. The object it returns:
+
+| member | what it does |
+|---|---|
+| `start(now)` | the server's first frame at `now` seconds; returns the number of frames that moved the battle |
+| `run(until)` | frames at 30 a second up to `until` seconds (at least one); returns the number that moved the battle |
+| `t` | the server's clock, in seconds |
+| `receive(slot, message)` | a station's message, 32-byte header then body, from battle slot `slot` |
+| `sent(slot)` | the messages queued for `slot` since the last call, each a 32-byte header then body |
+
+Slot 0 is the program's Pokemon, 1 the boss, 2 the console, 3 and 4 the partners. An exception from
+any member stops the serving; the console then fights its own battle.
+
+```python
+def register(api):
+    api.add_battle_server("sv", "mine", MyServer, "My raid battle")
+```
+
 ### Packing and testing
 
 ```bash
@@ -373,6 +399,7 @@ or a downgrade.
 | 1.3 | the program surface: builders, gift files, PKHeX and the board |
 | 1.4 | Bank imports, records, destinations, offers and trade completion |
 | 1.5 | language-pack plugins and string lookup |
+| 1.6 | `add_battle_server` |
 
 ## The API, version 1
 
@@ -381,8 +408,9 @@ or a downgrade.
 | `api.add_tool(game, tool)` | adds a `Tool` under the game whose key is `game`: `frlg`, `lgpe`, `swsh`, `bdsp`, `pla`, `sv`, `za`, or one the plugin added |
 | `api.add_game(game, icon="")` | adds a game section with its tools |
 | `api.add_radio(scheme, install, label="")` | adds a radio |
+| `api.add_battle_server(game, name, factory, label="")` | adds a raid battle server (1.6) |
 | `api.folder` | the plugin's folder (a `Path`), or None for a Python package |
-| `api.version`, `api.level` | the major and level the app runs, `1` and `5` |
+| `api.version`, `api.level` | the major and level the app runs, `1` and `6` |
 | `api.data` | a folder kept across updates, created on first use (1.1) |
 | `pokeldn.plugins.data_folder(id)` | the same folder from a tool's script (1.1) |
 | `Tool`, `Field`, `Game` | the app's catalog types, imported from `pokeldn.plugins` |

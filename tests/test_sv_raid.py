@@ -1090,7 +1090,7 @@ class ServedBattleConsole(RaidGuestConsole):
         if x != raid_battle.SERVER:
             return
         if msg[0] == raid_battle.REQUEST:
-            moves = [raid_battle.first_move(self.boot[o:o + gen9.SIZE_PARTY])
+            moves = [raid_battle.first_move(self.boot[o:o + gen9.SIZE_PARTY]) if self.boot else 0
                      for o in (gen9.SIZE_PARTY, 4 * gen9.SIZE_PARTY)]
             reply = raid_battle.command(msg, 2, *moves)
         elif msg[0] & 1:
@@ -1100,23 +1100,56 @@ class ServedBattleConsole(RaidGuestConsole):
         self.send_data(0.3, 0x80, 0, raid_battle.frame(3, 5, reply), compressed=True)
 
 
+class ScriptedServer:
+    """A battle server with the plugin interface (docs/plugins.md, A battle server): step 1 to every
+    slot, a request (5) once every slot answered it, then the end sequence once the four player slots
+    sent their commands. Moves the battle in each frame that queued something."""
+    END = (0x25, 0x29, 0x49, 0x35, 0x37)
+
+    def __init__(self, bootstrap, partners):
+        assert len(bootstrap) >= 6 * gen9.SIZE_PARTY and len(partners) == 2
+        self.t, self.queued, self.got = 0.0, {s: [] for s in range(5)}, {}
+
+    def _send(self, kind):
+        for slot in range(5):
+            self.queued[slot].append(bytes([kind]) + bytes(0x17) + bytes([5, slot]) + bytes(6))
+
+    def start(self, now):
+        self.t = now
+        self._send(0x01)
+        return 1
+
+    def receive(self, slot, message):
+        self.got.setdefault(message[0], set()).add(slot)
+        if (message[0], len(self.got[message[0]])) in ((0x02, 5), (0x06, 4)):    # the boss sends no command
+            for kind in ((0x05,) if message[0] == 0x02 else self.END):
+                self._send(kind)
+
+    def run(self, until):
+        self.t = max(self.t, until)
+        return 0
+
+    def sent(self, slot):
+        out, self.queued[slot] = self.queued[slot], []
+        return out
+
+
 def test_a_console_fights_the_battle_we_serve(monkeypatch, tmp_path, capsys):
-    """The launcher's served battle through the scripted console. The battle is built from the recorded
-    rme10 bootstrap, whose Pokemon the port covers (docs/sv_raid.md, Serving the battle), in place of
-    the lobby's."""
-    from test_sv_battle_served import DATA, game_files
-    from pokeldn.sv.battle import game
-    game_files()
-    recorded = bytes.fromhex(DATA["bootstrap"])
-    plain = raid_battle.RaidBattle
-    monkeypatch.setattr(raid_battle, "RaidBattle", lambda scarlet, _bootstrap: plain(scarlet, recorded))
-    cache = os.environ.get("POKELDN_SV_GAME_CACHE",
-                           os.path.join(os.path.dirname(__file__), "..", "scratchpad", "sv", "game"))
-    assert game.ready(cache)
-    made, _ = run_raid_host(monkeypatch, tmp_path, extra=["--raid-serve", cache], seconds=900,
-                            consoles=lambda clock: [ServedBattleConsole(clock, recorded)])
+    """The launcher's served battle through the scripted console, with a plugin's battle server: the
+    console's answers reach the server, the server's steps reach the console, and the run closes at
+    the battle's end with no handover."""
+    from pokeldn import plugins
+    plugin = plugins.Plugin(id="scripted", name="scripted")
+    plugins.API(plugin).add_battle_server("sv", "scripted", ScriptedServer)
+    monkeypatch.setattr(plugins, "load", lambda: [plugin])
+    try:
+        made, _ = run_raid_host(monkeypatch, tmp_path, extra=["--raid-serve", "scripted"], seconds=900,
+                                consoles=lambda clock: [ServedBattleConsole(clock, None)])
+    finally:
+        plugins._battle_servers.clear()
     console = made[0]
     kinds = [m[0] for x, m in console.battle if x == raid_battle.SERVER]
-    assert kinds[:3] == [0x01, 0x11, 0x05] and kinds[-2:] == [0x35, 0x37]
+    assert kinds == [0x01, 0x05, *ScriptedServer.END]
     assert not [r for r in console.seen if r["protocol"] == 0x98 and r["data"][0] == 7]   # no handover
-    assert "the served battle is over" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "serving the raid battle with scripted" in out and "the served battle is over" in out
