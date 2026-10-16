@@ -36,6 +36,13 @@ def test_packer_uses_tracked_defaults_and_requires_firmware(monkeypatch, tmp_pat
     pack = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(pack)
     files = pack.runtime_files()
+    # Every dependency docs/plugins.md lets a plugin import ships whole: a plugin's Crypto.PublicKey.RSA
+    # failed in 0.28.0, which carried only the Crypto modules pokeldn imports.
+    import re
+    row = next(line for line in (path.parents[1] / "docs/plugins.md").read_text().splitlines()
+               if "pokeldn's own dependencies" in line)
+    names = [b or a for a, b in re.findall(r"`([^`]+)`(?: \(`([^`]+)`\))?", row.split("|")[1])]
+    assert set(names) - {"flet", "bleak", "unicorn"} == set(pack.PLUGIN_PACKAGES)
     assert "config/host.toml" in files
     assert "LICENSE" in files and "vendor/LDN/LICENSE" in files
     assert not any("scratchpad" in p or "host.local.toml" in p or "__pycache__" in p for p in files)
@@ -45,6 +52,7 @@ def test_packer_uses_tracked_defaults_and_requires_firmware(monkeypatch, tmp_pat
     monkeypatch.setattr(pack, "FIRMWARE_C6", tmp_path / "absent-c6.bin")
     monkeypatch.setattr(pack, "FIRMWARE_PAD", tmp_path / "absent-pad-s3.bin")
     monkeypatch.setattr(pack, "FIRMWARE_PAD_ESP32", tmp_path / "absent-pad.bin")
+    monkeypatch.setattr(sys, "argv", ["pack_app.py"])
     import pytest
     with pytest.raises(SystemExit, match="Missing"):
         pack.main()
