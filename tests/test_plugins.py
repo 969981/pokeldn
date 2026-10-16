@@ -592,7 +592,7 @@ def test_a_source_lists_plugins_that_install_update_and_stay_when_the_source_goe
         publish("1.1.0")
         assert plugin_sources.followed() == [plugin_sources.BUILT_IN]
         added = plugin_sources.add(base + "/")
-        assert (added.url, added.name, [e.id for e in added.entries]) == (str(listing).replace(str(served), base), "Local", ["test-kit"])
+        assert (added.url, added.name, [e.id for e in added.entries]) == (f"{base}/{plugin_sources.FILE}", "Local", ["test-kit"])
         assert plugin_sources.followed() == [plugin_sources.BUILT_IN, added.url]
         with pytest.raises(plugin_sources.SourceError, match="already"):
             plugin_sources.add(added.url)
