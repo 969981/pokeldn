@@ -114,6 +114,8 @@ Contributors to this repository (GitHub does not list contributors on a fork):
 - [Project Pokemon](https://github.com/projectpokemon): the [EventsGallery](https://github.com/projectpokemon/EventsGallery)
   of Scarlet/Violet raid event deliveries the app downloads, with pkNX's text of each
 - [Matcore962](https://github.com/Matcore962): importing Pokemon files and game saves into the Bank
+- [capito27](https://github.com/capito27): ESP32 flow control counting a CREDIT for the frame still
+  being written, near doubling USB upload speed
 
 ## License
 
