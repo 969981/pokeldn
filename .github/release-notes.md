@@ -1,13 +1,16 @@
-# pokeldn 0.28.1
+# pokeldn 0.29.0
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- The app now ships the whole of every library a plugin may import (pycryptodome, trio, zstandard,
-  pyserial, websockets, certifi). 0.28.0 carried only the parts pokeldn used itself, so a plugin
-  importing `Crypto.PublicKey.RSA` or `Crypto.Signature` failed in the released app.
+- Plugin API 1.8. A plugin's run can leave status cards at the top of its tool's page (a title, an
+  image, labelled values and chips) that stay after the run, and mark each file of its library as
+  checked, failed or being checked, with a line of text and an icon.
+- A plugin's library can be sorted by name, date or size, in either direction; the choice is kept.
+  Names sort naturally, so version numbers come in order. A plugin can set the starting order.
+- The Plugin Test Kit 1.3.0 checks both and leaves its last result as a card.
 
 The radio firmware stays at 1.6.2 and the controller firmware at 1.3.0; no board update is needed.
 

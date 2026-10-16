@@ -244,7 +244,22 @@ def test_the_test_kit_installs_from_its_package_and_passes_its_self_test(isolate
     env.pop("POKELDN_PLUGINS", None)
     run = subprocess.run([sys.executable, "-m", "pokeldn", "test-kit-selftest"], cwd=tmp_path, env=env,
                          capture_output=True, text=True, timeout=120)
-    assert "12 of 12 checks passed." in run.stdout, run.stdout + run.stderr
+    assert "13 of 13 checks passed." in run.stdout, run.stdout + run.stderr
+    from pokeldn import panel
+    from pokeldn.app import panels
+    for line in run.stdout.splitlines():
+        if line.startswith(panel.PREFIX):
+            assert panels.apply("test-kit", panel.read(line)), line
+    kit = plugins.owner("test-kit-selftest")
+    kept = panels.load("test-kit")
+    card, note = kept["cards"]["self-test"], kept["notes"]["self-test.txt"]
+    assert (card["tone"], card["lines"][0], card["chips"]) == (
+        "ok", ["Result", "13 of 13 checks passed"], [["API", f"{plugins.API_VERSION}.{plugins.API_LEVEL}"]])
+    assert panels.image(kit, card["image"]) == panels.image(kit, note["image"]) == str(
+        (isolated / "plugin-data/test-kit/icon.png").resolve())
+    assert (note["state"], panels.sort(kit)) == ("ok", "name")      # plugin.toml's library_sort
+    plugin_store.remove("test-kit")
+    assert panels.load("test-kit")["cards"] == {}
 
 
 def test_an_update_replaces_the_files_and_remove_deletes_only_the_apps_own(isolated, tmp_path):
@@ -776,6 +791,80 @@ def test_a_plugins_library_takes_its_whole_file_workflow_and_nothing_beside_it(t
                         "other-library": "STOPPED"}, run.stdout + run.stderr
     assert sorted(p.name for p in (data / "Switch updates").iterdir()) == []
     assert (data / "Other" / "x.nsp").read_text() == "someone else's"
+
+
+def test_a_library_sorts_names_as_a_player_reads_them(tmp_path):
+    """The Switch updates plugin's names: each game's updates group together in version order, system
+    updates in version order, case aside; -desc reverses, size and date order by their own field."""
+    from pokeldn.app import library
+    names = ["System update 23.0.1.zip", "game [0100A][v131072](1.0.2).nsp", "Game [0100A][v65536](1.0.1).nsp",
+             "System update 20.5.0.zip", "Game [0100B][v65536](1.0.1).nsp"]
+    for i, name in enumerate(names):
+        (tmp_path / name).write_bytes(b"x" * (10 - i))
+        os.utime(tmp_path / name, (1_000_000 + i, 1_000_000 + i))
+    wanted = ["Game [0100A][v65536](1.0.1).nsp", "game [0100A][v131072](1.0.2).nsp", "Game [0100B][v65536](1.0.1).nsp",
+              "System update 20.5.0.zip", "System update 23.0.1.zip"]
+    assert [e.name for e in library.entries(tmp_path, "name")] == wanted
+    assert [e.name for e in library.entries(tmp_path, "name-desc")] == wanted[::-1]
+    assert [e.name for e in library.entries(tmp_path, "date-desc")] == names[::-1]
+    assert [e.name for e in library.entries(tmp_path, "size")] == names[::-1]
+    with pytest.raises(ValueError):
+        library.entries(tmp_path, "random")
+
+
+def test_the_players_sort_wins_over_plugin_tomls_and_a_bad_one_refuses_the_plugin(isolated, tmp_path, monkeypatch):
+    from pokeldn.app import panels
+    good = make(tmp_path, "sorted", "def register(api):\n    pass\n")
+    bad = make(tmp_path, "unsorted", "def register(api):\n    pass\n")
+    for path, sort in ((good, "name-desc"), (bad, "newest")):
+        (path / "plugin.toml").write_text((path / "plugin.toml").read_text() + f'library = "{path.name}"\nlibrary_sort = "{sort}"\n')
+    monkeypatch.setenv("POKELDN_PLUGINS", os.pathsep.join(map(str, (good, bad))))
+    loaded = {p.id: p for p in plugins.load()}
+    assert "library_sort is one of" in loaded["unsorted"].error
+    assert panels.sort(loaded["sorted"]) == "name-desc"
+    panels.set_sort("sorted", "size")
+    assert panels.sort(loaded["sorted"]) == "size"
+    with pytest.raises(ValueError):
+        panels.set_sort("sorted", "random")
+
+
+def test_status_cards_keep_to_their_limits_and_draw_only_the_plugins_own_images(isolated, tmp_path, monkeypatch, capsys):
+    """What a plugin prints is untrusted: an image outside its folders, a renamed file posing as a PNG, a ninth
+    card and a line past the limits are kept out; a line the app reads is the one the call printed."""
+    from pokeldn import panel
+    from pokeldn.app import panels
+    folder = make(tmp_path, "carded", "def register(api):\n    pass\n")
+    monkeypatch.setenv("POKELDN_PLUGINS", str(folder))
+    (plugin,) = plugins.load()
+    data = plugins.data_folder("carded")
+    data.mkdir(parents=True)
+    png = b"\x89PNG\r\n\x1a\n" + bytes(32)
+    (data / "icon.png").write_bytes(png)
+    (data / "fake.png").write_bytes(b"GIF89a" + bytes(32))
+    (tmp_path / "outside.png").write_bytes(png)
+    (data / "big.png").write_bytes(png + bytes(panel.IMAGE_BYTES))
+    for name in ("icon.png", "fake.png", "big.png"):
+        panel.show("c", "Card", image=data / name)
+    panel.show("c", "Card", image=data / ".." / ".." / ".." / "outside.png")
+    shown = [panel.read(line) for line in capsys.readouterr().out.splitlines()]
+    assert [panels.image(plugin, s["image"]) for s in shown] == [str((data / "icon.png").resolve()), None, None, None]
+
+    for n in range(panel.CARDS):
+        assert panels.apply("carded", panel._card(f"card-{n}", "Card"))
+    assert not panels.apply("carded", panel._card("one-more", "Card"))
+    assert not panels.apply("carded", panel._card("card-0", "Card"))       # the same card again
+    assert panels.apply("carded", {"id": "card-0", "clear": True})
+    assert panels.apply("carded", panel._note("a.nsp", "bad", "Signature refused"))
+    assert panels.load("carded")["notes"]["a.nsp"]["state"] == "bad"
+
+    for bad in ('{"id":"../x","title":"T"}', '{"id":"x","title":"T","tone":"pink"}',
+                '{"id":"x","title":"T","lines":' + json.dumps(["l"] * 13) + '}',
+                '{"id":"x","title":"' + "T" * 81 + '"}', '{"file":"../x.nsp"}', '[1]', 'not json'):
+        assert panel.read(panel.PREFIX + bad) is None, bad
+    with pytest.raises(ValueError):
+        panel.show("x", "T", image="icon.gif")
+    with pytest.raises(ValueError):
+        panel.annotate("x.nsp", state="great")
 
 
 @pytest.mark.parametrize("name, refused", [

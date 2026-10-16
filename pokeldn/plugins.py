@@ -27,7 +27,7 @@ def __getattr__(name):
 
 # docs/plugins.md, Versions: a removal or a change of meaning raises the major, an addition the level.
 API_VERSION = 1                    # the major this pokeldn serves
-API_LEVEL = 7                      # 1.7 LDN networks and libraries; docs/plugins.md, Versions
+API_LEVEL = 8                      # 1.8 status cards, library notes and sorting; docs/plugins.md, Versions
 API_OLDEST = 1                     # an older major is refused
 DEPRECATED: dict[int, str] = {}    # a served major due for removal -> the release that drops it
 ENTRY_POINT_GROUP = "pokeldn.plugins"
@@ -49,6 +49,7 @@ class Plugin:
     locale: str = ""
     translations: dict = field(default_factory=dict)
     library: str = ""                     # a folder the player sees, named in plugin.toml (1.7)
+    library_sort: str = ""                # its order until the player picks one (1.8)
     entry_point: object = None
     error: str = ""                       # why it did not load; empty once registered
     loaded: bool = False
@@ -191,7 +192,7 @@ def _builtin_tool_keys() -> set[str]:
 
 
 # Folders the app's own features keep beside a plugin's library, by their case-folded name.
-RESERVED_LIBRARIES = frozenset(("bank", "gts", "logs", "macros", "plugin-data", "plugins", "pokemon", "received",
+RESERVED_LIBRARIES = frozenset(("bank", "gts", "logs", "macros", "plugin-data", "plugin-panels", "plugins", "pokemon", "received",
                                 "saves", "session"))
 
 WINDOWS_DEVICES = frozenset(("CON", "PRN", "AUX", "NUL", *(f"{p}{n}" for p in ("COM", "LPT") for n in range(1, 10))))
@@ -270,6 +271,12 @@ def _read_folder(path: Path) -> Plugin:
             plugin.library = library_name(meta["library"])
         except ValueError as error:
             plugin.error = str(error)
+    if "library_sort" in meta:
+        from pokeldn.app.library import SORTS
+        if meta["library_sort"] in SORTS:
+            plugin.library_sort = meta["library_sort"]
+        else:
+            plugin.error = f"plugin.toml's library_sort is one of {', '.join(SORTS)}"
     if "locale" in meta or "strings" in meta:
         from pokeldn.app.i18n import read_pack
         try:

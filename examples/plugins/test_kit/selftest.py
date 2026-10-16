@@ -1,6 +1,7 @@
 """Checks one by one what a plugin tool relies on and prints PASS or FAIL for each."""
 import argparse
 import os
+import shutil
 import sys
 import tempfile
 
@@ -52,8 +53,8 @@ def main():
             f", radio {os.environ.get('POKELDN_RADIO') or 'none'}")
 
     from pokeldn import plugins
-    state, message = plugins.compatibility((1, 7))
-    check("the plugin API serves 1.7", state == "ok", message or f"pokeldn runs {plugins.API_VERSION}.{plugins.API_LEVEL}")
+    state, message = plugins.compatibility((1, 8))
+    check("the plugin API serves 1.8", state == "ok", message or f"pokeldn runs {plugins.API_VERSION}.{plugins.API_LEVEL}")
     state = {p.id: p for p in plugins.load()}.get("test-kit")
     check("this plugin loaded in the run", bool(state and state.loaded and not state.error),
           state.error if state else "not enabled here")
@@ -87,6 +88,15 @@ def main():
         check("its library takes a whole file in place of a partial one", True, str(library))
     except (OSError, LookupError) as error:
         check("its library takes a whole file in place of a partial one", False, str(error))
+    from pokeldn import panel
+    icon = None
+    try:
+        icon = plugins.data_folder("test-kit") / "icon.png"
+        shutil.copyfile(os.path.join(os.path.dirname(os.path.abspath(__file__)), "icon.png"), icon)
+        panel.annotate("self-test.txt", state="ok", text="Written by the last self-test", image=icon)
+        check("its library file takes a note", True)
+    except (OSError, ValueError) as error:
+        check("its library file takes a note", False, str(error))
     from pokeldn.ldn import network, radio_lost
     check("the LDN network surface is there", callable(network.join) and callable(network.host)
           and radio_lost() == "")
@@ -97,6 +107,12 @@ def main():
         check("the kit's radio installs", False, f"{type(error).__name__}: {error}")
 
     passed = sum(results)
+    panel.show("self-test", "Last self-test", [
+        f"Result\t{passed} of {len(results)} checks passed",
+        f"Python\t{sys.version.split()[0]}",
+        f"Started\t{'by the app' if managed else 'from the command line'}",
+    ], image=icon, chips=[("API", f"{plugins.API_VERSION}.{plugins.API_LEVEL}")],
+        tone="ok" if passed == len(results) else "error")
     kit.say(f"{passed} of {len(results)} checks passed" + ("." if passed == len(results) else ", see FAIL above."))
     return 0 if passed == len(results) else 1
 

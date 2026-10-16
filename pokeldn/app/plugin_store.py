@@ -375,6 +375,8 @@ def remove(plugin_id: str, data: bool = False) -> None:
     if target.parent != root or not (target / "plugin.toml").is_file():
         raise PackageError("Only a plugin installed in the app can be removed here.")
     shutil.rmtree(target)
+    from pokeldn.app import panels
+    panels.forget(plugin_id)
     if data and ID.fullmatch(plugin_id):
         shutil.rmtree(plugins.data_folder(plugin_id), ignore_errors=True)
 

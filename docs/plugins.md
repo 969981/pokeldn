@@ -127,6 +127,7 @@ updates = "https://github.com/you/my-plugin" # optional, where newer versions ar
 api = "1.1"                 # required: the plugin API it needs (see Versions); 1 means 1.0
 icon = "icon.png"           # optional; a square PNG, 96 x 96 looks sharp
 library = "My files"        # optional (1.7): a folder the player sees, see A library
+library_sort = "name"       # optional (1.8): its order until the player picks one, see A library
 module = "plugin"           # optional; the module holding register()
 exclude = ["tests"]         # optional; folders and files pack_plugin.py leaves out of the package
 ```
@@ -183,6 +184,7 @@ if __name__ == "__main__":
 | opens a pop-up (`pokeldn.popup`, 1.2) | shows it over whatever page the app shows, and sends the player's answer back |
 | asks for one of several options (`pokeldn.popup.choose`, 1.7) | shows a button per option and sends back the index pressed |
 | reports progress (`pokeldn.progress.show(done, total, title, unit)`, 1.7) | draws a bar with the rate and the time left in the Session panel, in place of the line ([Progress](gui.md#progress)) |
+| shows a status card or marks a library file (`pokeldn.panel`, 1.8) | draws it on the tool's page and keeps it after the run ([Status cards](#status-cards-18)) |
 
 A pop-up never waits for the player: `acknowledge` and `confirm` return its id at once, and the answer
 comes later as a callback, which may fire at any time, on another thread. A script keeps its own state
@@ -254,7 +256,9 @@ from a tool's script, returns it, created on first use.
 | the guardrails | allow writing, replacing, renaming and deleting in it, as in the data folder |
 | the install screen | names it |
 | removing the plugin | leaves it and every file in it |
-| the Games page | lists its files under the plugin's tools, newest first; the player adds a file (a button or a drop), renames and deletes. Names starting with `.` and ending in `.part` are left out: write a file under such a name and replace it with the whole one |
+| the Games page | lists its files under the plugin's tools; the player adds a file (a button or a drop), renames and deletes. Names starting with `.` and ending in `.part` are left out: write a file under such a name and replace it with the whole one |
+| its order | by name, date or size, ascending or descending, picked by the player and kept per plugin; until then `plugin.toml`'s `library_sort` (1.8: `name`, `name-desc`, `date`, `date-desc`, `size`, `size-desc`), else `date-desc`, newest first. Names sort naturally: digit runs compare as numbers and case is ignored, so `v65536` comes before `v131072` and `20.5.0` before `23.0.1` |
+| a file's note | `pokeldn.panel.annotate` (1.8, [Status cards](#status-cards-18)) |
 | its name | up to 40 letters, digits, spaces, dots, dashes and underscores; a folder of pokeldn's own (`Bank`, `Saves`, `Received`...), a Windows device name and another loaded plugin's library are refused |
 
 `help=` puts a line under the input, `default=` fills it, and `hidden=True` moves it to the
@@ -264,6 +268,42 @@ key for a positional field whose label is translated. A tool's `fixed` arguments
 `{tid}`, `{sid}`, `{language}` and `{gender}` (the trainer in Settings), `{received}` (the Received
 folder), `{stamp}` (the run's start time) and, from 1.7, `{keys}` (the `prod.keys` file Settings names).
 A script whose parser takes `--keys` receives that file's path even without the token.
+
+### Status cards (1.8)
+
+A run leaves cards at the top of its tool's page, above the fields, and notes on its library's files.
+`pokeldn.panel` prints them as `[panel]` lines, so they work the same from source and in the released
+app; the app keeps them in the data folder's `plugin-panels/<id>.json` after the run ends and
+deletes them with the plugin. Outside the app the line is printed and nothing else.
+
+```python
+from pokeldn import panel, plugins
+
+icon = plugins.data_folder("my-plugin") / "icons" / "0100abcd.png"
+panel.show("console", "Pokémon: Let's Go, Pikachu!", [
+    "Group\tcapito27's Switch · 1 of 8 consoles",
+    "System version\t23.0.1",
+], image=icon, chips=[("Version", "1.0.2")], tone="ok")
+panel.annotate("Game 1.0.2.nsp", state="ok", text="Every signature checks", image=icon)
+```
+
+| call | what the app shows |
+|---|---|
+| `panel.show(id, title, lines=(), *, image=None, chips=(), tone="info")` | the card `id`, replacing the one last shown under it. A line is plain text, or `label<TAB>value` for two columns; a chip is a `(label, value)` pair; `tone` is `info`, `ok`, `warning` or `error`, an icon beside the title |
+| `panel.clear(id)` | removes the card |
+| `panel.annotate(name, *, state="ok", text="", image=None)` | marks the library file `name`: `ok`, `bad` or `checking`, a line of text under it and the image in place of its file icon |
+| `panel.unannotate(name)` | removes the note |
+
+| limit | |
+|---|---|
+| a card id | 1 to 32 lower-case letters, digits, `-` and `_` |
+| cards per plugin | 8; a new id past them is dropped |
+| a card | a title of up to 80 characters, 12 lines of up to 200, 6 chips of up to 40 a side |
+| an image | a PNG or JPEG of at most 2 MB in the plugin's data folder or library; any other is not drawn |
+| a note | belongs to the file name: renaming or deleting the file drops it |
+
+A call outside these limits raises ValueError in the script; a `[panel]` line the app cannot read is
+shown in the session's output.
 
 ### A game of its own
 
@@ -471,7 +511,7 @@ output and `[done]` protocol lines retain their existing text.
 
 | where | tool | what it does |
 |---|---|---|
-| Plugin Test Kit | Self-test | checks the API version, its own loading, its imports, every field kind, the trainer token, the session folder, its data folder (a run counter that survives updates) and its radio; prints PASS or FAIL for each |
+| Plugin Test Kit | Self-test | checks the API version, its own loading, its imports, every field kind, the trainer token, the session folder, its data folder (a run counter that survives updates), its library and a note on its file, and its radio; prints PASS or FAIL for each and leaves a Last self-test card on its page |
 | Plugin Test Kit | Simulated session | prints a trade's steps and a `[done]` line per trade; Stop ends it cleanly |
 | Plugin Test Kit | Fail on purpose | raises, or exits with code 3 |
 | FireRed & LeafGreen | Hello from a plugin | a plugin tool among the built-in ones |
@@ -502,6 +542,7 @@ or a downgrade.
 | 1.5 | language-pack plugins and string lookup |
 | 1.6 | `add_battle_server` |
 | 1.7 | `pokeldn.ldn.network`, `pokeldn.ldn.radio_lost`, `library` and `api.library`, `pokeldn.popup.choose`, `pokeldn.progress`, the `{keys}` token |
+| 1.8 | `pokeldn.panel`, `library_sort` |
 
 ## The API, version 1
 
@@ -512,7 +553,7 @@ or a downgrade.
 | `api.add_radio(scheme, install, label="")` | adds a radio |
 | `api.add_battle_server(game, name, factory, label="")` | adds a raid battle server (1.6) |
 | `api.folder` | the plugin's folder (a `Path`), or None for a Python package |
-| `api.version`, `api.level` | the major and level the app runs, `1` and `7` |
+| `api.version`, `api.level` | the major and level the app runs, `1` and `8` |
 | `api.data` | a folder kept across updates, created on first use (1.1) |
 | `pokeldn.plugins.data_folder(plugin_id)` | the same folder from a tool's script (1.1) |
 | `api.library`, `pokeldn.plugins.library_folder(plugin_id)` | the player-visible folder `plugin.toml`'s `library` names, created on first use (1.7, [A library](#a-library-17)) |
@@ -522,6 +563,7 @@ or a downgrade.
 | `pokeldn.popup.confirm(title, text, agree, disagree, *, id, on_agree, on_disagree, on_dismiss, tone)` | a pop-up with the agree and disagree buttons the caller names, Esc or a click outside dismissing it; -> its id (1.2) |
 | `pokeldn.popup.choose(title, text, options, *, id, on_choice, on_dismiss, tone)` | a pop-up with 2 to 8 option buttons; `on_choice(index)` gets the one pressed, Esc or a click outside fires `on_dismiss`; -> its id (1.7) |
 | `pokeldn.progress.show(done, total, title, unit="bytes")` | a progress bar in the Session panel; `unit` is `bytes` or `items` (1.7) |
+| `pokeldn.panel.show(id, title, lines=(), *, image, chips, tone)`, `clear(id)`, `annotate(name, *, state, text, image)`, `unannotate(name)` | status cards on the tool's page and notes on library files (1.8, [Status cards](#status-cards-18)) |
 | `pokeldn.ldn.network` | joining and hosting an LDN network with its IPv4 stack (1.7, [LDN networks](#ldn-networks-17)) |
 | `pokeldn.ldn.radio_lost()` | why the radio left the run, or empty (1.7) |
 | `pokeldn.popup.cancel(id)`, `available()`, `set_dispatcher(dispatch)` | closes a pop-up, dropping its callbacks; whether an app shows them; where callbacks run (1.2) |

@@ -597,6 +597,49 @@ def test_a_runs_progress_lines_draw_a_bar_with_rate_and_time_left_and_stay_out_o
     assert logged == ["[lcs] the console sent its version"]
 
 
+def test_a_runs_panel_lines_are_kept_for_its_plugin_and_drawn_on_its_page(monkeypatch, tmp_path):
+    """A `[panel]` line from a plugin's run is stored for that plugin, stays out of the log and redraws the
+    card and the library note on the page; one the app cannot read is shown in the log instead."""
+    from gui.views import library as library_view
+    from gui.views.panels import StatusCards
+    from pokeldn import panel as cards, plugins
+    from pokeldn.app import paths
+    monkeypatch.setattr(paths, "DATA", tmp_path)
+    owner = plugins.Plugin(id="updates", name="Updates", library="Updates")
+    monkeypatch.setattr(plugins, "owner", lambda key: owner if key == "updates-tool" else None)
+    monkeypatch.setattr(plugins, "library_path", lambda name: tmp_path / name)
+    (tmp_path / "Updates").mkdir()
+    (tmp_path / "Updates" / "Game 1.0.2.nsp").write_bytes(b"nsp")
+    changed, logged = [], []
+    session = SessionPanel.__new__(SessionPanel)
+    session.__dict__.update(app=SimpleNamespace(ui=lambda fn: fn()), log=SimpleNamespace(add=logged.append),
+                            running_tool=SimpleNamespace(key="updates-tool"),
+                            games=SimpleNamespace(plugin_changed=changed.append))
+    session._line(cards.PREFIX + '{"id":"console","title":"Let\'s Go, Pikachu!","lines":[["System version","23.0.1"]],'
+                  '"chips":[["Version","1.0.2"]],"tone":"ok"}')
+    session._line(cards.PREFIX + '{"file":"Game 1.0.2.nsp","state":"bad","text":"A signature does not check"}')
+    session._line(cards.PREFIX + '{"id":"x","tone":"pink"}')
+    assert changed == ["updates", "updates"]
+    assert len(logged) == 1 and "cannot read" in logged[0]
+
+    column = StatusCards(owner).control()
+    (card,) = column.controls
+    texts = [c.value for c in walk(card) if isinstance(c, ft.Text)]
+    assert texts[:2] == ["Let's Go, Pikachu!", "Version 1.0.2"] and texts[2:] == ["System version", "23.0.1"]
+    view = library_view.LibraryCard(SimpleNamespace(), owner)
+    view.control()
+    (row,) = view.listing.controls
+    assert "A signature does not check" in [c.value for c in walk(row) if isinstance(c, ft.Text)]
+
+
+def walk(control):
+    yield control
+    for name in ("content", "controls"):
+        child = getattr(control, name, None)
+        for c in (child if isinstance(child, list) else [child] if isinstance(child, ft.Control) else []):
+            yield from walk(c)
+
+
 def test_a_pop_up_opened_again_under_its_id_redraws_its_dialog(monkeypatch):
     page, manager, run, answers = popup_page(monkeypatch)
     message = {"op": "open", "id": "gift", "n": 1, "kind": "ack", "title": "The gift carries the trainer from "

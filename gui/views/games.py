@@ -10,8 +10,8 @@ import flet as ft
 from gui import board
 from gui.app import keys_found
 from pokeldn import pokemon as builder
-from pokeldn import progress
-from pokeldn.app import bank, command, events_gallery, gift_builder, online, received, runner
+from pokeldn import panel, progress
+from pokeldn.app import bank, command, panels, events_gallery, gift_builder, online, received, runner
 from pokeldn.sv import raid_event as raid_events
 from gui import theme as t
 from pokeldn import plugins
@@ -26,6 +26,7 @@ from gui.views.raid_seed import RaidSeedPicker
 from gui.views.rewards import RewardPicker
 from gui.views.gifts import GiftBuilder
 from gui.views.library import LibraryCard
+from gui.views.panels import StatusCards
 from gui.views.sprites import MINI, Sprite
 from gui.views.widgets import CodeBlock, DigitCode, Log, PathField, open_folder
 from pokeldn.app.i18n import t as tr
@@ -382,9 +383,21 @@ class GamesView:
         if not self.tool.fields:
             out.append(t.text(tr('games.nothing_to_fill_in_10f2c5', 'Nothing to fill in.'), 13, t.MUTED))
         owner = plugins.owner(self.tool.key)
-        if owner is not None and owner.library:
-            out.append(LibraryCard(self.app, owner).control())
+        self.plugin_cards = StatusCards(owner) if owner is not None else None
+        self.library_card = LibraryCard(self.app, owner) if owner is not None and owner.library else None
+        if self.plugin_cards:
+            out.insert(0, self.plugin_cards.control())
+        if self.library_card:
+            out.append(self.library_card.control())
         return out
+
+    def plugin_changed(self, plugin_id: str) -> None:
+        """A run's `[panel]` line changed what plugin `plugin_id` shows; redraws it if it is on the page."""
+        if not self.visible or self.tab != "basic":
+            return
+        for part in (getattr(self, "plugin_cards", None), getattr(self, "library_card", None)):
+            if part is not None and part.plugin.id == plugin_id:
+                part.refresh()
 
     def shiny(self) -> bool:
         return any(bool(command.value_of(f, self.values)) for f in self.tool.fields
@@ -982,6 +995,14 @@ class SessionPanel:
     def _line(self, line: str) -> None:
         if moved := progress.read(line):
             self.app.ui(lambda: self.show_progress(*moved))
+            return
+        if line.startswith(panel.PREFIX):
+            owner = plugins.owner(self.running_tool.key) if self.running_tool else None
+            shown = panel.read(line)
+            if shown is None:
+                self.log.add(f"[app] {tr('games.panel_unreadable', 'A [panel] line the app cannot read:')} {line[:160]}")
+            if owner is not None and shown is not None and panels.apply(owner.id, shown):
+                self.app.ui(lambda: self.games.plugin_changed(owner.id))
             return
         self.log.add(line)
         if saving := received.save_progress(line):

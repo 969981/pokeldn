@@ -1,6 +1,7 @@
 """A plugin's library (pokeldn.plugins.library_folder) as the Games page lists it: the files a player keeps,
 copies in, renames and deletes. Hidden names and unfinished `.part` files are the plugin's own."""
 import os
+import re
 import shutil
 import time
 from dataclasses import dataclass
@@ -26,14 +27,34 @@ def shown(folder: Path) -> str:
         return str(folder)
 
 
-def entries(folder: Path) -> list[Entry]:
-    """The library's files, newest first; an absent folder has none."""
+# A field, ascending, or with "-desc" descending: "date-desc" is newest first.
+SORTS = ("name", "name-desc", "date", "date-desc", "size", "size-desc")
+DEFAULT_SORT = "date-desc"
+
+
+def natural(name: str) -> tuple:
+    """Digit runs compare as numbers and letters without case: v65536 before v131072, 20.5.0 before 23.0.1."""
+    return tuple((0, int(part), "") if part.isdigit() else (1, 0, part.casefold())
+                 for part in re.split(r"(\d+)", name) if part)
+
+
+def _key(sort: str):
+    field = sort.removesuffix("-desc")
+    return {"name": lambda e: natural(e.name), "date": lambda e: (e.modified, natural(e.name)),
+            "size": lambda e: (e.size, natural(e.name))}[field]
+
+
+def entries(folder: Path, sort: str = DEFAULT_SORT) -> list[Entry]:
+    """The library's files in the order `sort` (one of SORTS) names; an absent folder has none."""
     try:
         listed = [(p, p.stat()) for p in Path(folder).iterdir()
                   if p.is_file() and not p.name.startswith(".") and not p.name.endswith(".part")]
     except OSError:
         return []
-    return sorted((Entry(p, s.st_size, s.st_mtime) for p, s in listed), key=lambda e: -e.modified)
+    if sort not in SORTS:
+        raise ValueError(f"a library sort is one of {', '.join(SORTS)}")
+    return sorted((Entry(p, s.st_size, s.st_mtime) for p, s in listed), key=_key(sort),
+                  reverse=sort.endswith("-desc"))
 
 
 def _inside(folder: Path, path: Path) -> Path:
