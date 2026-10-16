@@ -309,7 +309,9 @@ count repeated unchanged for 0.3 s means bytes were lost on the line and the hos
 a busy reader holds up to 0.7 s, and a resync then puts 16 KB in flight against a 16 KB ring. Written-off
 bytes stay written off; a CREDIT past what the loss allows shrinks it. A CREDIT jumps the
 outgoing queue (at most one queued) yet arrives about 0.5 s late behind a Scarlet seat's 150 KB/s of
-RX_ETH. A board without CREDIT never opens the window and the host writes unthrottled. The board logs a
+RX_ETH. A board without CREDIT never opens the window and the host writes unthrottled. The count is a
+u32 (`wire.c` `s_consumed`); the host unwraps it against its own byte count, so a stream past 4 GiB
+keeps its window. The board logs a
 command over 50 ms (`slow command`) and a reader turn over 100 ms (`reader held`).
 
 With the idle count and the CREDIT ahead of the queue, the board counted every ETH_TX the host handed

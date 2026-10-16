@@ -1,7 +1,8 @@
 id = "test-kit"
 name = "Plugin Test Kit"
-version = "1.1.0"
+version = "1.2.0"
 author = "pokeldn"
-description = "Checks that plugins work: a test game with a self-test, a simulated session and a planned failure, a tool under FireRed & LeafGreen, and a radio that carries nothing."
-api = "1.1"                 # needs api.data, added in plugin API 1.1
+description = "Checks that plugins work: a test game with a self-test, a simulated session with a progress bar and a choice, a planned failure, a tool under FireRed & LeafGreen, and a radio that carries nothing."
+api = "1.7"                 # needs the library, the progress bar and the choice pop-up of plugin API 1.7
+library = "Plugin Test Kit" # Documents/pokeldn/Plugin Test Kit: the self-test writes there
 icon = "icon.png"

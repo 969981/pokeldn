@@ -3,7 +3,8 @@ title: Plugins
 ---
 # Plugins
 
-A plugin adds tools, games and radios to pokeldn without changing it. It is a folder of Python files
+A plugin adds tools, games and radios to pokeldn without changing it, and can join or host an LDN
+network of its own. It is a folder of Python files
 with a `plugin.toml`, shipped as one `.pokeplugin` file that players add on the app's Plugins page.
 The project does not distribute, review or support third-party plugins.
 
@@ -95,7 +96,7 @@ While a plugin's code is on the call stack, in the app and in every run, an audi
 
 | refused | allowed |
 |---|---|
-| deleting, emptying, moving or overwriting a file outside the plugin's folders | the same inside its folder, its data folder, the session folder, the logs folder and the temporary folder |
+| deleting, emptying, moving or overwriting a file outside the plugin's folders | the same inside its folder, its data folder, its library, the session folder, the logs folder and the temporary folder |
 | starting `rm`, `del`, `rd`, `Remove-Item`, `shred`, `dd`, `format`, `mkfs`, `diskutil`, `diskpart`, `sudo`, `su` and similar, directly or inside a shell command, or any command with `-delete` or `--no-preserve-root` | starting any other program |
 | | creating a new file anywhere |
 
@@ -125,6 +126,7 @@ homepage = "https://example.org/my-plugin"   # optional, opened from the plugin'
 updates = "https://github.com/you/my-plugin" # optional, where newer versions are published (Updates)
 api = "1.1"                 # required: the plugin API it needs (see Versions); 1 means 1.0
 icon = "icon.png"           # optional; a square PNG, 96 x 96 looks sharp
+library = "My files"        # optional (1.7): a folder the player sees, see A library
 module = "plugin"           # optional; the module holding register()
 exclude = ["tests"]         # optional; folders and files pack_plugin.py leaves out of the package
 ```
@@ -179,6 +181,8 @@ if __name__ == "__main__":
 | exits with another code or raises | shows the session as failed, with the traceback in the output |
 | receives `KeyboardInterrupt` | the player pressed Stop; leave cleanly within 15 s or the process is ended |
 | opens a pop-up (`pokeldn.popup`, 1.2) | shows it over whatever page the app shows, and sends the player's answer back |
+| asks for one of several options (`pokeldn.popup.choose`, 1.7) | shows a button per option and sends back the index pressed |
+| reports progress (`pokeldn.progress.show(done, total, title, unit)`, 1.7) | draws a bar with the rate and the time left in the Session panel, in place of the line ([Progress](gui.md#progress)) |
 
 A pop-up never waits for the player: `acknowledge` and `confirm` return its id at once, and the answer
 comes later as a callback, which may fire at any time, on another thread. A script keeps its own state
@@ -238,12 +242,28 @@ An update replaces the plugin's folder. Settings, caches and anything else meant
 data folder's `plugin-data/<id>`, kept across updates and deleted on removal only if the player
 asks.
 
+### A library (1.7)
+
+A plugin that keeps files the player looks after (backups, downloads) names a library in
+`plugin.toml`: `library = "My files"` is `Documents/pokeldn/My files` (the data folder's `My files`
+under `POKELDN_DATA`). `api.library` from `register`, or `pokeldn.plugins.library_folder("my-plugin")`
+from a tool's script, returns it, created on first use.
+
+| the library | |
+|---|---|
+| the guardrails | allow writing, replacing, renaming and deleting in it, as in the data folder |
+| the install screen | names it |
+| removing the plugin | leaves it and every file in it |
+| the Games page | lists its files under the plugin's tools, newest first; the player adds a file (a button or a drop), renames and deletes. Names starting with `.` and ending in `.part` are left out: write a file under such a name and replace it with the whole one |
+| its name | up to 40 letters, digits, spaces, dots, dashes and underscores; a folder of pokeldn's own (`Bank`, `Saves`, `Received`...), a Windows device name and another loaded plugin's library are refused |
+
 `help=` puts a line under the input, `default=` fills it, and `hidden=True` moves it to the
 Advanced tab. The fields the built-in tools use, and the
 rest of `Field`, are in `pokeldn/app/catalog.py`. API 1.5 adds `Field.identity`, a stable settings
 key for a positional field whose label is translated. A tool's `fixed` arguments may carry `{ot}`,
 `{tid}`, `{sid}`, `{language}` and `{gender}` (the trainer in Settings), `{received}` (the Received
-folder) and `{stamp}` (the run's start time).
+folder), `{stamp}` (the run's start time) and, from 1.7, `{keys}` (the `prod.keys` file Settings names).
+A script whose parser takes `--keys` receives that file's path even without the token.
 
 ### A game of its own
 
@@ -279,6 +299,35 @@ def register(api):
 `pokeldn/ldn/esp32_wlan.py` is the board's factory and the reference for one with no kernel
 interface. The app runs a plugin radio as `POKELDN_RADIO=myradio:` with an empty argument; from the
 command line the argument is what follows the colon.
+
+### LDN networks (1.7)
+
+`pokeldn.ldn.network` joins or hosts an LDN network for a plugin and hands it the radio's IPv4 stack.
+It needs a radio with no kernel interface: the ESP32 board or ldnrs.
+
+```python
+from pokeldn.ldn import network
+
+with network.join(COMM_ID, keys=args.keys, password=PASSPHRASE, name="My game") as net:
+    net.add_protocol(6, lambda src, dst, segment: segments.put((src, segment)))   # TCP, say
+    while not net.send_ip(6, net.host_ip, first_segment):    # False until ARP finds the host
+        time.sleep(0.1)
+```
+
+| name | what it is |
+|---|---|
+| `join(comm_id, *, keys, password, nickname, app_version, name, log, timeout)` | scans and joins the network advertising `comm_id`, and no other; `name` is what the player's messages call it. Raises `RuntimeError` when none answers |
+| `host(comm_id, *, keys, password, nickname, application_data, scene_id, app_version, max_participants, channel, protocol, log, timeout)` | opens a network consoles join |
+| `Network.ip`, `.mac`, `.host_ip`, `.broadcast`, `.ssid`, `.comm_id`, `.application_data` | the addresses and the advertisement: the host's when joined, ours when hosting |
+| `Network.participants` | the stations seated on a hosted network, each `.index`, `.ip`, `.mac`, `.name` |
+| `Network.add_protocol(number, handler)`, `.remove_protocol(number)` | `handler(src_ip, dst_ip, payload)` takes every reassembled IPv4 packet of `number` sent to us, on the radio's loop: queue it and return. UDP (17) stays the stack's. An exception from the handler is logged and the packet dropped |
+| `Network.send_ip(protocol, dst_ip, payload)` | one IPv4 packet, fragmented at 1500 bytes; `False`, with an ARP request sent, while `dst_ip`'s address is unknown |
+| `Network.udp_socket(port)` | a UDP socket on the network: `sendto`, `recvfrom`, `setblocking`, `settimeout`, `fileno`, `close` |
+| `Network.set_application_data(data)` | a hosted network's new advertisement |
+| `Network.error`, `.close()` | why the network ended (empty while up); leaves it. A `Network` is a context manager |
+| `pokeldn.ldn.radio_lost()` | why the radio left the process, or empty. The run then ends with the same `KeyboardInterrupt` as the player's Stop; this tells them apart |
+
+A transfer over the board runs at about 0.5 MB/s; report it with `pokeldn.progress.show`.
 
 ### A battle server
 
@@ -446,12 +495,13 @@ or a downgrade.
 | API | added |
 |---|---|
 | 1.0 | `add_tool`, `add_game`, `add_radio`, `folder`, `version` |
-| 1.1 | `api.data`, `api.level`, `pokeldn.plugins.data_folder(id)` |
+| 1.1 | `api.data`, `api.level`, `pokeldn.plugins.data_folder(plugin_id)` |
 | 1.2 | `pokeldn.popup` |
 | 1.3 | the program surface: builders, gift files, PKHeX and the board |
 | 1.4 | Bank imports, records, destinations, offers and trade completion |
 | 1.5 | language-pack plugins and string lookup |
 | 1.6 | `add_battle_server` |
+| 1.7 | `pokeldn.ldn.network`, `pokeldn.ldn.radio_lost`, `library` and `api.library`, `pokeldn.popup.choose`, `pokeldn.progress`, the `{keys}` token |
 
 ## The API, version 1
 
@@ -462,13 +512,18 @@ or a downgrade.
 | `api.add_radio(scheme, install, label="")` | adds a radio |
 | `api.add_battle_server(game, name, factory, label="")` | adds a raid battle server (1.6) |
 | `api.folder` | the plugin's folder (a `Path`), or None for a Python package |
-| `api.version`, `api.level` | the major and level the app runs, `1` and `6` |
+| `api.version`, `api.level` | the major and level the app runs, `1` and `7` |
 | `api.data` | a folder kept across updates, created on first use (1.1) |
-| `pokeldn.plugins.data_folder(id)` | the same folder from a tool's script (1.1) |
+| `pokeldn.plugins.data_folder(plugin_id)` | the same folder from a tool's script (1.1) |
+| `api.library`, `pokeldn.plugins.library_folder(plugin_id)` | the player-visible folder `plugin.toml`'s `library` names, created on first use (1.7, [A library](#a-library-17)) |
 | `Tool`, `Field`, `Game` | the app's catalog types, imported from `pokeldn.plugins` |
 | `pokeldn.ldn.show_done()` | prints the line that ticks a trade off |
 | `pokeldn.popup.acknowledge(title, text="", *, id, label="OK", on_ack, tone)` | a pop-up with one button; -> its id (1.2, [Pop-ups](gui.md#pop-ups)) |
 | `pokeldn.popup.confirm(title, text, agree, disagree, *, id, on_agree, on_disagree, on_dismiss, tone)` | a pop-up with the agree and disagree buttons the caller names, Esc or a click outside dismissing it; -> its id (1.2) |
+| `pokeldn.popup.choose(title, text, options, *, id, on_choice, on_dismiss, tone)` | a pop-up with 2 to 8 option buttons; `on_choice(index)` gets the one pressed, Esc or a click outside fires `on_dismiss`; -> its id (1.7) |
+| `pokeldn.progress.show(done, total, title, unit="bytes")` | a progress bar in the Session panel; `unit` is `bytes` or `items` (1.7) |
+| `pokeldn.ldn.network` | joining and hosting an LDN network with its IPv4 stack (1.7, [LDN networks](#ldn-networks-17)) |
+| `pokeldn.ldn.radio_lost()` | why the radio left the run, or empty (1.7) |
 | `pokeldn.popup.cancel(id)`, `available()`, `set_dispatcher(dispatch)` | closes a pop-up, dropping its callbacks; whether an app shows them; where callbacks run (1.2) |
 
 This table and the next one are the supported surface. Anything else a plugin imports from pokeldn

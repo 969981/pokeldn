@@ -2,6 +2,7 @@
 its radio carries the LDN calls, and a broken or unwanted plugin adds nothing."""
 import json
 import os
+import re
 import subprocess
 import sys
 import textwrap
@@ -169,6 +170,7 @@ def test_a_broken_plugin_keeps_its_error_and_adds_nothing(isolated, tmp_path, mo
 
 
 KIT = ROOT / "examples" / "plugins" / "test_kit"
+KIT_VERSION = re.search(r'^version = "(.+)"', (KIT / "plugin.toml").read_text(), re.M)[1]
 HELLO = ROOT / "examples" / "plugins" / "hello"
 
 
@@ -242,7 +244,7 @@ def test_the_test_kit_installs_from_its_package_and_passes_its_self_test(isolate
     env.pop("POKELDN_PLUGINS", None)
     run = subprocess.run([sys.executable, "-m", "pokeldn", "test-kit-selftest"], cwd=tmp_path, env=env,
                          capture_output=True, text=True, timeout=120)
-    assert "9 of 9 checks passed." in run.stdout, run.stdout + run.stderr
+    assert "12 of 12 checks passed." in run.stdout, run.stdout + run.stderr
 
 
 def test_an_update_replaces_the_files_and_remove_deletes_only_the_apps_own(isolated, tmp_path):
@@ -252,13 +254,13 @@ def test_an_update_replaces_the_files_and_remove_deletes_only_the_apps_own(isola
     (source / "old.txt").write_text("from 1.0.0")
     plugin_store.install(plugin_store.pack(str(source), str(tmp_path / "a.pokeplugin")))
     (source / "old.txt").unlink()
-    (source / "plugin.toml").write_text((source / "plugin.toml").read_text().replace("1.1.0", "1.2.0"))
+    (source / "plugin.toml").write_text((source / "plugin.toml").read_text().replace(KIT_VERSION, "5.2.0"))
     (plugins.data_folder("test-kit") / "runs.txt").parent.mkdir(parents=True)
     (plugins.data_folder("test-kit") / "runs.txt").write_text("4")
     newer = plugin_store.pack(str(source), str(tmp_path / "b.pokeplugin"))
     assert plugin_store.compare(newer, plugin_store.installed("test-kit")) == "update"
     target = plugin_store.install(newer)
-    assert not (target / "old.txt").exists() and plugin_store.installed("test-kit").version == "1.2.0"
+    assert not (target / "old.txt").exists() and plugin_store.installed("test-kit").version == "5.2.0"
     assert plugin_store.compare(plugin_store.read(str(tmp_path / "a.pokeplugin")),
                                 plugin_store.installed("test-kit")) == "downgrade"
     assert sorted(p.name for p in plugins.folder().iterdir()) == ["test-kit"]     # no staging left behind
@@ -465,7 +467,7 @@ def test_a_signed_package_names_its_author_and_any_change_to_a_file_refuses_it(i
                 if name == "hello.py" and change == "edit":
                     data += b"\nimport shutil\n"
                 if name == "plugin.toml" and change == "version":
-                    data = data.replace(b'version = "1.1.0"', b'version = "9.0.0"')
+                    data = data.replace(f'version = "{KIT_VERSION}"'.encode(), b'version = "9.0.0"')
                 if not (name == "fail.py" and change == "remove"):
                     copy.writestr(name, data)
             if change == "add":
@@ -498,14 +500,14 @@ def test_an_update_address_offers_the_newer_version_and_the_download_installs_th
     try:
         (source / "plugin.toml").write_text(toml + f'updates = "{base}/latest.json"\n')
         plugin_store.install(plugin_store.pack(str(source), str(tmp_path / "old.pokeplugin"), key))
-        (source / "plugin.toml").write_text(toml.replace("1.1.0", "1.3.0") + f'updates = "{base}/latest.json"\n')
+        (source / "plugin.toml").write_text(toml.replace(KIT_VERSION, "5.3.0") + f'updates = "{base}/latest.json"\n')
         plugin_store.pack(str(source), str(served / "kit.pokeplugin"), key)
-        (served / "latest.json").write_text(json.dumps({"version": "1.3.0", "url": f"{base}/kit.pokeplugin"}))
+        (served / "latest.json").write_text(json.dumps({"version": "5.3.0", "url": f"{base}/kit.pokeplugin"}))
         found = plugin_updates.check(plugins.discover())
-        assert found["test-kit"].version == "1.3.0"
+        assert found["test-kit"].version == "5.3.0"
         package = plugin_store.read(str(plugin_updates.download(found["test-kit"], tmp_path / "dl")))
-        assert (package.version, plugin_store.trust(package)) == ("1.3.0", "same")
-        (served / "latest.json").write_text(json.dumps({"version": "1.1.0", "url": f"{base}/kit.pokeplugin"}))
+        assert (package.version, plugin_store.trust(package)) == ("5.3.0", "same")
+        (served / "latest.json").write_text(json.dumps({"version": KIT_VERSION, "url": f"{base}/kit.pokeplugin"}))
         assert plugin_updates.check(plugins.discover()) == {}
     finally:
         server.shutdown()
@@ -588,13 +590,13 @@ def test_a_source_lists_plugins_that_install_update_and_stay_when_the_source_goe
     listing = served / plugin_sources.FILE
 
     def publish(version):
-        (source / "plugin.toml").write_text(toml.replace("1.1.0", version))
+        (source / "plugin.toml").write_text(toml.replace(KIT_VERSION, version))
         path = served / f"test-kit-{version}.pokeplugin"
         plugin_store.pack(str(source), str(path), key)
         assert plugin_source.main([str(path), "-o", str(listing), "--name", "Local",
                                    "--download", base + "/{file}"]) == 0
     try:
-        publish("1.1.0")
+        publish(KIT_VERSION)
         assert plugin_sources.followed() == [plugin_sources.BUILT_IN]
         added = plugin_sources.add(base + "/")
         assert (added.url, added.name, [e.id for e in added.entries]) == (f"{base}/{plugin_sources.FILE}", "Local", ["test-kit"])
@@ -613,18 +615,18 @@ def test_a_source_lists_plugins_that_install_update_and_stay_when_the_source_goe
         kit = plugin_store.installed("test-kit")
         assert plugin_store.origin(kit) == added.url and plugin_sources.state(entry, kit) == "installed"
         assert plugin_updates.check(plugins.discover(), [plugin_sources.fetch(added.url)]) == {}
-        publish("1.3.0")
-        publish("1.2.0")       # an older package never replaces a newer listing
+        publish("5.3.0")
+        publish("5.2.0")       # an older package never replaces a newer listing
         fresh = plugin_sources.fetch(added.url)
-        assert [e.version for e in fresh.entries] == ["1.3.0"]
+        assert [e.version for e in fresh.entries] == ["5.3.0"]
         found = plugin_updates.check(plugins.discover(), [fresh])
-        assert (found["test-kit"].version, found["test-kit"].source) == ("1.3.0", added.url)
+        assert (found["test-kit"].version, found["test-kit"].source) == ("5.3.0", added.url)
         update = plugin_store.read(str(plugin_updates.download(found["test-kit"], tmp_path / "dl")))
-        assert (update.version, plugin_store.trust(update)) == ("1.3.0", "same")
+        assert (update.version, plugin_store.trust(update)) == ("5.3.0", "same")
         server.shutdown()
         server.server_close()
         offline = plugin_sources.fetch(added.url)       # the cached listing still shows
-        assert offline.error and [e.version for e in offline.entries] == ["1.3.0"]
+        assert offline.error and [e.version for e in offline.entries] == ["5.3.0"]
         plugin_sources.remove(added.url)
         assert plugin_sources.followed() == [plugin_sources.BUILT_IN]
         assert plugin_store.installed("test-kit") is not None
@@ -830,10 +832,7 @@ def test_the_library_lists_names_and_copies_files_and_survives_the_plugins_remov
     assert library.add(lib, str(source)).name == "old (2).nsp"
     assert sorted(e.name for e in library.entries(lib)) == ["Game 1.2.0.nsp", "old (2).nsp", "old.nsp"]
     assert not [p for p in lib.iterdir() if p.name.startswith(".") and p.name != ".x.part"]   # no copy left half
-    kit = tmp_path / "kit"
-    shutil_copy(KIT, kit)
-    (kit / "plugin.toml").write_text((kit / "plugin.toml").read_text() + 'library = "Kit files"\n')
-    plugin_store.install(plugin_store.pack(str(kit), str(tmp_path / "kit.pokeplugin")))
+    plugin_store.install(plugin_store.pack(str(KIT), str(tmp_path / "kit.pokeplugin")))
     kept = plugins.library_folder("test-kit")
     (kept / "backup.nsp").write_text("hours of work")
     plugin_store.remove("test-kit", data=True)

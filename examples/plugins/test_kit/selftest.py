@@ -14,6 +14,7 @@ def build_parser():
     parser.add_argument("--color", choices=("red", "blue", "green"), default="red")
     parser.add_argument("--loud", action="store_true")
     parser.add_argument("--trainer", default="")
+    parser.add_argument("--keys-file", default="")
     return parser
 
 
@@ -51,8 +52,8 @@ def main():
             f", radio {os.environ.get('POKELDN_RADIO') or 'none'}")
 
     from pokeldn import plugins
-    state, message = plugins.compatibility((1, 1))
-    check("the plugin API serves 1.1", state == "ok", message or f"pokeldn runs {plugins.API_VERSION}.{plugins.API_LEVEL}")
+    state, message = plugins.compatibility((1, 7))
+    check("the plugin API serves 1.7", state == "ok", message or f"pokeldn runs {plugins.API_VERSION}.{plugins.API_LEVEL}")
     state = {p.id: p for p in plugins.load()}.get("test-kit")
     check("this plugin loaded in the run", bool(state and state.loaded and not state.error),
           state.error if state else "not enabled here")
@@ -62,6 +63,7 @@ def main():
     check("arguments arrive", args.word != "" and isinstance(args.number, int),
           f"word={args.word!r} number={args.number} color={args.color} switch={'on' if args.loud else 'off'}")
     check("the trainer name arrives", bool(args.trainer), args.trainer)
+    check("the keys path from Settings arrives", os.path.isabs(args.keys_file), args.keys_file)
     try:
         with tempfile.NamedTemporaryFile(dir=os.getcwd(), prefix="test-kit-"):
             pass
@@ -77,6 +79,17 @@ def main():
         check("its data folder keeps what it writes", True, f"self-test run {count}, kept across updates")
     except (OSError, ValueError) as error:
         check("its data folder keeps what it writes", False, str(error))
+    try:
+        library = plugins.library_folder("test-kit")
+        part = library / "self-test.txt.part"
+        part.write_text("written by the Plugin Test Kit's self-test\n")
+        os.replace(part, library / "self-test.txt")
+        check("its library takes a whole file in place of a partial one", True, str(library))
+    except (OSError, LookupError) as error:
+        check("its library takes a whole file in place of a partial one", False, str(error))
+    from pokeldn.ldn import network, radio_lost
+    check("the LDN network surface is there", callable(network.join) and callable(network.host)
+          and radio_lost() == "")
     try:
         name = radio_check()
         check("the kit's radio installs", name == "KitFactory", name)
