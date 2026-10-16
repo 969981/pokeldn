@@ -86,10 +86,11 @@ class App:
         return self.storage_busy or self.board_busy or bool(self.process and self.process.running)
 
     def plugin_radio(self):
-        """The plugin radio Settings chose (pokeldn.plugins.Radio), or None for the board."""
+        """The selected external radio, or None for the board."""
         if not self.settings.radio:
             return None
-        return plugins.radio(self.settings.radio)
+        from pokeldn.ldn import radios
+        return radios.radio(self.settings.radio)
 
     def radio_port(self, present: list[board.Port] | None = None) -> str:
         """The chosen board if it is plugged in, else the only board present."""
