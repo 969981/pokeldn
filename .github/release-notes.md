@@ -1,16 +1,13 @@
-# pokeldn 0.29.0
+# pokeldn 0.29.1
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- Plugin API 1.8. A plugin's run can leave status cards at the top of its tool's page (a title, an
-  image, labelled values and chips) that stay after the run, and mark each file of its library as
-  checked, failed or being checked, with a line of text and an icon.
-- A plugin's library can be sorted by name, date or size, in either direction; the choice is kept.
-  Names sort naturally, so version numbers come in order. A plugin can set the starting order.
-- The Plugin Test Kit 1.3.0 checks both and leaves its last result as a card.
+- Faster uploads to the board over USB. The app now counts the board's acknowledgment of a frame
+  it is still writing, so it no longer waits about 20 ms every few frames; a sustained upload to an
+  ESP32-S3 went from about 0.3 to 0.5 MB/s. Contributed by capito27.
 
 The radio firmware stays at 1.6.2 and the controller firmware at 1.3.0; no board update is needed.
 
