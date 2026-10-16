@@ -1,3 +1,4 @@
+from pokeldn.app.i18n import t as tr
 import flet as ft
 
 from gui import theme as t
@@ -6,17 +7,17 @@ from pokeldn.sv.raid import REWARD_ROWS
 
 
 TEMPLATES = (
-    ("training", "Training bundle", (1128, 50, 53, 795, 796, 1606)),
-    ("shards", "Tera shard bundle", tuple(range(1862, 1880)) + (2549,)),
-    ("herba", "Herba Mystica bundle", (1904, 1905, 1906, 1907, 1908)),
-    ("treasure", "Treasure bundle", (92, 581, 91, 583)),
-    ("balls", "Ball bundle", (2, 3, 6, 7, 9, 10, 11, 12, 13, 15)),
+    ("training", tr('rewards.training_bundle_514868', 'Training bundle'), (1128, 50, 53, 795, 796, 1606)),
+    ("shards", tr('rewards.tera_shard_bundle_6365de', 'Tera shard bundle'), tuple(range(1862, 1880)) + (2549,)),
+    ("herba", tr('rewards.herba_mystica_bundle_2f20ef', 'Herba Mystica bundle'), (1904, 1905, 1906, 1907, 1908)),
+    ("treasure", tr('rewards.treasure_bundle_c68d29', 'Treasure bundle'), (92, 581, 91, 583)),
+    ("balls", tr('rewards.ball_bundle_5f0879', 'Ball bundle'), (2, 3, 6, 7, 9, 10, 11, 12, 13, 15)),
 )
 TEMPLATE_ITEMS = {key: items for key, _, items in TEMPLATES}
 
 
 def quantity_error(value: str) -> str | None:
-    return None if value.isascii() and value.isdigit() and 1 <= int(value) <= 999 else "1 to 999"
+    return None if value.isascii() and value.isdigit() and 1 <= int(value) <= 999 else tr('rewards.1_to_999_08214e', '1 to 999')
 
 
 class RewardPicker:
@@ -29,20 +30,20 @@ class RewardPicker:
         self.template = self._template_of()
         self.template_quantity = self._template_quantity()
         self.rows = ft.Column(spacing=8)
-        self.templates = t.dropdown([("seed", "Raid's own rewards"), ("custom", "Custom rewards")]
+        self.templates = t.dropdown([("seed", tr('rewards.raid_s_own_rewards_31b68b', "Raid's own rewards")), ("custom", tr('rewards.custom_rewards_2d9083', 'Custom rewards'))]
                                     + [(key, label) for key, label, _ in TEMPLATES], self.template,
                                     on_select=self._choose_template)
         self.quantity = t.field(value=self.template_quantity, mono=True, width=110,
                                 keyboard_type=ft.KeyboardType.NUMBER,
-                                tooltip="Quantity for every item, from 1 to 999",
+                                tooltip=tr('rewards.quantity_for_every_item_from_1_to_999_dc645d', 'Quantity for every item, from 1 to 999'),
                                 on_change=self._set_template_quantity)
-        self.template_quantity_control = t.labeled_control("Quantity each", self.quantity)
+        self.template_quantity_control = t.labeled_control(tr('rewards.quantity_each_e0ea04', 'Quantity each'), self.quantity)
         self.template_controls = ft.Row([
-            t.labeled_control("Template", self.templates, expand=True),
+            t.labeled_control(tr('rewards.template_0575f2', 'Template'), self.templates, expand=True),
             self.template_quantity_control,
         ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.START)
-        self.problem = t.text("Quantities must be from 1 to 999.", 12, t.RED)
-        self.add = t.secondary_button("Add reward", self._add, "plus")
+        self.problem = t.text(tr('rewards.quantities_must_be_from_1_to_999_18998d', 'Quantities must be from 1 to 999.'), 12, t.RED)
+        self.add = t.secondary_button(tr('rewards.add_reward_974066', 'Add reward'), self._add, "plus")
         self.control = ft.Column([self.template_controls, self.problem, self.rows, self.add],
                                  spacing=10, tight=True)
         self._render(update=False)
@@ -125,7 +126,7 @@ class RewardPicker:
                               optional=False).control
             quantity = t.field(value=str(row.get("quantity", "1")), mono=True, width=110,
                                keyboard_type=ft.KeyboardType.NUMBER,
-                               tooltip="Quantity from 1 to 999",
+                               tooltip=tr('rewards.quantity_from_1_to_999_1e5f8e', 'Quantity from 1 to 999'),
                                on_change=lambda event, n=index: self._quantity(event, n))
             t.mark_invalid(quantity, bool(quantity_error(quantity.value)))
             self.quantities.append(quantity)
@@ -133,14 +134,14 @@ class RewardPicker:
                 ft.Container(t.text(str(index + 1), 11, t.BLUE, weight=ft.FontWeight.W_700), width=24, height=24,
                              margin=ft.Margin(0, 25, 0, 0), alignment=ft.Alignment.CENTER, border_radius=12,
                              bgcolor=ft.Colors.with_opacity(0.12, t.BLUE)),
-                t.labeled_control("Item", item, expand=True),
-                t.labeled_control("Quantity", quantity),
-                ft.Container(t.icon_button("close", lambda _e, n=index: self._remove(n), "Remove reward"),
+                t.labeled_control(tr('rewards.item_652bcc', 'Item'), item, expand=True),
+                t.labeled_control(tr('rewards.quantity_822bab', 'Quantity'), quantity),
+                ft.Container(t.icon_button("close", lambda _e, n=index: self._remove(n), tr('rewards.remove_reward_242188', 'Remove reward')),
                              margin=ft.Margin(0, 20, 0, 0)),
             ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.START))
         if not rows:
             rows.append(ft.Row([t.pixel_icon("gift", color=t.FAINT),
-                                t.text("The raid's own rewards, shown with the raid above.", 12, t.MUTED)],
+                                t.text(tr('rewards.the_raid_s_own_rewards_shown_with_the_raid_above_c9a3cd', "The raid's own rewards, shown with the raid above."), 12, t.MUTED)],
                                spacing=8))
         self.rows.controls = rows
         self._show_template()

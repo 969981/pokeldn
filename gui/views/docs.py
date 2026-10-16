@@ -1,3 +1,4 @@
+from pokeldn.app.i18n import t as tr
 import os
 import re
 from dataclasses import dataclass, field
@@ -58,9 +59,9 @@ class DocsView:
                                   expand=True)
         self.control = ft.Row([
             t.panel(ft.Column([
-                t.panel_header("Docs", t.icon_button("external-link",
+                t.panel_header(tr('docs.docs_7af023', 'Docs'), t.icon_button("external-link",
                                                      lambda e: self.app.page.run_task(self.app.open_url, SITE),
-                                                     "Open the docs website")),
+                                                     tr('docs.open_the_docs_website_a6f6df', 'Open the docs website'))),
                 t.fade(self.nav),
             ], spacing=0, expand=True), width=t.SIDEBAR_WIDTH),
             t.surface(t.fade(self.scroll), radius=20, expand=True),
@@ -86,8 +87,8 @@ class DocsView:
             self.control.update()
 
     def render_nav(self) -> None:
-        rows = [self.row("Start here", "guide", 0)]
-        rows.append(ft.Container(t.text("Documentation", 11, t.FAINT, weight=ft.FontWeight.W_600),
+        rows = [self.row(tr('docs.start_here_2adc96', 'Start here'), "guide", 0)]
+        rows.append(ft.Container(t.text(tr('docs.documentation_c20592', 'Documentation'), 11, t.FAINT, weight=ft.FontWeight.W_600),
                                  padding=ft.Padding(10, 14, 8, 4)))
 
         def walk(items, depth):

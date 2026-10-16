@@ -1,5 +1,6 @@
 """The bank: every Pokemon a trade brought in, and the way to trade one into another game
 [pokeldn.app.bank, docs/gui.md, The bank]."""
+from pokeldn.app.i18n import t as tr
 import os
 import threading
 
@@ -46,11 +47,11 @@ class BankView:
         self.note = t.text("", 12, t.MUTED)
         self.control = ft.Row([
             t.panel(ft.Column([
-                t.panel_header("Bank",
-                               t.icon_button("plus", self._pick, "Import a Pokemon file or a game save"),
+                t.panel_header(tr('bank.bank_676c47', 'Bank'),
+                               t.icon_button("plus", self._pick, tr('bank.import_a_pokemon_file_or_a_game_save_da7f8c', 'Import a Pokemon file or a game save')),
                                t.icon_button("folder", lambda e: open_folder(str(self._folder())),
-                                             "Open the bank folder"),
-                               t.icon_button("refresh", lambda e: self.refresh(), "Refresh")),
+                                             tr('bank.open_the_bank_folder_438a67', 'Open the bank folder')),
+                               t.icon_button("refresh", lambda e: self.refresh(), tr('bank.refresh_0e9161', 'Refresh'))),
                 t.fade(self.boxes),
             ], spacing=0, expand=True), width=t.SIDEBAR_WIDTH),
             drop.target(ft.Container(t.fade(ft.ListView(
@@ -58,7 +59,7 @@ class BankView:
                 spacing=12, padding=ft.Padding(0, 0, 0, 24), expand=True)), expand=True, border_radius=16),
                 self._import, expand=True),
             t.panel(ft.Column([
-                t.panel_header("Pokemon"),
+                t.panel_header(tr('bank.pokemon_224642', 'Pokemon')),
                 ft.Container(ft.Column([self.detail, self.note], spacing=8, expand=True),
                              padding=ft.Padding(18, 8, 18, 18), expand=True),
             ], spacing=0, expand=True), width=t.SESSION_WIDTH),
@@ -95,7 +96,7 @@ class BankView:
 
     def render_boxes(self) -> None:
         counts = {key: sum(e.game == key for e in self.items) for key in NAMES}
-        rows = [self._box(ALL, "All Pokemon", len(self.items), t.pixel_icon("package", color=t.MUTED))]
+        rows = [self._box(ALL, tr('bank.all_pokemon_fe268d', 'All Pokemon'), len(self.items), t.pixel_icon("package", color=t.MUTED))]
         rows += [self._box(key, NAMES[key], counts[key], game_icon(key, 28)) for key in NAMES if counts[key]]
         self.boxes.controls = rows
 
@@ -116,10 +117,10 @@ class BankView:
 
     def render_grid(self) -> None:
         shown = [e for e in self.items if self.shown in (ALL, e.game)]
-        where = "in the bank" if self.shown == ALL else f"from {NAMES[self.shown]}"
-        self.heading.value = (f"{len(shown)} Pokemon {where}" if shown else
-                              "The bank is empty. Every Pokemon a trade brings in lands here, from any game."
-                              + (" Drop a Pokemon file or a game save here to import what it holds."
+        where = tr('bank.in_the_bank_f69744', 'in the bank') if self.shown == ALL else tr('bank.from_7f2df4', 'from {value0}', value0=NAMES[self.shown])
+        self.heading.value = (tr('bank.pokemon_3a4d02', '{value0} Pokemon {value1}', value0=len(shown), value1=where) if shown else
+                              tr('bank.the_bank_is_empty_every_pokemon_a_trade_brings_in_lands_e05ff4', 'The bank is empty. Every Pokemon a trade brings in lands here, from any game.')
+                              + (tr('bank.drop_a_pokemon_file_or_a_game_save_here_to_import_what__7adc95', ' Drop a Pokemon file or a game save here to import what it holds.')
                                  if drop.AVAILABLE else ""))
         self.grid.controls = [self._tile(e) for e in shown]
 
@@ -168,17 +169,17 @@ class BankView:
     def render_detail(self) -> None:
         entry = self._entry()
         if entry is None:
-            self.detail.controls = [t.text("Pick a Pokemon to see where it can go.", 13, t.MUTED)]
+            self.detail.controls = [t.text(tr('bank.pick_a_pokemon_to_see_where_it_can_go_3b278b', 'Pick a Pokemon to see where it can go.'), 13, t.MUTED)]
             return
         parts = entry.summary.split(" · ")
         head = 3 if len(parts) > 2 and parts[2] == "shiny" else 2
         about = ft.Column([
             t.text(" · ".join(parts[:head]), 15, weight=ft.FontWeight.W_600),
             t.text(" · ".join(parts[head:]), 12, t.MUTED),
-            ft.Row([game_icon(entry.game), t.text(f"In {NAMES[entry.game]}", 12, t.SOFT)], spacing=6),
-            t.text(f"Banked {entry.when}", 12, t.FAINT),
-            t.badge("Legal", t.GREEN, "checkbox-on") if entry.legal else
-            t.badge("PKHeX finds it not legal", t.AMBER, "warning-diamond"),
+            ft.Row([game_icon(entry.game), t.text(tr('bank.in_bb2233', 'In {value0}', value0=NAMES[entry.game]), 12, t.SOFT)], spacing=6),
+            t.text(tr('bank.banked_faf7b7', 'Banked {value0}', value0=entry.when), 12, t.FAINT),
+            t.badge(tr('bank.legal_4787ea', 'Legal'), t.GREEN, "checkbox-on") if entry.legal else
+            t.badge(tr('bank.pkhex_finds_it_not_legal_58cc49', 'PKHeX finds it not legal'), t.AMBER, "warning-diamond"),
             *([t.badge(warning, t.AMBER, "warning-diamond")]
               if (warning := pokemon.HOME_TRACKER_WARNINGS.get(entry.home_tracker)) else []),
         ], spacing=4, expand=True)
@@ -186,35 +187,34 @@ class BankView:
                            spacing=14, vertical_alignment=ft.CrossAxisAlignment.START)]
         queued = bank.queued(self.app.settings, entry.id)
         if queued:
-            tools = {tool.key: f"{NAMES[g.key]} {tool.name}" for g in GAMES for tool in g.tools}
-            controls.append(t.section("Waiting to trade", ft.Column([
-                t.text(f"Queued in {', '.join(tools.get(k, k) for k in queued)}. It leaves the bank when "
-                       "that trade completes.", 12, t.MUTED),
-                ft.Row([t.secondary_button("Open the trade", lambda e: self._open(queued[0]), "play"),
-                        t.secondary_button("Take it out", lambda e: self._dequeue(entry), "close")],
+            tools = {tool.key: tr('bank._54ef3b', '{value0} {value1}', value0=NAMES[g.key], value1=tool.name) for g in GAMES for tool in g.tools}
+            controls.append(t.section(tr('bank.waiting_to_trade_4a46c7', 'Waiting to trade'), ft.Column([
+                t.text(tr('bank.queued_in_it_leaves_the_bank_when_that_trade_completes_e6f058', 'Queued in {value0}. It leaves the bank when that trade completes.', value0=', '.join((tools.get(k, k) for k in queued))), 12, t.MUTED),
+                ft.Row([t.secondary_button(tr('bank.open_the_trade_fdac5d', 'Open the trade'), lambda e: self._open(queued[0]), "play"),
+                        t.secondary_button(tr('bank.take_it_out_5a1e31', 'Take it out'), lambda e: self._dequeue(entry), "close")],
                        spacing=8, wrap=True),
             ], spacing=10)))
         else:
-            controls.append(t.section("Send it to a game", self._routes(entry)))
+            controls.append(t.section(tr('bank.send_it_to_a_game_da82fb', 'Send it to a game'), self._routes(entry)))
         controls.append(ft.Row([
-            *([] if queued else [t.secondary_button("Edit", lambda e: self._edit(entry), "edit")]),
-            t.secondary_button("Export", lambda e: self.app.page.run_task(self._export, entry), "upload"),
-            t.secondary_button("Remove", lambda e: self._remove(entry), "trash"),
+            *([] if queued else [t.secondary_button(tr('bank.edit_464c4f', 'Edit'), lambda e: self._edit(entry), "edit")]),
+            t.secondary_button(tr('bank.export_366489', 'Export'), lambda e: self.app.page.run_task(self._export, entry), "upload"),
+            t.secondary_button(tr('bank.remove_c3812f', 'Remove'), lambda e: self._remove(entry), "trash"),
         ], spacing=8, wrap=True))
         self.detail.controls = controls
 
     def _routes(self, entry: bank.Entry) -> ft.Control:
         routes = self.routes.get(entry.id)
         if routes is None:
-            return t.badge("PKHeX is checking each game...", t.BLUE, "refresh")
+            return t.badge(tr('bank.pkhex_is_checking_each_game_8c9f63', 'PKHeX is checking each game...'), t.BLUE, "refresh")
         rows = []
         for key in NAMES:
             route = routes.get(key, {"ok": False, "reason": ""})
             ok, chosen = route["ok"], key == self.target
             lines = route["reason"].split("\n")
             warning = pokemon.HOME_TRACKER_WARNINGS.get(route.get("home_tracker", "")) if ok else None
-            why = lines[0] + (f" (+{len(lines) - 1} more)" if len(lines) > 1 else "") if not ok else (
-                "Its own game" if key == entry.game else warning or "Moves as HOME would move it")
+            why = lines[0] + (tr('bank.more_86f3b0', ' (+{value0} more)', value0=len(lines) - 1) if len(lines) > 1 else "") if not ok else (
+                tr('bank.its_own_game_6e5aee', 'Its own game') if key == entry.game else warning or tr('bank.moves_as_home_would_move_it_5731e1', 'Moves as HOME would move it'))
             rows.append(ft.Container(ft.Row([
                 game_icon(key, 24),
                 ft.Column([t.text(NAMES[key], 13, t.TEXT if ok else t.FAINT, weight=ft.FontWeight.W_600),
@@ -230,7 +230,7 @@ class BankView:
                                 "arrows-horizontal", filled=n == 0, disabled=self.working,
                                 tooltip=tool_role(tool))
                        for n, (tool, field) in enumerate(trade_tools(self.target))]
-            body.append(t.text(f"Queue it for a {NAMES[self.target]} trade:", 12, t.MUTED))
+            body.append(t.text(tr('bank.queue_it_for_a_trade_a3f68e', 'Queue it for a {value0} trade:', value0=NAMES[self.target]), 12, t.MUTED))
             body.append(ft.Row(buttons, spacing=8, wrap=True))
         return ft.Column(body, spacing=10)
 
@@ -241,7 +241,7 @@ class BankView:
 
     def _send(self, entry: bank.Entry, tool, field) -> None:
         self.working = True
-        self._say(f"Moving it to {NAMES[self.target]}...", t.BLUE)
+        self._say(tr('bank.moving_it_to_38b799', 'Moving it to {value0}...', value0=NAMES[self.target]), t.BLUE)
         self.render_detail()
         self.detail.update()
         game = self.target
@@ -275,7 +275,7 @@ class BankView:
         self.control.update()
 
     def _edit(self, entry: bank.Entry) -> None:
-        self._say("Reading it...", t.BLUE)
+        self._say(tr('bank.reading_it_dda821', 'Reading it...'), t.BLUE)
 
         def work():
             try:
@@ -297,11 +297,11 @@ class BankView:
         self.routes.pop(entry.id, None)
         self.refresh()
         self.select(entry.id)
-        self._say("Saved. PKHeX checks again where it can go.", t.MUTED)
+        self._say(tr('bank.saved_pkhex_checks_again_where_it_can_go_e19eb7', 'Saved. PKHeX checks again where it can go.'), t.MUTED)
 
     async def _export(self, entry: bank.Entry) -> None:
         extension = os.path.splitext(entry.path)[1][1:]
-        path = await self.app.picker.save_file(dialog_title="Export Pokemon", file_name=os.path.basename(entry.path),
+        path = await self.app.picker.save_file(dialog_title=tr('bank.export_pokemon_0cfbf8', 'Export Pokemon'), file_name=os.path.basename(entry.path),
                                                file_type=ft.FilePickerFileType.CUSTOM,
                                                allowed_extensions=[extension])
         if not path:
@@ -310,7 +310,7 @@ class BankView:
         try:
             with open(path, "wb") as out:
                 out.write(bank.data(entry))
-            self._say(f"Exported to {path}", t.MUTED)
+            self._say(tr('bank.exported_to_58eb1e', 'Exported to {value0}', value0=path), t.MUTED)
         except OSError as error:
             self._say(str(error), t.RED)
 
@@ -322,16 +322,15 @@ class BankView:
             self.refresh()
 
         self.app.page.show_dialog(t.dialog(
-            title=t.text("Remove this Pokemon?", 18),
-            content=t.text(f"{entry.summary.split(' · ')[0]} is deleted from the bank on this computer. "
-                           "Export it first to keep a file.", 13, t.MUTED, width=380),
-            actions=[t.button("Cancel", lambda e: self.app.page.pop_dialog(), filled=False),
-                     t.button("Remove", done, color=t.RED)]))
+            title=t.text(tr('bank.remove_this_pokemon_81b928', 'Remove this Pokemon?'), 18),
+            content=t.text(tr('bank.is_deleted_from_the_bank_on_this_computer_export_it_fir_c61b92', '{value0} is deleted from the bank on this computer. Export it first to keep a file.', value0=entry.summary.split(' · ')[0]), 13, t.MUTED, width=380),
+            actions=[t.button(tr('bank.cancel_19766e', 'Cancel'), lambda e: self.app.page.pop_dialog(), filled=False),
+                     t.button(tr('bank.remove_c3812f', 'Remove'), done, color=t.RED)]))
 
     # Importing
 
     async def _pick(self, e) -> None:
-        files = await self.app.picker.pick_files(dialog_title="Import Pokemon", allow_multiple=True)
+        files = await self.app.picker.pick_files(dialog_title=tr('bank.import_pokemon_eed048', 'Import Pokemon'), allow_multiple=True)
         self._import([file.path for file in files or () if file.path])
 
     def _import(self, paths: list[str]) -> None:
@@ -345,12 +344,12 @@ class BankView:
             done, failed = [], []
             for n, path in enumerate(paths, 1):
                 self.app.ui(lambda n=n, path=path: self._say(
-                    f"Reading {os.path.basename(path)}" + (f" ({n} of {len(paths)})" if len(paths) > 1 else "")
+                    tr('bank.reading_f1029d', 'Reading {value0}', value0=os.path.basename(path)) + (tr('bank.of_91ec22', ' ({value0} of {value1})', value0=n, value1=len(paths)) if len(paths) > 1 else "")
                     + "...", t.BLUE))
                 try:
                     done.append(bank.import_file(path, trainers))
                 except (OSError, pokemon.BuilderError) as error:
-                    failed.append(f"{os.path.basename(path)}: {error}")
+                    failed.append(tr('bank._6a7768', '{value0}: {value1}', value0=os.path.basename(path), value1=error))
 
             def finish():
                 self.working = False
@@ -371,28 +370,28 @@ class BankView:
 class ImportDialog:
     """One row per Pokemon found, grouped by file: its sprite, where it was, and whether it was banked."""
 
-    STATES = {"banked": ("Banked", "check", t.GREEN), "already": ("Already in the bank", "copy", t.MUTED),
-              "refused": ("Not imported", "warning-diamond", t.AMBER)}
+    STATES = {"banked": (tr('bank.banked_c89116', 'Banked'), "check", t.GREEN), "already": (tr('bank.already_in_the_bank_0dd815', 'Already in the bank'), "copy", t.MUTED),
+              "refused": (tr('bank.not_imported_a37f7e', 'Not imported'), "warning-diamond", t.AMBER)}
 
     def __init__(self, app, done: list[bank.Imported], failed: list[str]):
         self.app = app
         counts = {state: sum(r.count(state) for r in done) for state in self.STATES}
-        summary = [t.chip(f"{counts[s]} {label.lower()}", icon, color)
+        summary = [t.chip(tr('bank._54ef3b', '{value0} {value1}', value0=counts[s], value1=label.lower()), icon, color)
                    for s, (label, icon, color) in self.STATES.items() if counts[s] and s != "banked"]
         if failed:
-            summary.append(t.chip(f"{len(failed)} file{'s' if len(failed) > 1 else ''} unreadable", "close", t.RED))
+            summary.append(t.chip(tr('bank.file_unreadable_0fd8f4', '{value0} file{value1} unreadable', value0=len(failed), value1='s' if len(failed) > 1 else ''), "close", t.RED))
         groups: list[ft.Control] = [self._file(result) for result in done]
         groups += [self._unreadable(line) for line in failed]
         self.dialog = t.dialog(
-            title=t.text(f"{counts['banked']} Pokemon banked" if counts["banked"] else "Nothing new to bank", 18),
+            title=t.text(tr('bank.pokemon_banked_b85a56', '{value0} Pokemon banked', value0=counts['banked']) if counts["banked"] else tr('bank.nothing_new_to_bank_566ae1', 'Nothing new to bank'), 18),
             content=ft.Column([
                 *([ft.Row(summary, spacing=6, wrap=True, run_spacing=6)] if summary else []),
                 ft.Column(groups, spacing=18, scroll=ft.ScrollMode.AUTO, tight=True,
                           horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
                           height=None if sum(len(r.pokemon) for r in done) + len(failed) < 6 else 440),
-                t.text("PKHeX checks every Pokemon. Your files are not changed.", 12, t.FAINT),
+                t.text(tr('bank.pkhex_checks_every_pokemon_your_files_are_not_changed_da3f29', 'PKHeX checks every Pokemon. Your files are not changed.'), 12, t.FAINT),
             ], spacing=16, tight=True, width=520),
-            actions=[t.button("Close", lambda e: app.page.pop_dialog())])
+            actions=[t.button(tr('bank.close_7d9eb7', 'Close'), lambda e: app.page.pop_dialog())])
 
     def show(self) -> None:
         self.app.page.show_dialog(self.dialog)
@@ -404,21 +403,21 @@ class ImportDialog:
                        t.text(result.save.replace(", ", " · "), 12, t.FAINT)],
                       spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER)
         rows = [self._pokemon(p) for p in result.pokemon] or [
-            ft.Container(t.text("No Pokemon in this file.", 12, t.MUTED), padding=12)]
+            ft.Container(t.text(tr('bank.no_pokemon_in_this_file_bf95cd', 'No Pokemon in this file.'), 12, t.MUTED), padding=12)]
         return ft.Column([head, ft.Container(ft.Column(rows, spacing=2), bgcolor=t.CARD, border_radius=14,
                                              padding=ft.Padding(6, 6, 12, 6))], spacing=8, tight=True,
                          horizontal_alignment=ft.CrossAxisAlignment.STRETCH)
 
     def _pokemon(self, found: bank.ImportedPokemon) -> ft.Control:
         label, icon, color = self.STATES[found.state]
-        about = [t.text(found.species or "Unknown Pokemon", 13, t.TEXT if found.state != "refused" else t.SOFT,
+        about = [t.text(found.species or tr('bank.unknown_pokemon_40e13e', 'Unknown Pokemon'), 13, t.TEXT if found.state != "refused" else t.SOFT,
                         weight=ft.FontWeight.W_600)]
         if found.where:
             about.append(t.text(found.where, 11, t.FAINT))
         if found.detail:
             about.append(t.text(found.detail, 11, t.AMBER if found.state == "refused" else t.MUTED,
                                 max_lines=2, overflow=ft.TextOverflow.ELLIPSIS, tooltip=found.detail))
-        status = [ft.Container(game_icon(found.game, 18), tooltip=f"Kept as a {NAMES[found.game]} Pokemon")
+        status = [ft.Container(game_icon(found.game, 18), tooltip=tr('bank.kept_as_a_pokemon_8c187f', 'Kept as a {value0} Pokemon', value0=NAMES[found.game]))
                   ] if found.game and found.state != "refused" else []
         status.append(t.chip(label, icon, color))
         return ft.Container(ft.Row([
@@ -450,28 +449,27 @@ class EditDialog:
         self.nickname = t.field(value=info["nickname"], hint=info["species"], expand=True,
                                 limit=10 if entry.game == "frlg" else 12)
         self.level = t.field(value=str(info["level"]), mono=True, width=90, digits=True, limit=3)
-        move_options = [(NONE, "None")] + [(str(n["id"]), n["name"]) for n in moves]
+        move_options = [(NONE, tr('bank.none_dc937b', 'None'))] + [(str(n["id"]), n["name"]) for n in moves]
         known = (list(info["move_ids"]) + [0] * 4)[:4]
         self.moves = [t.dropdown(move_options, str(m) if m else NONE, enable_filter=True, editable=True,
                                  menu_height=320) for m in known]
-        self.item = t.dropdown([(NONE, "Nothing")] + [(str(n["id"]), n["name"]) for n in items],
+        self.item = t.dropdown([(NONE, tr('bank.nothing_67e1bc', 'Nothing'))] + [(str(n["id"]), n["name"]) for n in items],
                                str(info["held_item_id"]) if info["held_item_id"] else NONE,
                                enable_filter=True, editable=True, menu_height=320)
         self.message = t.text("", 12, t.MUTED)
-        self.save = t.button("Save", self._save, "save")
+        self.save = t.button(tr('bank.save_1509f5', 'Save'), self._save, "save")
         self.dialog = t.dialog(
-            title=t.text(f"Edit {info['species']}", 18),
+            title=t.text(tr('bank.edit_44b87f', 'Edit {value0}', value0=info['species']), 18),
             content=ft.Column([
-                ft.Row([t.labeled_control("Nickname", self.nickname, expand=True),
-                        t.labeled_control("Level", self.level)], spacing=10),
-                t.labeled_control("Moves", ft.Column([ft.Row(self.moves[:2], spacing=6),
+                ft.Row([t.labeled_control(tr('bank.nickname_d720f6', 'Nickname'), self.nickname, expand=True),
+                        t.labeled_control(tr('bank.level_170930', 'Level'), self.level)], spacing=10),
+                t.labeled_control(tr('bank.moves_26c84a', 'Moves'), ft.Column([ft.Row(self.moves[:2], spacing=6),
                                                       ft.Row(self.moves[2:], spacing=6)], spacing=6)),
-                t.labeled_control("Held item", self.item),
-                t.text("Only what the game itself lets a player change. PKHeX checks every edit; one that "
-                       "would make it not legal is refused.", 12, t.FAINT),
+                t.labeled_control(tr('bank.held_item_6af4a4', 'Held item'), self.item),
+                t.text(tr('bank.only_what_the_game_itself_lets_a_player_change_pkhex_ch_363411', 'Only what the game itself lets a player change. PKHeX checks every edit; one that would make it not legal is refused.'), 12, t.FAINT),
                 self.message,
             ], spacing=14, tight=True, width=420),
-            actions=[t.button("Cancel", lambda e: view.app.page.pop_dialog(), filled=False), self.save])
+            actions=[t.button(tr('bank.cancel_19766e', 'Cancel'), lambda e: view.app.page.pop_dialog(), filled=False), self.save])
 
     def show(self) -> None:
         self.view.app.page.show_dialog(self.dialog)
@@ -483,14 +481,14 @@ class EditDialog:
             fields["nickname"] = nickname
         level = self.level.value.strip()
         if not level.isdigit() or not info["level"] <= int(level) <= 100:
-            return f"The level goes from {info['level']} to 100."
+            return tr('bank.the_level_goes_from_to_100_f53f78', 'The level goes from {value0} to 100.', value0=info['level'])
         if int(level) != info["level"]:
             fields["level"] = int(level)
         moves = [int(box.value) for box in self.moves if box.value and box.value != NONE]
         if not moves:
-            return "It needs at least one move."
+            return tr('bank.it_needs_at_least_one_move_7a18ff', 'It needs at least one move.')
         if len(set(moves)) < len(moves):
-            return "A move appears twice."
+            return tr('bank.a_move_appears_twice_d477e7', 'A move appears twice.')
         if moves != list(info["move_ids"]):
             fields["moves"] = moves
         item = 0 if self.item.value in (None, NONE) else int(self.item.value)
@@ -511,7 +509,7 @@ class EditDialog:
             self.view.app.page.pop_dialog()
             return
         self.save.disabled = True
-        self._say("PKHeX is checking it...", t.BLUE)
+        self._say(tr('bank.pkhex_is_checking_it_e51442', 'PKHeX is checking it...'), t.BLUE)
 
         def work():
             try:
@@ -523,7 +521,7 @@ class EditDialog:
             def done():
                 if problem:
                     self.save.disabled = False
-                    self._say(f"Not saved: {problem}", t.RED)
+                    self._say(tr('bank.not_saved_0c5892', 'Not saved: {value0}', value0=problem), t.RED)
                     return
                 self.view.app.page.pop_dialog()
                 self.view.edited(self.entry)

@@ -59,6 +59,15 @@ a Settings shortcut where Android supports it. The flow presents the relevant ne
 keeps setup progress visible. Developer tooling such as ADB and wireless debugging remains
 separate from user setup.
 
+## App language
+
+Settings, App language lists English and installed community language packs. Choosing a pack enables
+it; restart the app to apply the choice. Missing strings fall back to English. Trainer language
+controls built Pokemon separately. [Language packs](plugins.md#language-packs-15) describes the
+package format and translator template. The desktop app ships English defaults only. The bundled [Noto Sans CJK SC](https://github.com/notofonts/noto-cjk/tree/main/Sans/OTF/SimplifiedChinese) fallback font
+covers Chinese, Japanese and Korean text offline; its SIL Open Font License is in
+`gui/assets/fonts/LICENSE`.
+
 ## Your trainer
 
 Settings, Your trainer is the original trainer of every Pokemon the app builds: a name, a gender, a

@@ -2,6 +2,7 @@
 pool's trainers for each slot the consoles joining leave empty, in slot order (pokeldn.sv.raid_partners);
 the host draws a partner seed that seats them when it starts, and draws a partner left unpicked as the
 game does. Folding only hides the card: the choice goes to the raid."""
+from pokeldn.app.i18n import t as tr
 
 import flet as ft
 
@@ -16,7 +17,7 @@ COLUMNS = 3
 CARD_WIDTH = 150
 GAP = 8
 REASON_HEIGHT = 48                          # two 11 px lines at the theme's 1.4 line height, padded
-RANKS = {1: (t.AMBER, "Favoured by raiders"), 2: (t.SILVER, "Next tier for raiders")}
+RANKS = {1: (t.AMBER, tr('raid_partners.favoured_by_raiders_ebd6ac', 'Favoured by raiders')), 2: (t.SILVER, tr('raid_partners.next_tier_for_raiders_4c1d2f', 'Next tier for raiders'))}
 
 
 def columns(width: float) -> int:
@@ -62,7 +63,7 @@ class RaidPartnersPicker:
                                 overflow=ft.TextOverflow.ELLIPSIS), expand=True,
                          alignment=ft.Alignment.CENTER_RIGHT),
         ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER), on_click=self._toggle,
-            tooltip="Show or hide the raid's partners")
+            tooltip=tr('raid_partners.show_or_hide_the_raid_s_partners_2e7cda', "Show or hide the raid's partners"))
         self.body = ft.Column([], spacing=10, visible=self.open)
         if self.open:
             self.body.controls = self._body()
@@ -71,35 +72,32 @@ class RaidPartnersPicker:
 
     def _summary(self) -> str:
         labels = dict(next(f for f in self.view.tool.fields if f.key == "--raid-progress").choices)
-        stage = f" · {labels.get(self.value['progress'], '')}" if self.value.get("progress") else ""
+        stage = tr('raid_partners._940234', ' · {value0}', value0=labels.get(self.value['progress'], '')) if self.value.get("progress") else ""
         if not self.free:
-            return f"None, {self.consoles} consoles fill the slots"
+            return tr('raid_partners.none_consoles_fill_the_slots_5b1d52', 'None, {value0} consoles fill the slots', value0=self.consoles)
         if not self.picks:
-            return f"Drawn as the game draws them{stage}"
+            return tr('raid_partners.drawn_as_the_game_draws_them_83bcc1', 'Drawn as the game draws them{value0}', value0=stage)
         names = ", ".join(self.picks)
-        return (names if len(self.picks) == self.free else f"{names}, one drawn") + stage
+        return (names if len(self.picks) == self.free else tr('raid_partners.one_drawn_5e7b66', '{value0}, one drawn', value0=names)) + stage
 
     def _body(self) -> list[ft.Control]:
         labels = dict(next(f for f in self.view.tool.fields if f.key == "--raid-progress").choices)
-        options = [(key, labels.get(key, key) + (" (story progress)" if n == self.default else ""))
+        options = [(key, labels.get(key, key) + (tr('raid_partners.story_progress_8ce859', ' (story progress)') if n == self.default else ""))
                    for n, key in enumerate(raid_partners.STAGES)]
         progress = t.dropdown(options, raid_partners.STAGES[self.stage], on_select=self._progress)
-        lead = (f"Level {self.level} partners, four fifths of Our Pokemon's level {self.host}."
-                if self.level else "Partners take four fifths of Our Pokemon's level.")
+        lead = (tr('raid_partners.level_partners_four_fifths_of_our_pokemon_s_level_3d0f9c', "Level {value0} partners, four fifths of Our Pokemon's level {value1}.", value0=self.level, value1=self.host)
+                if self.level else tr('raid_partners.partners_take_four_fifths_of_our_pokemon_s_level_f0d679', "Partners take four fifths of Our Pokemon's level."))
         if not self.free:
-            note = (f"{lead} With {self.consoles} consoles joining no slot is left empty: a partner "
-                    "takes the slot of a console that does not join.")
+            note = (tr('raid_partners.with_consoles_joining_no_slot_is_left_empty_a_partner_t_9fbd0c', '{value0} With {value1} consoles joining no slot is left empty: a partner takes the slot of a console that does not join.', value0=lead, value1=self.consoles))
         elif self.free == 1:
-            note = (f"{lead} Pick one for the slot the consoles leave empty, or leave it to be drawn "
-                    "when the host starts.")
+            note = (tr('raid_partners.pick_one_for_the_slot_the_consoles_leave_empty_or_leave_44312f', '{value0} Pick one for the slot the consoles leave empty, or leave it to be drawn when the host starts.', value0=lead))
         else:
-            note = (f"{lead} Pick up to two, in the order they take the empty slots; a partner you "
-                    "leave is drawn when the host starts.")
+            note = (tr('raid_partners.pick_up_to_two_in_the_order_they_take_the_empty_slots_a_b946f1', '{value0} Pick up to two, in the order they take the empty slots; a partner you leave is drawn when the host starts.', value0=lead))
         # The cards' width sets how many stand to a row.
         cards = ft.Container(ft.Column(self._rows(), spacing=GAP), size_change_interval=100,
                              on_size_change=self._spread)
         return [t.text(self.field.help, 12, t.MUTED),
-                t.labeled_control("Partners' progress", progress),
+                t.labeled_control(tr('raid_partners.partners_progress_b4087b', "Partners' progress"), progress),
                 t.text(note, 12, t.MUTED),
                 cards]
 
@@ -130,7 +128,7 @@ class RaidPartnersPicker:
                       spacing=0, expand=True),
             order,
         ], spacing=10, vertical_alignment=ft.CrossAxisAlignment.CENTER)
-        facts = ft.Row([t.chip(f"Lv. {self.level}" if self.level else "Lv. —"),
+        facts = ft.Row([t.chip(tr('raid_partners.lv_1b4f67', 'Lv. {value0}', value0=self.level) if self.level else tr('raid_partners.lv_3e543b', 'Lv. —')),
                         t.chip(partner.tera, "diamond-gem", t.FAINT)], spacing=6, tight=True)
         # Every partner has three moves, one to a line, so every card of a pool stands as tall.
         moves = ft.Column([t.text(partner.ability, 12, t.SOFT, weight=ft.FontWeight.W_500, max_lines=1,
@@ -150,7 +148,7 @@ class RaidPartnersPicker:
                                  expand=True),
                 ], spacing=6, vertical_alignment=ft.CrossAxisAlignment.START),
                     height=REASON_HEIGHT, padding=ft.Padding(8, 6, 8, 6), border_radius=8,
-                    bgcolor=ft.Colors.with_opacity(0.10, ink), tooltip=f"{tier}: {partner.detail}.")
+                    bgcolor=ft.Colors.with_opacity(0.10, ink), tooltip=tr('raid_partners._bbee01', '{value0}: {value1}.', value0=tier, value1=partner.detail))
             column.append(strip)
         return ft.Container(
             ft.Column(column, spacing=8, horizontal_alignment=ft.CrossAxisAlignment.STRETCH), expand=True,
@@ -159,7 +157,7 @@ class RaidPartnersPicker:
             border=ft.Border.all(1, t.BLUE if picked else t.OUTLINE),
             opacity=0.45 if full and not picked else 1.0,
             on_click=None if full and not picked else (lambda _e, name=partner.trainer: self._pick(name)),
-            tooltip=None if full and not picked else ("Leave to the draw" if picked else "Seat this partner"))
+            tooltip=None if full and not picked else (tr('raid_partners.leave_to_the_draw_667226', 'Leave to the draw') if picked else tr('raid_partners.seat_this_partner_affeab', 'Seat this partner')))
 
     # Changes
 

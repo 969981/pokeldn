@@ -1,3 +1,4 @@
+from pokeldn.app.i18n import t as tr
 import threading
 from pathlib import Path
 
@@ -10,7 +11,7 @@ from gui import drop, theme as t
 from gui.views.sprites import EDGE, MINI, SIZE as SPRITE_SIZE, Sprite
 from gui.views.widgets import PixelActivity
 
-VERSIONS = {"firered": "FR", "leafgreen": "LG"}
+VERSIONS = {"firered": tr('pokemon.fr_501c26', 'FR'), "leafgreen": tr('pokemon.lg_b870b7', 'LG')}
 ROW_GAP = SPRITE_SIZE + 2 * EDGE - 2 * t.CONTROL_HEIGHT   # the species and nickname boxes and the gap match the tile
 
 
@@ -34,24 +35,24 @@ class PokemonPicker:
         self.on_team, self.on_more = on_team, on_more
         self.value = dict(value or {})
         self.species = t.dropdown([], None, on_select=self._pick, enable_filter=True, editable=True,
-                                  menu_height=320, hint_text="Loading species...", disabled=True)
-        self.species.trailing_icon = PixelActivity("Loading species")
-        self.level = t.field(value=str(self.value.get("level") or ""), hint="auto", mono=True, width=90,
+                                  menu_height=320, hint_text=tr('pokemon.loading_species_ef998d', 'Loading species...'), disabled=True)
+        self.species.trailing_icon = PixelActivity(tr('pokemon.loading_species_90a6a5', 'Loading species'))
+        self.level = t.field(value=str(self.value.get("level") or ""), hint=tr("pokemon.level_auto", "auto"), mono=True, width=90,
                              digits=True, limit=3,
                              on_change=lambda e: self._set("level", e.control.value))
         self.sprite = Sprite(app, int(self.value.get("species") or 0), bool(self.value.get("shiny")),
                              form=int(self.value.get("options", {}).get("form") or 0))
         self.shiny = t.switch(bool(self.value.get("shiny")), self._shiny)
-        self.nickname = t.field(value=self.value.get("nickname", ""), hint="Nickname (optional)", expand=True,
+        self.nickname = t.field(value=self.value.get("nickname", ""), hint=tr('pokemon.nickname_optional_7cbcb9', 'Nickname (optional)'), expand=True,
                                 limit=10 if game == "frlg" else 12,
                                 on_change=lambda e: self._set("nickname", e.control.value))
-        self.build_button = t.button("Build", self._build, disabled=True)
+        self.build_button = t.button(tr('pokemon.build_bdd254', 'Build'), self._build, disabled=True)
         self.options = OfferOptions(self)
         self.result = ft.Container()
         form = pokemon_header(self.sprite.control, [
-            ft.Row([t.labeled_control("Species", self.species, expand=True),
-                    t.labeled_control("Level", self.level),
-                    t.labeled_control("Shiny", ft.Container(
+            ft.Row([t.labeled_control(tr('pokemon.species_56205e', 'Species'), self.species, expand=True),
+                    t.labeled_control(tr('pokemon.level_170930', 'Level'), self.level),
+                    t.labeled_control(tr('pokemon.shiny_039a0a', 'Shiny'), ft.Container(
                         self.shiny, width=64, height=t.CONTROL_HEIGHT,
                         alignment=ft.Alignment.CENTER))],
                    spacing=10, vertical_alignment=ft.CrossAxisAlignment.START),
@@ -62,9 +63,9 @@ class PokemonPicker:
             form,
             self.options.control,
             self.result,
-            ft.Row([t.secondary_button("Or use a Pokemon file", self._use_file, "file"),
-                    t.secondary_button("Import paste", self._paste, "bulletlist"),
-                    *([t.text("or drop either here", 12, t.FAINT)] if drop.AVAILABLE else [])],
+            ft.Row([t.secondary_button(tr('pokemon.or_use_a_pokemon_file_26272a', 'Or use a Pokemon file'), self._use_file, "file"),
+                    t.secondary_button(tr('pokemon.import_paste_1632a4', 'Import paste'), self._paste, "bulletlist"),
+                    *([t.text(tr('pokemon.or_drop_either_here_a8b5ba', 'or drop either here'), 12, t.FAINT)] if drop.AVAILABLE else [])],
                    spacing=10, wrap=True, vertical_alignment=ft.CrossAxisAlignment.CENTER),
         ], spacing=10), border_radius=12)
         self.control = drop.target(self.body, self._dropped, glow=glow or self.body)
@@ -100,19 +101,19 @@ class PokemonPicker:
         def show():
             self.species.trailing_icon = t.pixel_icon("chevron-down", color=t.MUTED)
             if error:
-                self.species.hint_text = "Unavailable"
+                self.species.hint_text = tr('pokemon.unavailable_ca1844', 'Unavailable')
                 self._message(error, t.RED)
             else:
                 self.species.options = [ft.DropdownOption(key=str(s["id"]), text=s["name"]) for s in species]
                 self.species.value = str(self.value["species"]) if self.value.get("species") else None
-                self.species.hint_text = "Search a species"
+                self.species.hint_text = tr('pokemon.search_a_species_1ea995', 'Search a species')
                 self.species.disabled = self.build_button.disabled = False
             self.control.update()
         self.app.ui(show)
 
     def _build(self, e) -> None:
         if not self.value.get("species"):
-            self._message("Pick a species first.", t.RED)
+            self._message(tr('pokemon.pick_a_species_first_48ebb5', 'Pick a species first.'), t.RED)
             self.control.update()
             return
         if problem := self.options.problem():
@@ -120,7 +121,7 @@ class PokemonPicker:
             self.control.update()
             return
         self.build_button.disabled = True
-        self._message("Finding a legal encounter...", t.MUTED, busy=True)
+        self._message(tr('pokemon.finding_a_legal_encounter_952e05', 'Finding a legal encounter...'), t.MUTED, busy=True)
         self.control.update()
         try:
             level = int(self.value.get("level") or 0)
@@ -159,7 +160,7 @@ class PokemonPicker:
             if self.on_more:
                 self.on_more(paths[1:])
             else:
-                self.result.content = t.text(f"{len(paths)} files dropped; the first was used.", 12, t.AMBER)
+                self.result.content = t.text(tr('pokemon.files_dropped_the_first_was_used_7bb796', '{value0} files dropped; the first was used.', value0=len(paths)), 12, t.AMBER)
                 self.control.update()
 
     def load(self, path: str) -> None:
@@ -168,7 +169,7 @@ class PokemonPicker:
             try:
                 text = Path(path).read_text(encoding="utf-8", errors="replace")
             except OSError as exc:
-                self._message(f"Could not read {Path(path).name}: {exc}", t.RED)
+                self._message(tr('pokemon.could_not_read_ff2a4f', 'Could not read {value0}: {value1}', value0=Path(path).name, value1=exc), t.RED)
                 self.control.update()
                 return
             self._paste(None, text)
@@ -176,7 +177,7 @@ class PokemonPicker:
         try:
             info = builder.SERVICE.import_file(self.game, path)
         except Exception as exc:
-            self._message(f"Not a Pokemon this game can take: {exc}", t.RED)
+            self._message(tr('pokemon.not_a_pokemon_this_game_can_take_cbe79a', 'Not a Pokemon this game can take: {value0}', value0=exc), t.RED)
             self.control.update()
             return
         self.value.update(file=info["file"], summary=builder.summary(info), legal=info["legal"],
@@ -198,10 +199,9 @@ class PokemonPicker:
         """A Showdown or Smogon set fills the form; Build then makes it. In a queue a team fills the trades
         after this one; anywhere else a team gives its first set. A `text` given is read at once."""
         editor = t.field(value=text, multiline=True, min_lines=12, max_lines=18, mono=True, autofocus=True,
-                         hint="Garchomp @ Choice Scarf\nAbility: Rough Skin\nEVs: 252 Atk / 4 SpD / 252 Spe\n"
-                              "Jolly Nature\n- Earthquake\n- Outrage")
+                         hint=tr('pokemon.garchomp_choice_scarf_ability_rough_skin_evs_252_atk_4__556d7f', 'Garchomp @ Choice Scarf\nAbility: Rough Skin\nEVs: 252 Atk / 4 SpD / 252 Spe\nJolly Nature\n- Earthquake\n- Outrage'))
         status = ft.Container()
-        apply = t.button("Apply", None)
+        apply = t.button(tr('pokemon.apply_31e392', 'Apply'), None)
 
         def close(_=None):
             self.app.page.pop_dialog()
@@ -212,11 +212,11 @@ class PokemonPicker:
         def submit(_):
             text = editor.value or ""
             if not text.strip():
-                show(["Paste a set first."], t.RED)
+                show([tr('pokemon.paste_a_set_first_f319b6', 'Paste a set first.')], t.RED)
                 status.update()
                 return
             apply.disabled = True
-            status.content = ft.Row([PixelActivity("Reading the set"), t.text("Reading the set...", 12, t.MUTED)],
+            status.content = ft.Row([PixelActivity(tr('pokemon.reading_the_set_87cd8c', 'Reading the set')), t.text(tr('pokemon.reading_the_set_43964b', 'Reading the set...'), 12, t.MUTED)],
                                     spacing=8)
             status.update()
             apply.update()
@@ -232,7 +232,7 @@ class PokemonPicker:
                     apply.disabled = False
                     used = sets if self.on_team else sets[:1]
                     problems = [error] if error else [
-                        f"{found.get('species') or f'Set {n}'}: {problem}" if len(used) > 1 else problem
+                        tr('pokemon._6a7768', '{value0}: {value1}', value0=found.get('species') or f'Set {n}', value1=problem) if len(used) > 1 else problem
                         for n, found in enumerate(used, start=1) for problem in found["errors"]]
                     if problems:
                         show(problems, t.RED)
@@ -243,20 +243,19 @@ class PokemonPicker:
                     notes = list(sets[0]["notes"])
                     if len(sets) > 1:
                         notes.insert(0, self.on_team(sets[1:]) if self.on_team else
-                                     f"The paste holds {len(sets)} Pokemon; the first was imported.")
+                                     tr('pokemon.the_paste_holds_pokemon_the_first_was_imported_723947', 'The paste holds {value0} Pokemon; the first was imported.', value0=len(sets)))
                     self._apply_set(sets[0], notes)
                 self.app.ui(done)
             threading.Thread(target=work, daemon=True).start()
 
         apply.on_click = submit
         self.app.page.show_dialog(t.dialog(
-            title=t.text("Import a Showdown set", 17, weight=ft.FontWeight.W_600),
+            title=t.text(tr('pokemon.import_a_showdown_set_a60d57', 'Import a Showdown set'), 17, weight=ft.FontWeight.W_600),
             content=ft.Container(ft.Column([
-                t.text("Paste a set exported from Pokemon Showdown, Smogon or PKHeX. Its values fill the form; "
-                       "press Build to make a legal Pokemon from them.", 13, t.MUTED),
+                t.text(tr('pokemon.paste_a_set_exported_from_pokemon_showdown_smogon_or_pk_49d726', 'Paste a set exported from Pokemon Showdown, Smogon or PKHeX. Its values fill the form; press Build to make a legal Pokemon from them.'), 13, t.MUTED),
                 editor, status], spacing=10, tight=True,
                 horizontal_alignment=ft.CrossAxisAlignment.STRETCH), width=520),
-            actions=[t.secondary_button("Cancel", close), apply],
+            actions=[t.secondary_button(tr('pokemon.cancel_19766e', 'Cancel'), close), apply],
         ))
         if text.strip():
             submit(None)
@@ -277,14 +276,14 @@ class PokemonPicker:
         self.options.reveal()
         self.on_change(dict(self.value))
         name = f"{found['species']}-{found['form']}" if found["form"] else found["species"]
-        lines = [t.text(f"Imported {name}. Check the options below, then press Build.", 12, t.MUTED)]
+        lines = [t.text(tr('pokemon.imported_check_the_options_below_then_press_build_62320d', 'Imported {value0}. Check the options below, then press Build.', value0=name), 12, t.MUTED)]
         lines += [t.text(note, 12, t.AMBER) for note in notes]
         self.result.content = ft.Column(lines, spacing=2)
         self.control.update()
 
     def _message(self, text: str, color: str, busy: bool = False) -> None:
         message = t.text(text, 12, color, selectable=True, expand=True if busy else None)
-        self.result.content = (ft.Row([PixelActivity("Building Pokemon"), message], spacing=8)
+        self.result.content = (ft.Row([PixelActivity(tr('pokemon.building_pokemon_4ac59b', 'Building Pokemon')), message], spacing=8)
                                if busy else message)
 
     def _show_result(self) -> None:
@@ -296,7 +295,7 @@ class PokemonPicker:
             t.pixel_icon("shield" if legal else "warning-diamond",
                     color=t.GREEN if legal else t.RED),
             t.text(self.value.get("summary", ""), 13, weight=ft.FontWeight.W_600, expand=True),
-            t.badge("Legal" if legal else "Not legal", t.GREEN if legal else t.RED,
+            t.badge(tr('pokemon.legal_4787ea', 'Legal') if legal else tr('pokemon.not_legal_c66729', 'Not legal'), t.GREEN if legal else t.RED,
                     "check" if legal else "warning-diamond"),
         ], spacing=8)]
         detail = " · ".join(x for x in (self.value.get("encounter", ""), ", ".join(self.value.get("moves", []))) if x)
@@ -320,7 +319,7 @@ class OfferQueue:
         self.add_icon = t.pixel_icon("plus", color=t.BLUE)
         self.add_box = t.surface(ft.Container(ft.Row([
             self.add_icon,
-            ft.Column([t.text("Add a trade", 13, weight=ft.FontWeight.W_600), self.count], spacing=0, tight=True),
+            ft.Column([t.text(tr('pokemon.add_a_trade_f8dda7', 'Add a trade'), 13, weight=ft.FontWeight.W_600), self.count], spacing=0, tight=True),
         ], spacing=12, tight=True), padding=ft.Padding(16, 10, 22, 10)), on_click=self._add, ink=True)
         self.control = self.rows
         self.card: ft.Container | None = None    # the caller's card around `control`; it lights for one trade
@@ -336,7 +335,7 @@ class OfferQueue:
                                        version=self.version, on_team=lambda sets, s=slot: self._team(s, sets),
                                        on_more=lambda paths, s=slot: self._more(s, paths),
                                        glow=lambda s=slot: s["box"] if len(self.slots) > 1 else self.card)
-        slot["remove"] = t.icon_button("close", lambda e, s=slot: self._remove(s), "Remove this trade")
+        slot["remove"] = t.icon_button("close", lambda e, s=slot: self._remove(s), tr('pokemon.remove_this_trade_311a79', 'Remove this trade'))
         slot["header"] = ft.Row([slot["title"], slot["remove"]], spacing=8,
                                 vertical_alignment=ft.CrossAxisAlignment.CENTER)
         slot["box"] = ft.Container(ft.Column([slot["header"], slot["picker"].control], spacing=8))
@@ -346,7 +345,7 @@ class OfferQueue:
     def _render(self) -> None:
         several = len(self.slots) > 1
         for n, slot in enumerate(self.slots, start=1):
-            slot["title"].value = f"Trade {n}"
+            slot["title"].value = tr('pokemon.trade_63a07c', 'Trade {value0}', value0=n)
             slot["header"].visible = several
             slot["box"].border = ft.Border.all(1, t.DIVIDER) if several else None
             slot["box"].border_radius = 12 if several else None
@@ -355,10 +354,10 @@ class OfferQueue:
         full = len(self.slots) >= self.limit
         self.add_box.disabled = full
         self.add_box.opacity = 0.5 if full else 1.0
-        self.count.value = (f"{len(self.slots)} of {self.limit}, traded in this order" if several
-                            else f"Up to {self.limit} Pokemon in one session")
+        self.count.value = (tr('pokemon.of_traded_in_this_order_62513d', '{value0} of {value1}, traded in this order', value0=len(self.slots), value1=self.limit) if several
+                            else tr('pokemon.up_to_pokemon_in_one_session_8ad4e5', 'Up to {value0} Pokemon in one session', value0=self.limit))
         if drop.AVAILABLE and not full:
-            self.count.value += "; or drop files here"
+            self.count.value += tr('pokemon.or_drop_files_here_0ae5f0', '; or drop files here')
         self.count.color = t.MUTED
 
     def _spread(self, at: int, items: list) -> list[tuple[dict, object]]:
@@ -394,7 +393,7 @@ class OfferQueue:
         for slot, path in placed:
             slot["picker"].load(path)
         if len(placed) < dropped:
-            self.count.value = f"{dropped - len(placed)} did not fit: one session trades at most {self.limit}."
+            self.count.value = tr('pokemon.did_not_fit_one_session_trades_at_most_5e240f', '{value0} did not fit: one session trades at most {value1}.', value0=dropped - len(placed), value1=self.limit)
             self.count.color = t.AMBER
             self.count.update()
 
@@ -404,11 +403,10 @@ class OfferQueue:
         for slot, found in placed:
             slot["picker"]._apply_set(found, list(found["notes"]))
         numbers = [self.slots.index(slot) + 1 for slot, _ in placed]
-        message = (f"The paste holds {len(sets) + 1} Pokemon; the others went to "
-                   f"{'trade' if len(numbers) == 1 else 'trades'} {', '.join(map(str, numbers))}." if numbers else
-                   f"The paste holds {len(sets) + 1} Pokemon; only the first fit.")
+        message = (tr('pokemon.the_paste_holds_pokemon_the_others_went_to_8cb9c6', 'The paste holds {value0} Pokemon; the others went to {value1} {value2}.', value0=len(sets) + 1, value1=tr('pokemon.trade_276446', 'trade') if len(numbers) == 1 else tr('pokemon.trades_4e5f02', 'trades'), value2=', '.join(map(str, numbers))) if numbers else
+                   tr('pokemon.the_paste_holds_pokemon_only_the_first_fit_8b4c2e', 'The paste holds {value0} Pokemon; only the first fit.', value0=len(sets) + 1))
         if len(placed) < len(sets):
-            message += f" {len(sets) - len(placed)} did not fit: one session trades at most {self.limit}."
+            message += tr('pokemon.did_not_fit_one_session_trades_at_most_80d9e2', ' {value0} did not fit: one session trades at most {value1}.', value0=len(sets) - len(placed), value1=self.limit)
         return message
 
     def _save(self) -> None:
@@ -436,9 +434,9 @@ class OfferQueue:
             self.footer.update()
 
 
-STATS = (("hp", "HP"), ("atk", "Atk"), ("def", "Def"), ("spa", "SpA"), ("spd", "SpD"), ("spe", "Spe"))
-EFFORT = {"evs": "EVs", "avs": "AVs", "gvs": "Effort levels"}
-GENDERS = (("0", "Male"), ("1", "Female"))
+STATS = (("hp", tr('pokemon.hp_9449a7', 'HP')), ("atk", tr('pokemon.atk_f231c4', 'Atk')), ("def", tr('pokemon.def_fcc0fc', 'Def')), ("spa", tr('pokemon.spa_099d09', 'SpA')), ("spd", tr('pokemon.spd_08fc8c', 'SpD')), ("spe", tr('pokemon.spe_80f7bc', 'Spe')))
+EFFORT = {"evs": tr('pokemon.evs_3f8987', 'EVs'), "avs": tr('pokemon.avs_a495d3', 'AVs'), "gvs": tr('pokemon.effort_levels_9996e7', 'Effort levels')}
+GENDERS = (("0", tr('pokemon.male_03f8c1', 'Male')), ("1", tr('pokemon.female_e8cca8', 'Female')))
 ANY = "-"
 
 
@@ -449,7 +447,7 @@ class OfferOptions:
     The choices offered are the ones PKHeX permits for the species (services/pkhex Options); the build is
     still checked for legality as a whole."""
 
-    def __init__(self, picker: "PokemonPicker"):
+    def __init__(self, picker: 'PokemonPicker'):
         self.picker = picker
         self.chosen: dict = picker.value.setdefault("options", {})
         self.open = False
@@ -458,7 +456,7 @@ class OfferOptions:
         self.body = ft.Column([], spacing=10, visible=False)
         self.chevron = t.pixel_icon("chevron-right", color=t.FAINT)
         self.label = t.text("", 12, t.MUTED)
-        header = ft.Container(ft.Row([self.chevron, t.text("More options", 13, t.TEXT, weight=ft.FontWeight.W_600),
+        header = ft.Container(ft.Row([self.chevron, t.text(tr('pokemon.more_options_bc79cd', 'More options'), 13, t.TEXT, weight=ft.FontWeight.W_600),
                                       self.label], spacing=8),
                               padding=ft.Padding(2, 4, 2, 4), border_radius=8, on_click=self._toggle)
         self.control = ft.Column([header, self.body], spacing=8)
@@ -466,7 +464,7 @@ class OfferOptions:
 
     def _label(self) -> None:
         count = sum(1 for k, v in self.chosen.items() if (v if isinstance(v, dict) else v is not None))
-        self.label.value = f"{count} set" if count else "random"
+        self.label.value = tr('pokemon.set_f4c8f3', '{value0} set', value0=count) if count else "random"
 
     def _toggle(self, e) -> None:
         self._show(not self.open)
@@ -494,14 +492,14 @@ class OfferOptions:
     def _load(self) -> None:
         species = int(self.picker.value.get("species") or 0)
         if not species:
-            self.body.controls = [t.text("Pick a species first.", 12, t.MUTED)]
+            self.body.controls = [t.text(tr('pokemon.pick_a_species_first_48ebb5', 'Pick a species first.'), 12, t.MUTED)]
             return
         target = (species, int(self.chosen.get("form") or 0))
         if self.loaded_for == target:
             return
         self.loaded_for = target
-        self.body.controls = [ft.Row([PixelActivity("Loading options"),
-                                      t.text("Reading what this species can have...", 12, t.MUTED)], spacing=8)]
+        self.body.controls = [ft.Row([PixelActivity(tr('pokemon.loading_options_86dc28', 'Loading options')),
+                                      t.text(tr('pokemon.reading_what_this_species_can_have_bdcc50', 'Reading what this species can have...'), 12, t.MUTED)], spacing=8)]
         app = self.picker.app
 
         def work():
@@ -531,32 +529,32 @@ class OfferOptions:
         if "form" in self.chosen and all(f["id"] != self.chosen["form"] for f in found["forms"]):
             self.chosen.pop("form")
             self.picker.show_sprite()
-        first = [t.labeled_control("Nature", self._choice("nature", found["natures"]), expand=True)]
+        first = [t.labeled_control(tr('pokemon.nature_c71ce8', 'Nature'), self._choice("nature", found["natures"]), expand=True)]
         if len(found["forms"]) > 1:
-            first.insert(0, t.labeled_control("Form", self._choice("form", found["forms"], reload=True),
+            first.insert(0, t.labeled_control(tr('pokemon.form_2e0e96', 'Form'), self._choice("form", found["forms"], reload=True),
                                               expand=True))
         if len(found["abilities"]) > 1:
-            first.append(t.labeled_control("Ability", self._choice("ability", found["abilities"]), expand=True))
+            first.append(t.labeled_control(tr('pokemon.ability_9c40ae', 'Ability'), self._choice("ability", found["abilities"]), expand=True))
         if found["gendered"]:
-            first.append(t.labeled_control("Gender", self._choice(
+            first.append(t.labeled_control(tr('pokemon.gender_a04630', 'Gender'), self._choice(
                 "gender", [{"id": int(k), "name": n} for k, n in GENDERS]), expand=True))
-        second = [t.labeled_control("Ball", self._choice("ball", found["balls"]), expand=True),
-                  t.labeled_control("Friendship (0-255)", self._number("friendship", 255), width=130)]
+        second = [t.labeled_control(tr('pokemon.ball_ae5859', 'Ball'), self._choice("ball", found["balls"]), expand=True),
+                  t.labeled_control(tr('pokemon.friendship_0_255_30186d', 'Friendship (0-255)'), self._number("friendship", 255), width=130)]
         if found["held"]:
-            second.insert(0, t.labeled_control("Held item", self._choice("held_item", found["held"], search=True),
+            second.insert(0, t.labeled_control(tr('pokemon.held_item_6af4a4', 'Held item'), self._choice("held_item", found["held"], search=True),
                                                expand=True))
         effort = found["effort"]
         self.total = effort.get("total")
-        limit = f"0-{effort['max']}" + (f", {effort['total']} in all" if effort.get("total") else "")
+        limit = f"0-{effort['max']}" + (tr('pokemon.in_all_09ffde', ', {value0} in all', value0=effort['total']) if effort.get("total") else "")
         return [
             ft.Row(first, spacing=10),
             ft.Row(second, spacing=10),
             self._moves(found["move_names"]),
-            self._stats("ivs", "IVs", 31, "0-31"),
+            self._stats("ivs", tr('pokemon.ivs_39e3d6', 'IVs'), 31, "0-31"),
             self._stats("effort", EFFORT[effort["kind"]], effort["max"], limit, effort.get("total")),
-            ft.Row([t.text("Empty means random. The build is checked by PKHeX's legality analysis.", 12, t.FAINT,
+            ft.Row([t.text(tr('pokemon.empty_means_random_the_build_is_checked_by_pkhex_s_lega_14cf61', "Empty means random. The build is checked by PKHeX's legality analysis."), 12, t.FAINT,
                            expand=True),
-                    t.link_button("Clear", self._clear)]),
+                    t.link_button(tr('pokemon.clear_83b12c', 'Clear'), self._clear)]),
         ]
 
     def _choice(self, key: str, names: list[dict], search: bool = False, reload: bool = False) -> ft.Dropdown:
@@ -575,14 +573,14 @@ class OfferOptions:
                 self.control.update()
             else:
                 self.label.update()
-        options = [(ANY, "Random")] + [(str(n["id"]), n["name"]) for n in
+        options = [(ANY, tr('pokemon.random_67bc48', 'Random'))] + [(str(n["id"]), n["name"]) for n in
                                        (sorted(names, key=lambda n: n["name"]) if search else names)]
         return t.dropdown(options, ANY if current is None else str(current), on_select=picked,
                           enable_filter=search, editable=search, menu_height=320)
 
     def _moves(self, names: list[dict]) -> ft.Control:
         moves = (list(self.chosen.get("moves", [])) + [0] * 4)[:4]
-        options = [(ANY, "Any")] + [(str(n["id"]), n["name"]) for n in names]
+        options = [(ANY, tr('pokemon.any_2b5055', 'Any'))] + [(str(n["id"]), n["name"]) for n in names]
 
         def picked(e, slot):
             moves[slot] = 0 if e.control.value == ANY else int(e.control.value)
@@ -597,7 +595,7 @@ class OfferOptions:
                  for n, m in enumerate(moves)]
         for box in boxes:
             box.expand = True
-        return ft.Column([t.text("Moves (empty means the encounter's own)", 12, t.MUTED),
+        return ft.Column([t.text(tr('pokemon.moves_empty_means_the_encounter_s_own_c7b0d3', "Moves (empty means the encounter's own)"), 12, t.MUTED),
                           ft.Row(boxes[:2], spacing=6), ft.Row(boxes[2:], spacing=6)], spacing=4)
 
     def _number(self, key: str, top: int) -> ft.TextField:
@@ -639,7 +637,7 @@ class OfferOptions:
             boxes.append(t.labeled_control(name, box, expand=True))
         if not values:
             self.chosen.pop(group, None)
-        return ft.Column([t.text(f"{title} ({limit})", 12, t.MUTED), ft.Row(boxes, spacing=6)], spacing=4)
+        return ft.Column([t.text(tr('pokemon._e11f55', '{value0} ({value1})', value0=title, value1=limit), 12, t.MUTED), ft.Row(boxes, spacing=6)], spacing=4)
 
     def _clear(self, e) -> None:
         self.chosen.clear()
@@ -653,7 +651,7 @@ class OfferOptions:
     def problem(self) -> str:
         """Why the options cannot be sent as they stand, or an empty string."""
         if self.total and sum(self.chosen.get("effort", {}).values()) > self.total:
-            return f"EVs add up to at most {self.total}."
+            return tr('pokemon.evs_add_up_to_at_most_641daf', 'EVs add up to at most {value0}.', value0=self.total)
         return ""
 
 
@@ -673,9 +671,9 @@ class NamePicker:
         self.dropdown = t.dropdown([], None, on_select=lambda e: on_change("" if e.control.value == EMPTY
                                                                            else e.control.value),
                                    enable_filter=True, editable=True, menu_height=320,
-                                   hint_text="Loading...", disabled=True)
+                                   hint_text=tr('pokemon.loading_47d2a5', 'Loading...'), disabled=True)
         self.value = value
-        self.dropdown.trailing_icon = PixelActivity("Loading names")
+        self.dropdown.trailing_icon = PixelActivity(tr('pokemon.loading_names_f355e4', 'Loading names'))
         self.control = self.dropdown
         threading.Thread(target=self._load, daemon=True).start()
 
@@ -688,14 +686,14 @@ class NamePicker:
         def show():
             self.dropdown.trailing_icon = t.pixel_icon("chevron-down", color=t.MUTED)
             if names is None:
-                self.dropdown.hint_text = "Unavailable"
+                self.dropdown.hint_text = tr('pokemon.unavailable_ca1844', 'Unavailable')
             else:
                 options = [ft.DropdownOption(key=str(n["id"]), text=n["name"]) for n in names]
                 if self.optional:
-                    options.insert(0, ft.DropdownOption(key=EMPTY, text="Not set"))
+                    options.insert(0, ft.DropdownOption(key=EMPTY, text=tr('pokemon.not_set_4895f7', 'Not set')))
                 self.dropdown.options = options
                 self.dropdown.value = str(self.value) if self.value else (EMPTY if self.optional else None)
-                self.dropdown.hint_text = "Search"
+                self.dropdown.hint_text = tr('pokemon.search_49c266', 'Search')
                 self.dropdown.disabled = False
             try:
                 self.dropdown.update()
@@ -707,8 +705,8 @@ class NamePicker:
 # The Let's Go link code picker, in its order (pokeldn.lgpe.session.CODE_PICKER): national dex numbers
 # for the sprites and the names shown under them.
 CODE_SPECIES = (25, 133, 1, 4, 7, 16, 10, 19, 39, 50)
-CODE_NAMES = ("Pikachu", "Eevee", "Bulbasaur", "Charmander", "Squirtle",
-              "Pidgey", "Caterpie", "Rattata", "Jigglypuff", "Diglett")
+CODE_NAMES = (tr('pokemon.pikachu_a7c280', 'Pikachu'), tr('pokemon.eevee_2df869', 'Eevee'), tr('pokemon.bulbasaur_41c74c', 'Bulbasaur'), tr('pokemon.charmander_f438cb', 'Charmander'), tr('pokemon.squirtle_f1ac88', 'Squirtle'),
+              tr('pokemon.pidgey_a04203', 'Pidgey'), tr('pokemon.caterpie_12e8a7', 'Caterpie'), tr('pokemon.rattata_302ab8', 'Rattata'), tr('pokemon.jigglypuff_1bbcc9', 'Jigglypuff'), tr('pokemon.diglett_44bf8b', 'Diglett'))
 CODE_TILE = MINI + 2 * EDGE
 
 
@@ -741,7 +739,7 @@ class LinkCodePicker:
 
     def _render(self, update: bool = True) -> None:
         self.slots.controls = [
-            self._tile(pick, CODE_NAMES[pick] if pick is not None else f"Slot {n + 1}",
+            self._tile(pick, CODE_NAMES[pick] if pick is not None else tr('pokemon.slot_5f798c', 'Slot {value0}', value0=n + 1),
                        lambda e, n=n: self._toggle(n), selected=self.open == n)
             for n, pick in enumerate(self.picks)]
         self.grid.visible = self.open is not None

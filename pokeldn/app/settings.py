@@ -20,6 +20,7 @@ class Settings:
     radio_port: str = ""
     radio: str = ""         # external radio scheme (pokeldn.ldn.radios); empty: the board
     plugins: list = field(default_factory=list)   # plugin ids turned on
+    app_language: str = ""   # language-pack plugin id; empty selects English
     baud: int = 921600
     capture: bool = True
     board_trace: bool = False
