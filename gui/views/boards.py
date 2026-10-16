@@ -125,7 +125,7 @@ class BoardView:
             if self.pad is None and not self.pad_error and not self.pad_checking:
                 self._check_pad()
         elif self.selected and self.selected not in self.app.identities:
-            self.log.add('[app] Checking {value0}; the board may restart.'.format(value0=self.selected))
+            self.log.add(f'[app] Checking {self.selected}; the board may restart.')
             self.app.check_board(self.selected, log=self.log.add)
 
     def _checked(self) -> None:
@@ -364,7 +364,7 @@ class BoardView:
     def _use(self, e) -> None:
         self.app.settings.radio_port = self.selected
         self.app.settings.save()
-        self.log.add('[app] Trades now use {value0}.'.format(value0=self.selected))
+        self.log.add(f'[app] Trades now use {self.selected}.')
         self.render()
         self.control.update()
 
@@ -372,7 +372,7 @@ class BoardView:
         if self.app.busy:
             return
         self.app.identities.pop(self.selected, None)
-        self.log.add('[app] Checking {value0}; the board may restart.'.format(value0=self.selected))
+        self.log.add(f'[app] Checking {self.selected}; the board may restart.')
         self.app.check_board(self.selected, blink=blink, log=self.log.add)
         self.render()
         self.control.update()
@@ -479,7 +479,7 @@ class BoardView:
     def _from_loader(self, device: str, image: str) -> None:
         self.selected = device
         self.ports = board.ports()
-        self.log.add('[app] The board restarted for installing on {value0}.'.format(value0=device))
+        self.log.add(f'[app] The board restarted for installing on {device}.')
         self._flash(self.installing, image, from_loader=True)
 
     def _flash(self, kind: str, image: str = "", from_loader: bool = False) -> None:
@@ -489,7 +489,7 @@ class BoardView:
             args.append("--from-loader")
         if image:
             args += ["--firmware", image]
-        self.log.add('[app] Installing {value0} firmware on {value1}.'.format(value0=board.FIRMWARE_BY_KIND[kind].name, value1=self.selected))
+        self.log.add(f'[app] Installing {board.FIRMWARE_BY_KIND[kind].name} firmware on {self.selected}.')
         self.progress_text.value = tr('boards.connecting_5f04ae', 'Connecting...')
         env = dict(os.environ, NO_COLOR="1", PYTHONUNBUFFERED="1")
         env.pop("POKELDN_RADIO", None)
@@ -540,7 +540,7 @@ class BoardView:
     def _failed(self, why: str) -> None:
         def show():
             self.installing = ""
-            self.log.add('[app] {value0}'.format(value0=why))
+            self.log.add(f'[app] {why}')
             self.progress.value = 0
             self.progress_text.color = t.RED
             self.progress_text.value = (
@@ -565,7 +565,7 @@ class BoardView:
         project, version = board.image_info(path)
         kind = board.PROJECTS.get(project)
         if kind is None:
-            self.log.add('[app] {value0} is not a pokeldn firmware image.'.format(value0=os.path.basename(path)))
+            self.log.add(f'[app] {os.path.basename(path)} is not a pokeldn firmware image.')
             return
         self.confirm(board.FIRMWARE_BY_KIND[kind], path)
 
@@ -577,9 +577,9 @@ class BoardView:
         def work():
             try:
                 tag = board.download_firmware(self.log.add)
-                self.log.add('[app] Firmware from {value0} is ready.'.format(value0=tag))
+                self.log.add(f'[app] Firmware from {tag} is ready.')
             except Exception as error:
-                self.log.add('[app] Could not download the firmware: {value0}'.format(value0=error))
+                self.log.add(f'[app] Could not download the firmware: {error}')
             finally:
                 self.downloading = False
                 self.app.ui(lambda: (self.render(), self.control.update()))

@@ -1,4 +1,3 @@
-from pokeldn.app.i18n import t as tr
 import errno
 import os
 import sys
@@ -15,10 +14,11 @@ from pokeldn import plugins, pokemon, popup
 from pokeldn.app import popups, settings, update
 from pokeldn.app.paths import SESSION
 from gui.views.widgets import on_ui
+from pokeldn.app.i18n import t as tr
 
-NO_FIRMWARE = tr('app.no_pokeldn_firmware_091f1a', 'No pokeldn firmware')
-PORT_BUSY = tr('app.port_busy_or_not_allowed_0c197b', 'Port busy or not allowed')
-PORT_DENIED = tr('app.port_not_allowed_bbd701', 'Port not allowed')
+NO_FIRMWARE = 'No pokeldn firmware'
+PORT_BUSY = 'Port busy or not allowed'
+PORT_DENIED = 'Port not allowed'
 
 
 @dataclass(frozen=True)
@@ -169,20 +169,20 @@ class App:
             try:
                 ident = board.identify(device, blink=blink)
                 self.identities[device] = ident
-                say('[app] {value0}, protocol {value1}, chip revision {value2}, MAC {value3}'.format(value0=ident.firmware, value1=ident.protocol, value2=ident.chip_revision, value3=ident.sta_mac))
+                say(f'[app] {ident.firmware}, protocol {ident.protocol}, chip revision {ident.chip_revision}, MAC {ident.sta_mac}')
                 if not ident.current:
                     say('[app] This firmware uses a different radio protocol. Update it on the Board page.')
             except serial.SerialException as error:
                 # pyserial keeps the open's errno: EACCES is a missing group on Linux, not a busy port.
                 self.identities[device] = PORT_DENIED if error.errno == errno.EACCES else PORT_BUSY
-                say('[app] Could not open {value0}: {value1}'.format(value0=device, value1=error))
+                say(f'[app] Could not open {device}: {error}')
             except Exception as error:
                 try:
                     self.identities[device] = board.identify_pad(device)
-                    say('[app] {value0} runs the controller firmware.'.format(value0=device))
+                    say(f'[app] {device} runs the controller firmware.')
                 except Exception:
                     self.identities[device] = NO_FIRMWARE
-                    say('[app] No pokeldn firmware answered on {value0} ({value1}).'.format(value0=device, value1=error))
+                    say(f'[app] No pokeldn firmware answered on {device} ({error}).')
                     self._probe_chip(device, say)
             finally:
                 self.board_busy = False
@@ -198,9 +198,9 @@ class App:
             return
         try:
             self.chips[device] = board.detect_chip(device)
-            say('[app] The chip on {value0} is an {value1}.'.format(value0=device, value1=self.chips[device]))
+            say(f'[app] The chip on {device} is an {self.chips[device]}.')
         except Exception as error:
-            say('[app] Could not read the chip type on {value0} ({value1}).'.format(value0=device, value1=error))
+            say(f'[app] Could not read the chip type on {device} ({error}).')
 
     def check_if_unknown(self, present: list[board.Port] | None = None) -> None:
         port = self.radio_port(present)

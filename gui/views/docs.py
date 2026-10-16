@@ -1,4 +1,3 @@
-from pokeldn.app.i18n import t as tr
 import os
 import re
 from dataclasses import dataclass, field
@@ -8,6 +7,7 @@ import flet as ft
 from gui import theme as t
 from gui.views.widgets import MarkdownDocument
 from pokeldn.app.paths import ROOT
+from pokeldn.app.i18n import t as tr
 
 DOCS = os.path.join(ROOT, "docs")
 GUIDE = os.path.join(ROOT, "gui", "guide.md")

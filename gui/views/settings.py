@@ -1,4 +1,3 @@
-from pokeldn.app.i18n import t as tr
 import copy
 import os
 import threading
@@ -13,6 +12,7 @@ from pokeldn.app.sprites import CACHE
 from pokeldn.app.settings import switch_ids_valid
 from pokeldn.app import storage
 from gui.views.widgets import PathField, open_folder
+from pokeldn.app.i18n import t as tr
 
 LANGUAGES = (("2", tr("settings.language_english", "English")),
              ("3", tr("settings.language_french", "French")),

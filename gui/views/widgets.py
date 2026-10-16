@@ -1,4 +1,3 @@
-from pokeldn.app.i18n import t as tr
 import asyncio
 import os
 import re
@@ -10,6 +9,7 @@ from typing import Callable
 import flet as ft
 
 from gui import drop, theme as t
+from pokeldn.app.i18n import t as tr
 
 
 class PixelActivity(ft.Container):

@@ -1,4 +1,3 @@
-from pokeldn.app.i18n import t as tr
 from concurrent.futures import ThreadPoolExecutor
 
 import flet as ft
@@ -7,6 +6,7 @@ from gui import theme as t
 from gui.views.widgets import PixelActivity
 from pokeldn.app.sprites import CACHE, bounds
 from pokeldn.app.sprite_forms import sprite_key
+from pokeldn.app.i18n import t as tr
 
 SIZE = 96   # the sprites are 96x96 pixels: shown at 1:1, or at a whole multiple, never in between
 ICON = 48   # pixelarticons are drawn on a 24 px grid: 48 is a whole multiple

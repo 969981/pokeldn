@@ -1,4 +1,3 @@
-from pokeldn.app.i18n import t as tr
 import asyncio
 import os
 import re
@@ -13,6 +12,7 @@ from serial.tools import list_ports
 
 from pokeldn.app.paths import ROOT
 from pokeldn.ldn import esp32
+from pokeldn.app.i18n import t as tr
 
 # USB-to-serial bridges found on ESP32 boards, by USB vendor and product id.
 BRIDGES = {
@@ -322,7 +322,7 @@ def download_firmware(say=print, folder: str = os.path.dirname(FIRMWARE)) -> str
                  if len(line.split()) == 2)}
         images = {}
         for name in names:
-            say('[app] Downloading {value0} from {value1}.'.format(value0=name, value1=release.get('tag_name')))
+            say(f"[app] Downloading {name} from {release.get('tag_name')}.")
             images[name] = _get(files[name], IMAGE_BYTES)
             if hashlib.sha256(images[name]).hexdigest() != sums.get(name):
                 raise OSError(tr('board.does_not_match_the_release_s_sha256sums_nothing_was_wri_6d1da2', "{value0} does not match the release's SHA256SUMS; nothing was written", value0=name))

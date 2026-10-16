@@ -1,4 +1,3 @@
-from pokeldn.app.i18n import t as tr
 import os
 import shlex
 import threading
@@ -27,6 +26,7 @@ from gui.views.rewards import RewardPicker
 from gui.views.gifts import GiftBuilder
 from gui.views.sprites import MINI, Sprite
 from gui.views.widgets import CodeBlock, DigitCode, Log, PathField, open_folder
+from pokeldn.app.i18n import t as tr
 
 TOOL_ICONS = {"Trade": "arrows-horizontal", "Mystery Gift": "gift", "Tera Raid": "diamond-gem"}
 EMPTY = "-"   # a dropdown option cannot carry an empty key
@@ -847,7 +847,7 @@ class SessionPanel:
                 try:
                     bank.deposit(game, path, info)
                 except OSError as error:
-                    self.app.ui(lambda m='[app] Not banked: {value0}'.format(value0=error): self.log.add(m))
+                    self.app.ui(lambda m=f'[app] Not banked: {error}': self.log.add(m))
         if changed:
             self.app.ui(lambda: self.render_received(process))
 
@@ -900,14 +900,14 @@ class SessionPanel:
         self.log.clear()
         if problems:
             for p in problems:
-                self.log.add('[app] {value0}'.format(value0=p))
+                self.log.add(f'[app] {p}')
             self.set_status(tr('games.not_started_ba35f0', 'Not started'), t.RED)
             self.refresh()
             return
         try:
             command.prepare(tool, self.games.values)
         except (OSError, ValueError) as error:
-            self.log.add('[app] {value0}'.format(value0=error))
+            self.log.add(f'[app] {error}')
             self.set_status(tr('games.not_started_ba35f0', 'Not started'), t.RED)
             self.refresh()
             return
@@ -916,7 +916,7 @@ class SessionPanel:
         for folder in (SESSION / "captures", os.path.expanduser(s.received)):
             os.makedirs(folder, exist_ok=True)
         trace = f"captures/{tool.key}-{stamp}_esp32.trace" if s.board_trace else None
-        self.log.add('[app] {value0} · {value1} · radio {value2}'.format(value0=tool.name, value1=self.games.game.name, value2=port))
+        self.log.add(f'[app] {tool.name} · {self.games.game.name} · radio {port}')
         self.seen, self.received.content, self.received.visible = {}, None, False
         self.transfer.content, self.transfer.visible = None, False
         self.partner.content, self.partner.visible, self.partner_state = None, False, None
@@ -949,7 +949,7 @@ class SessionPanel:
                 try:
                     bank_trades.advance(n)
                 except OSError as error:
-                    self.log.add('[app] Bank completion failed: {value0}'.format(value0=error))
+                    self.log.add(f'[app] Bank completion failed: {error}')
                 self.traded = bank_trades.completed
                 self.render_offering()
                 self.offering.update()
@@ -980,7 +980,7 @@ class SessionPanel:
                 self.set_status(tr('games.finished_7804f7', 'Finished'), t.GREEN)
             else:
                 self.set_status(tr('games.failed_1df702', 'Failed ({value0})', value0=code), t.RED)
-            self.log.add('[app] Exited with code {value0}.'.format(value0=code))
+            self.log.add(f'[app] Exited with code {code}.')
             bank.prune(self.app.settings)     # the traded ones leave the queue too
             if self.games.visible and self.games.tool is self.running_tool:
                 self.games.render_body()      # a backup has joined the save library

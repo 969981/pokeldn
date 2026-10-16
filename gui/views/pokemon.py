@@ -1,4 +1,3 @@
-from pokeldn.app.i18n import t as tr
 import threading
 from pathlib import Path
 
@@ -10,6 +9,7 @@ from pokeldn.lgpe.session import CODE_PICKER, code_picks
 from gui import drop, theme as t
 from gui.views.sprites import EDGE, MINI, SIZE as SPRITE_SIZE, Sprite
 from gui.views.widgets import PixelActivity
+from pokeldn.app.i18n import t as tr
 
 VERSIONS = {"firered": tr('pokemon.fr_501c26', 'FR'), "leafgreen": tr('pokemon.lg_b870b7', 'LG')}
 ROW_GAP = SPRITE_SIZE + 2 * EDGE - 2 * t.CONTROL_HEIGHT   # the species and nickname boxes and the gap match the tile

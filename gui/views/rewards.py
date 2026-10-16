@@ -1,9 +1,9 @@
-from pokeldn.app.i18n import t as tr
 import flet as ft
 
 from gui import theme as t
 from gui.views.pokemon import NamePicker
 from pokeldn.sv.raid import REWARD_ROWS
+from pokeldn.app.i18n import t as tr
 
 
 TEMPLATES = (
