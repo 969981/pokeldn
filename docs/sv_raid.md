@@ -968,8 +968,15 @@ move hits the boss and the boss's reply hits a player:
 
 A round ends with `0xb2 (0)`, `0x37 (b, 7, 1)` for each battler that moved, `0x75 (3, n)`, `0xc5 (1)`,
 `0x43 (b)` for each battler in speed order (party record speed, the boss among them), `0x23 (b)` for
-each battler that moved in id order, or all five in the battle's first round, and `0x2d (0)`;
+each of the round's actors in id order, or all five in the battle's first round, and `0x2d (0)`;
 `0x75 (3, n)` counts the rounds so far, this one included.
+
+A hit that knocks the boss out wins the battle. After its `0x42` come `0x49 (2, A, M)`, `0x09 (A, 0)`,
+`0x37 (2, 1, 1)`, `0xcb (2, 0, 2)`, `0x94 (2, 0)`, `0x37 (2, 8, 1)`, `0x5f (2)`, `0x62 (2)`, `0x6c (2)`,
+`0x5d (2)`, `0x41 (b, 2)` for each player in id order, `0x33 (2, k)` for k 0 to 13 except 8, `0x80 (2)`,
+`0x29 (2)` and `0x38 (A)`, then the move's usual end. Nobody moves after it, and the round ends with
+only the `0x43` of the battlers left standing, the `0x23` list and `0x2d (0)`. The `0x85 (7, damage)`
+and the damage commands carry the HP the boss had left.
 
 The prefix starts with `0xb5 (0)`, then runs `0x51 (b, 1)` once for the round's actors in id order and
 once in the order they move; in the second run a battler with Stall (ability 100) moves last and
@@ -988,8 +995,12 @@ freeze chance (a freeze shows as `0x13 (2, 3, 0, 1, 4)` with messages 97 and 98,
 `chance(20)` to thaw before it moves), the boss's Ice Fang on a player draws both. A hit that knocks
 the boss out draws `chance(0)` first, with or without a secondary.
 
-Built this way, from Showdown's move data and the Gen 9 damage formula, 39 of 554 oracle battles'
+Built this way, from Showdown's move data and the Gen 9 damage formula, 56 of 554 oracle battles'
 first rounds equal the oracle's byte for byte and none differ; the others hold something refused.
+Chained from the start body through the boss's knockout, 20 whole battles equal the oracle's in
+every round. Served end to end against the same scripted console, a server built this way sent
+the console every frame the oracle server sent, in order and at the same frame, in 19 of 19 battles
+both served (the twentieth the oracle server failed).
 A round is refused when a battler that acts or is hit holds an ability or item whose Showdown callback
 can change the round (Hustle's attack, Rivalry's power, Friend Guard's 0.75, Rattled's speed raise
 after a Dark hit, Gale Wings' priority), unless the corpus measured that ability or item idle, or
