@@ -923,6 +923,11 @@ logged). A move use draws, in this order:
 | `below(16)` | a damaging move | the roll r: the damage times (100 − r) / 100 |
 | `chance(p)` | a secondary effect of chance p (Body Slam's 30) | the effect |
 
+Ice Fang (10 percent freeze, 10 percent flinch) draws one `chance(10)` where Showdown draws two, and
+`chance(0)` then `chance(10)` against some bosses; a stat-lowering secondary of 100 percent (Spirit
+Break, Bulldoze) draws `chance(0)` in some rounds and nothing in others. Two battlers of equal speed
+draw `below(2)` before the first move.
+
 A battle draws `below(100)` once before its first round. The damage is Showdown's Gen 9 formula (data
 from Pokemon Showdown's `moves.json` and `typechart`) with the party record's stats and the boss
 defending as its Tera type only: 921 of 1346 hits on the boss before any stat stage change fit it, and
@@ -942,7 +947,7 @@ move hits the boss and the boss's reply hits a player:
 
 | command | meaning |
 |---|---|
-| `0x05 (A, 0, 1)` | a player's move begins; the boss's has none |
+| `0x05 (A, 0, pp)` | a player's move begins, spending pp (2 against a target with Pressure, else 1); the boss's has none |
 | `0x07 (A, 0)` | the move is used |
 | `0xc9 (A, 0, M, T's position, 0)` | the move and its target |
 | `0x7b (M, n, A)` | n counts the rounds before this one |
@@ -950,8 +955,9 @@ move hits the boss and the boss's reply hits a player:
 | `0x7e (0, ...)`, `0x7e (1, 0, 0, 0, 0, 0)`, `0x7e (2, e, e, e, e, e)` | the first: 1 at T's position + 1; the third: an effectiveness code per position, 7 for none |
 | `0x8b (A's position, T's position, M, type, 0, 0, 1, 0, 0, 0)` | the hit |
 | `0x37 (T, 2, damage)`, `0x37 (T, 5, 1)`, `0x02 (T, A, damage, 3)` | the damage |
-| `0xd0` with bytes `T, e` | e is the effectiveness: 7 neutral, 6 not very effective |
-| `0x8e (1, 1, M)`, or `0x8e (1, 3, M)` and `0xca (A, 575, 0xffff0000)` when not very effective | the effectiveness message |
+| `0xd0` with bytes `T, e` | e is the effectiveness: 7 neutral, 6 not very effective, 8 super effective |
+| `0x8e (1, 1, M)`; `0x8e (1, 3, M)` and `0xca (A, 575, 0xffff0000)` when not very effective; `0x8e (1, 2, M)` and `0xca (A, 574, 0xffff0000)` when super effective | the effectiveness message |
+| `0x20 (A, 24)` | only for a super-effective hit |
 | `0x42 (T, A, A's position, type, cat, M, damage)` | the hit's record |
 | the secondary effect, if any | for example a paralysis: `0x13`, `0x90`, `0xa7`, `0xcb (2, 92, T)` |
 | `0xd1` with bytes `01 00`, `0x2e (2, A − 1)` | |
@@ -961,13 +967,24 @@ move hits the boss and the boss's reply hits a player:
 A round ends with `0xb2 (0)`, `0x37 (b, 7, 1)` for each battler that moved, `0x75 (3, n)`, `0xc5 (1)`,
 `0x43 (b)` for each battler in speed order (party record speed, the boss among them), `0x23 (b)` for
 each battler that moved in id order, or all five in the battle's first round, and `0x2d (0)`;
-`0x75 (3, n)` counts the rounds so far, this one included. The prefix runs `0x51 (b, 1)` once for the
-round's actors in id order, then once in the order they move (speed order). A battler choosing a move
-that registers its own handler adds `0x5a (b, M, speed)` and `0x5b (b, M)` after each pass, and
-`0x5a (b, M, 0x72000 + speed)` before it moves. Built this way, from Showdown's move data and the Gen 9
-damage formula, 19 battles' first rounds of plain moves (a single-target damaging move with no effect
-that triggers) equal the oracle's byte for byte. It starts with `0xb5 (0)` and runs of `0x51 (b, 1)`, `0x5a (b, M, x)` and
-`0x5b (b, M)` before the first move.
+`0x75 (3, n)` counts the rounds so far, this one included.
+
+The prefix starts with `0xb5 (0)`, then runs `0x51 (b, 1)` once for the round's actors in id order and
+once in the order they move; in the second run a battler with Stall (ability 100) moves last and
+carries `0x51 (b, 0)`. A battler whose chosen move registers its own handler adds `0x5a (b, M, speed)`
+and `0x5b (b, M)` after each run, in that run's order, then twice more in move order. Before each
+battler after the first moves, every such battler repeats the pair once more, and a mover whose move
+registers a handler adds `0x5a (b, M, 0x72000 + speed)` just before its `0x05`. Which moves register
+a handler is measured by using each move in an oracle battle and watching for `0x5a`: 347 of the 631
+moves seen used register one (Facade and Body Slam among them, Night Slash not).
+
+Built this way, from Showdown's move data and the Gen 9 damage formula, 20 of 284 oracle battles'
+first rounds equal the oracle's byte for byte and none differ; the other 264 hold something refused.
+A round is refused when a battler that acts or is hit holds an ability or item whose Showdown callback
+can change the round (Hustle's attack, Rivalry's power, Friend Guard's 0.75, Rattled's speed raise
+after a Dark hit, Gale Wings' priority), unless the corpus measured that ability or item idle, or
+when the battle holds an ability that acts on switching in (Intimidate lowers the attacker's Attack
+before the first round).
 
 ### Actions
 
@@ -1531,6 +1548,10 @@ the host start; its Pokemon stayed in the battle.
 
 ## Unresolved
 
+- Which of Ice Fang's two secondaries the single `chance(10)` decides, and what the `chance(0)` draws
+  before some secondaries stand for.
+- Why a player's Whirlpool (a move that registers a handler and traps) hit a Fairy-Tera boss for 7
+  where the damage formula gives 14 to 17.
 - Whether a listener of the GlueCode dispatcher `0x18beef4` reads `+0x4c` as a word (listeners
   register at run time; groups 1 to 3 are called at `0x18bf87c`), and which consumer drains the
   per-slot queues `0xe106a4` fills (`0x113d5e0` from `0xe107ac`). Message 16, with +0x08 zero,
