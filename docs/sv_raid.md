@@ -923,10 +923,9 @@ logged). A move use draws, in this order:
 | `below(16)` | a damaging move | the roll r: the damage times (100 − r) / 100 |
 | `chance(p)` | a secondary effect of chance p (Body Slam's 30) | the effect |
 
-Ice Fang (10 percent freeze, 10 percent flinch) draws one `chance(10)` where Showdown draws two, and
-`chance(0)` then `chance(10)` against some bosses; a stat-lowering secondary of 100 percent (Spirit
-Break, Bulldoze) draws `chance(0)` in some rounds and nothing in others. Two battlers of equal speed
-draw `below(2)` before the first move.
+A flinch secondary against the boss draws nothing ([A move in the round queue](#a-move-in-the-round-queue)
+has the rule). A stat-lowering secondary of 100 percent (Spirit Break, Bulldoze) draws `chance(0)` in
+some rounds and nothing in others. Two battlers of equal speed draw `below(2)` before the first move.
 
 A battle draws `below(100)` once before its first round. The damage is Showdown's Gen 9 formula (data
 from Pokemon Showdown's `moves.json` and `typechart`) with the party record's stats and the boss
@@ -955,12 +954,13 @@ move hits the boss and the boss's reply hits a player:
 | `0x7b (M, n, A)` | n counts the rounds before this one |
 | six `0xcf` groups of zeros | 20, 5, 5, 5, 19 and 20 bytes |
 | `0x7e (0, ...)`, `0x7e (1, 0, 0, 0, 0, 0)`, `0x7e (2, e, e, e, e, e)` | the first: 1 at T's position + 1; the third: an effectiveness code per position, 7 for none |
-| `0x8b (A's position, T's position, M, type, 0, 0, 1, 0, 0, 0)` | the hit |
+| `0x8b (A's position, T's position, M, type, 0, 0, 1, tera, 0, 0)` | the hit; `tera` is 1 when the boss uses a damaging move of its Tera type (448 of 448 such hits), else 0 |
 | `0x37 (T, 2, damage)`, `0x37 (T, 5, 1)`, `0x02 (T, A, damage, 3)` | the damage |
 | `0xd0` with bytes `T, e` | e is the effectiveness: 7 neutral, 6 not very effective, 8 super effective |
 | `0x8e (1, 1, M)`; `0x8e (1, 3, M)` and `0xca (A, 575, 0xffff0000)` when not very effective; `0x8e (1, 2, M)` and `0xca (A, 574, 0xffff0000)` when super effective | the effectiveness message |
 | `0x20 (A, 24)` | only for a super-effective hit |
 | `0x42 (T, A, A's position, type, cat, M, damage)` | the hit's record |
+| the drain, when the move drains and its user is below full HP | `0xa7 (T, 51)`, `0x03 (A, heal)`, `0x9a (A, heal)`, `0xcb (A, 290, T)`; heal is damage times the drain fraction, rounded half up, capped at the HP the user lacks |
 | the secondary effect, if any | for example a paralysis: `0x13`, `0x90`, `0xa7`, `0xcb (2, 92, T)` |
 | `0xd1` with bytes `01 00`, `0x2e (2, A − 1)` | |
 | `0x85 (7, damage)` | only for damage to the boss |
@@ -980,8 +980,16 @@ registers a handler adds `0x5a (b, M, 0x72000 + speed)` just before its `0x05`. 
 a handler is measured by using each move in an oracle battle and watching for `0x5a`: 347 of the 631
 moves seen used register one (Facade and Body Slam among them, Night Slash not).
 
-Built this way, from Showdown's move data and the Gen 9 damage formula, 20 of 284 oracle battles'
-first rounds equal the oracle's byte for byte and none differ; the other 264 hold something refused.
+The boss is Terastallized from the start: a damaging move of its Tera type under 60 base power, with
+no priority and a single hit, hits at 60, Gen 9's Tera rule (a Smoliv's Tera Normal Tackle did 4
+where 40 base power gives 2). A move's secondaries each draw `chance(n)` in Showdown's order, except
+a flinch against the boss, which draws nothing: a player's Ice Fang on the boss draws only its
+freeze chance (a freeze shows as `0x13 (2, 3, 0, 1, 4)` with messages 97 and 98, and the boss draws
+`chance(20)` to thaw before it moves), the boss's Ice Fang on a player draws both. A hit that knocks
+the boss out draws `chance(0)` first, with or without a secondary.
+
+Built this way, from Showdown's move data and the Gen 9 damage formula, 39 of 554 oracle battles'
+first rounds equal the oracle's byte for byte and none differ; the others hold something refused.
 A round is refused when a battler that acts or is hit holds an ability or item whose Showdown callback
 can change the round (Hustle's attack, Rivalry's power, Friend Guard's 0.75, Rattled's speed raise
 after a Dark hit, Gale Wings' priority), unless the corpus measured that ability or item idle, or
@@ -1562,14 +1570,10 @@ the host start; its Pokemon stayed in the battle.
 
 ## Unresolved
 
-- Which of Ice Fang's two secondaries the single `chance(10)` decides, and what the `chance(0)` draws
-  before some secondaries stand for.
+- What the `chance(0)` draws before some stat-drop secondaries stand for, when the target is not
+  knocked out.
 - Why a player's Whirlpool (a move that registers a handler and traps) hit a Fairy-Tera boss for 7
   where the damage formula gives 14 to 17.
-- Why a one-star boss's Tackle (Smoliv, Tera Normal, Early Bird) on a partner Dedenne did 4 where its
-  logged draws (critical `below(24)` 10, roll `below(16)` 4) give 2. Its `0x8b` carried 1 in the eighth
-  argument, which marks about 6 percent of boss hits at every HP share; the other marked hits fit the
-  formula with their logged draws.
 - Whether a listener of the GlueCode dispatcher `0x18beef4` reads `+0x4c` as a word (listeners
   register at run time; groups 1 to 3 are called at `0x18bf87c`), and which consumer drains the
   per-slot queues `0xe106a4` fills (`0x113d5e0` from `0xe107ac`). Message 16, with +0x08 zero,
