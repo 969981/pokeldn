@@ -65,9 +65,9 @@ class Dialogs:
         body = [t.text(entry.text, 13, t.MUTED, selectable=True)] if entry.text else []
         # A choice's options weigh the same: one unfilled button each, full width, in the program's order.
         body += [t.secondary_button(option, press(str(i))) for i, option in enumerate(entry.options)]
-        dialog.content = (ft.Container(ft.Column(body, spacing=8, tight=True,
-                                                 horizontal_alignment=ft.CrossAxisAlignment.STRETCH), width=460)
-                          if body else None)
+        if len(body) > 1:
+            body = [ft.Column(body, spacing=8, tight=True, horizontal_alignment=ft.CrossAxisAlignment.STRETCH)]
+        dialog.content = ft.Container(body[0], width=460) if body else None
         # Esc and a click outside answer Dismiss; a button for it would sit beside disagree.
         dialog.actions = ([t.button(entry.label, press("ack"))] if entry.kind == "ack" else
                           [t.secondary_button(entry.disagree, press("disagree")),

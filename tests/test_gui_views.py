@@ -567,6 +567,36 @@ def test_a_pop_up_is_a_dialog_naming_its_program_with_the_callers_buttons(monkey
     assert answers[1:] == [{"id": "ask", "n": 1, "answer": "dismiss"}]
 
 
+def test_a_choice_is_a_dialog_with_one_button_per_option_and_no_actions(monkeypatch):
+    page, manager, run, answers = popup_page(monkeypatch)
+    run.take({"op": "open", "id": "update", "n": 1, "kind": "choose", "title": "Update found",
+              "text": "Version 1.1.0 is installed.", "options": ["Save it", "Send 1.2.0", "Leave"], "tone": "info"})
+    (dialog,) = page._dialogs.controls
+    text, *buttons = dialog.content.content.controls
+    assert text.value == "Version 1.1.0 is installed." and dialog.actions == []
+    assert [b.content for b in buttons] == ["Save it", "Send 1.2.0", "Leave"]
+    buttons[1].on_click(None)
+    assert answers == [{"id": "update", "n": 1, "answer": "1"}] and not dialog.open
+
+
+def test_a_runs_progress_lines_draw_a_bar_with_rate_and_time_left_and_stay_out_of_the_log(monkeypatch):
+    from gui.views import games
+    clock = iter([100.0, 110.0])
+    monkeypatch.setattr(games.time, "monotonic", lambda: next(clock))
+    logged = []
+    panel = SessionPanel.__new__(SessionPanel)
+    panel.__dict__.update(app=SimpleNamespace(ui=lambda fn: fn()), log=SimpleNamespace(add=logged.append),
+                          transfer=ft.Container(visible=False), rates={}, partner_state=None, traded=0)
+    panel.transfer.update = lambda: None
+    panel._line("[progress] 1000000000 5200000000 bytes Sending the update")
+    panel._line("[progress] 1047000000 5200000000 bytes Sending the update")
+    panel._line("[lcs] the console sent its version")
+    bar, detail = panel.transfer.content.controls[1].controls
+    assert panel.transfer.visible and round(bar.value, 3) == round(1047 / 5200, 3)
+    assert detail.value == "1.05 of 5.20 GB · 4.70 MB/s · 15 min left"
+    assert logged == ["[lcs] the console sent its version"]
+
+
 def test_a_pop_up_opened_again_under_its_id_redraws_its_dialog(monkeypatch):
     page, manager, run, answers = popup_page(monkeypatch)
     message = {"op": "open", "id": "gift", "n": 1, "kind": "ack", "title": "The gift carries the trainer from "

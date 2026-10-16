@@ -333,3 +333,35 @@ def test_a_run_shows_its_pop_ups_in_the_app_and_gets_the_answers(tmp_path):
     assert exits == [0] and lines == ["before", "agreed", "stopped"]
     assert titles(view) == ["Note"]                     # the acknowledgement outlives its program
     view.shown[0].press("ack")                          # and its answer goes nowhere
+
+
+def test_progress_lines_are_paced_but_the_last_one_always_reaches_the_app(monkeypatch, capsys):
+    from pokeldn import progress
+    clock = iter([0.0, 0.1, 0.3, 0.35])
+    monkeypatch.setattr(progress.time, "monotonic", lambda: next(clock))
+    monkeypatch.setattr(progress, "_shown", {})
+    for done in (10, 20, 30, 100):
+        progress.show(done, 100, "Sending  the update")
+    lines = capsys.readouterr().out.splitlines()
+    assert lines == ["[progress] 10 100 bytes Sending the update", "[progress] 30 100 bytes Sending the update",
+                     "[progress] 100 100 bytes Sending the update"]
+    assert [progress.read(line) for line in lines][-1] == (100, 100, "bytes", "Sending the update")
+    for bad in ((1, 2, "", "bytes"), (-1, 2, "x", "bytes"), (1, 2, "x", "percent")):
+        with pytest.raises(ValueError):
+            progress.show(*bad)
+
+
+def test_the_rate_is_over_the_last_window_and_restarts_with_the_work():
+    from pokeldn import progress
+    rate = progress.Rate()
+    rate.add(0, 0.0)
+    rate.add(10, 0.5)
+    assert rate.per_second == 0.0 and rate.left(100) is None       # under a second of counts
+    done = 10
+    for t in range(1, 61):
+        done += 1 if t <= 30 else 4                                # four times faster in the last half
+        rate.add(done, float(t))
+    assert rate.per_second == pytest.approx(4, rel=0.05)
+    assert rate.left(1000) == pytest.approx((1000 - done) / rate.per_second)
+    rate.add(5, 61.0)                                              # a new transfer under the same title
+    assert rate.per_second == 0.0
