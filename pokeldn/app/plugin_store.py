@@ -55,6 +55,7 @@ class Package:
     key: str = ""                    # the author's public key (base64), when signed
     updates: str = ""                # where its newer versions are published
     digest: str = ""
+    library: str = ""                # the player-visible folder it keeps files in (plugins.library_name)
 
 
 def _version(text: str) -> tuple:
@@ -121,6 +122,10 @@ def _read(path: str) -> Package:
         if not ID.fullmatch(plugin_id):
             raise PackageError("plugin.toml needs an id of lowercase letters, digits, dots, dashes or underscores.")
         api = plugins.parse_api(meta.get("api"))
+        try:
+            library = plugins.library_name(meta["library"]) if "library" in meta else ""
+        except ValueError as error:
+            raise PackageError(str(error)) from None
         state, message = plugins.compatibility(api)
         if state in ("newer", "older"):
             raise PackageError(message)
@@ -143,7 +148,8 @@ def _read(path: str) -> Package:
                        str(meta.get("author", "")), str(meta.get("description", "")),
                        str(meta.get("homepage", "")), len(infos), sum(i.file_size for i in infos), icon,
                        os.path.abspath(path), prefix, names, findings, key, str(meta.get("updates", "")),
-                       hashlib.sha256(_manifest(plugin_id, str(meta.get("version", "")), contents)).hexdigest())
+                       hashlib.sha256(_manifest(plugin_id, str(meta.get("version", "")), contents)).hexdigest(),
+                       library)
 
 
 NETWORK = {"socket", "ssl", "urllib", "http", "requests", "httpx", "aiohttp", "websockets", "websocket", "ftplib",
@@ -289,7 +295,7 @@ def describe(plugin: plugins.Plugin) -> Package:
                                          for part in p.relative_to(plugin.folder).parts)}
     return Package(plugin.id, plugin.name, plugin.version, plugin.api, plugin.author, plugin.description,
                    plugin.homepage, len(files), sum(map(len, files.values())), findings=scan(files),
-                   key=verify(plugin.id, plugin.version, files), updates=plugin.updates)
+                   key=verify(plugin.id, plugin.version, files), updates=plugin.updates, library=plugin.library)
 
 
 def installed(plugin_id: str) -> plugins.Plugin | None:
@@ -401,4 +407,5 @@ def pack(folder: str, out: str, key=None) -> Package:
 
 
 def size_text(size: int) -> str:
-    return f"{size} B" if size < 1024 else f"{size / 1024:.0f} KB" if size < 1 << 20 else f"{size / (1 << 20):.1f} MB"
+    return (f"{size} B" if size < 1024 else f"{size / 1024:.0f} KB" if size < 1 << 20 else
+            f"{size / (1 << 20):.1f} MB" if size < 1 << 30 else f"{size / (1 << 30):.2f} GB")

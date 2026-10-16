@@ -25,6 +25,7 @@ from gui.views.raid_partners import RaidPartnersPicker
 from gui.views.raid_seed import RaidSeedPicker
 from gui.views.rewards import RewardPicker
 from gui.views.gifts import GiftBuilder
+from gui.views.library import LibraryCard
 from gui.views.sprites import MINI, Sprite
 from gui.views.widgets import CodeBlock, DigitCode, Log, PathField, open_folder
 from pokeldn.app.i18n import t as tr
@@ -380,6 +381,9 @@ class GamesView:
                                   " ".join(f.help for f in fields if f.help), trailing=sprite))
         if not self.tool.fields:
             out.append(t.text(tr('games.nothing_to_fill_in_10f2c5', 'Nothing to fill in.'), 13, t.MUTED))
+        owner = plugins.owner(self.tool.key)
+        if owner is not None and owner.library:
+            out.append(LibraryCard(self.app, owner).control())
         return out
 
     def shiny(self) -> bool:

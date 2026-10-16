@@ -718,3 +718,123 @@ def test_the_browse_tab_installs_a_listed_plugin_through_the_risk_screen(isolate
     assert plugin_store.origin(plugin_store.installed("test-kit")) == listed.url
     page.render()
     assert not any(isinstance(c, ft.Button) and c.content == "Install" for c in walk(page.column))
+
+
+SAVER = '''
+from pokeldn.plugins import Tool
+
+def register(api):
+    api.add_tool("frlg", Tool("saver-save", "Save", "save.py", "", ()))
+'''
+SAVE = '''
+import os, shutil, sys
+from pathlib import Path
+from pokeldn import plugins
+
+def build_parser():
+    import argparse
+    return argparse.ArgumentParser()
+
+def attempt(label, fn):
+    try:
+        fn()
+        print(label, "ALLOWED")
+    except PermissionError:
+        print(label, "STOPPED")
+
+if __name__ == "__main__":
+    lib = plugins.library_folder("saver")
+    (lib / "stale.nsp.part").write_bytes(b"half")
+    (lib / ".staging").mkdir(exist_ok=True)
+    (lib / "update.nsp.part").write_bytes(b"whole")
+    attempt("finish", lambda: os.replace(lib / "update.nsp.part", lib / "update.nsp"))
+    attempt("clear-part", lambda: (lib / "stale.nsp.part").unlink())
+    attempt("clear-staging", lambda: shutil.rmtree(lib / ".staging"))
+    attempt("rename", lambda: os.rename(lib / "update.nsp", lib / "Game 1.1.0.nsp"))
+    attempt("delete", lambda: (lib / "Game 1.1.0.nsp").unlink())
+    attempt("other-library", lambda: (plugins.library_path("Other") / "x.nsp").unlink())
+'''
+
+
+def test_a_plugins_library_takes_its_whole_file_workflow_and_nothing_beside_it(tmp_path):
+    """Writing a partial file, replacing it with the whole one, clearing what a crash left, renaming and
+    deleting are allowed in the plugin's library; another folder beside it stays guarded."""
+    folder = make(tmp_path, "saver", SAVER, save_py=SAVE)
+    (folder / "plugin.toml").write_text('id = "saver"\nname = "Saver"\napi = "1.7"\nlibrary = "Switch updates"\n')
+    data = tmp_path / "data"
+    (data / "Other").mkdir(parents=True)
+    (data / "Other" / "x.nsp").write_text("someone else's")
+    (tmp_path / "tmp").mkdir()
+    env = dict(os.environ, POKELDN_PLUGINS=str(folder), POKELDN_DATA=str(data), PYTHONPATH=str(ROOT),
+               TMPDIR=str(tmp_path / "tmp"), TEMP=str(tmp_path / "tmp"), TMP=str(tmp_path / "tmp"))
+    run = subprocess.run([sys.executable, "-m", "pokeldn", "saver-save"], cwd=tmp_path, env=env,
+                         capture_output=True, text=True, timeout=60)
+    verdicts = dict(line.split() for line in run.stdout.splitlines() if line.endswith(("ALLOWED", "STOPPED")))
+    assert verdicts == {**dict.fromkeys(("finish", "clear-part", "clear-staging", "rename", "delete"), "ALLOWED"),
+                        "other-library": "STOPPED"}, run.stdout + run.stderr
+    assert sorted(p.name for p in (data / "Switch updates").iterdir()) == []
+    assert (data / "Other" / "x.nsp").read_text() == "someone else's"
+
+
+@pytest.mark.parametrize("name, refused", [
+    ("Switch updates", ""), ("NSP_backups-2.0", ""), ("saves", "pokeldn's own"), ("Bank", "pokeldn's own"),
+    ("Received", "pokeldn's own"), ("NUL", "device name"), ("com1.backup", "device name"), ("../Bank", "folder name"),
+    ("a/b", "folder name"), (".hidden", "folder name"), ("ends.", "folder name"), ("x" * 41, "folder name"), (3, "folder name"),
+])
+def test_a_library_is_a_plain_folder_name_no_feature_of_pokeldn_uses(name, refused):
+    if not refused:
+        assert plugins.library_name(name) == name
+        return
+    with pytest.raises(ValueError, match=refused):
+        plugins.library_name(name)
+
+
+def test_a_package_with_a_bad_library_is_refused_and_two_plugins_never_share_one(isolated, tmp_path, monkeypatch):
+    from pokeldn.app import plugin_store
+    with pytest.raises(plugin_store.PackageError, match="pokeldn's own"):
+        plugin_store.read(str(zipped(tmp_path / "x.pokeplugin", {"plugin.toml": GOOD_TOML + 'library = "Saves"\n',
+                                                                 "plugin.py": ""})))
+    good = plugin_store.read(str(zipped(tmp_path / "y.pokeplugin", {
+        "plugin.toml": GOOD_TOML + 'library = "Updates"\n', "plugin.py": "def register(api):\n    pass\n"})))
+    assert good.library == "Updates"
+    first = make(tmp_path, "first", "def register(api):\n    api.library\n")
+    second = make(tmp_path, "second", "def register(api):\n    pass\n")
+    for path in (first, second):
+        (path / "plugin.toml").write_text((path / "plugin.toml").read_text() + 'library = "updates"\n')
+    monkeypatch.setenv("POKELDN_PLUGINS", os.pathsep.join(map(str, (first, second))))
+    loaded = {p.id: p for p in plugins.load()}
+    assert loaded["first"].loaded and plugins.library_folder("first").is_dir()
+    assert loaded["second"].error == "its library 'updates' is already the plugin 'first''s"
+
+
+def test_the_library_lists_names_and_copies_files_and_survives_the_plugins_removal(isolated, tmp_path):
+    from pokeldn.app import library, plugin_store
+    lib = tmp_path / "lib"
+    lib.mkdir()
+    for name, age in (("old.nsp", 30), ("new.nsp", 10), (".x.part", 0), ("y.nsp.part", 0)):
+        (lib / name).write_text(name)
+        os.utime(lib / name, (1_000_000 - age, 1_000_000 - age))
+    (lib / "folder").mkdir()
+    assert [e.name for e in library.entries(lib)] == ["new.nsp", "old.nsp"]
+    newest = library.entries(lib)[0]
+    assert library.rename(lib, newest, "  Game   1.2.0 ").name == "Game 1.2.0.nsp"   # the extension stays
+    for bad in ("", ".hidden", "a/b", "c:d"):
+        with pytest.raises(ValueError):
+            library.rename(lib, library.entries(lib)[0], bad)
+    with pytest.raises(FileExistsError):
+        library.rename(lib, library.entries(lib)[0], "old.nsp")
+    with pytest.raises(ValueError):
+        library.delete(lib, library.Entry(tmp_path / "outside.nsp", 0, 0))
+    source = tmp_path / "old.nsp"
+    source.write_text("dropped")
+    assert library.add(lib, str(source)).name == "old (2).nsp"
+    assert sorted(e.name for e in library.entries(lib)) == ["Game 1.2.0.nsp", "old (2).nsp", "old.nsp"]
+    assert not [p for p in lib.iterdir() if p.name.startswith(".") and p.name != ".x.part"]   # no copy left half
+    kit = tmp_path / "kit"
+    shutil_copy(KIT, kit)
+    (kit / "plugin.toml").write_text((kit / "plugin.toml").read_text() + 'library = "Kit files"\n')
+    plugin_store.install(plugin_store.pack(str(kit), str(tmp_path / "kit.pokeplugin")))
+    kept = plugins.library_folder("test-kit")
+    (kept / "backup.nsp").write_text("hours of work")
+    plugin_store.remove("test-kit", data=True)
+    assert (kept / "backup.nsp").read_text() == "hours of work"
