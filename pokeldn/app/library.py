@@ -18,6 +18,14 @@ class Entry:
         return self.path.name
 
 
+def shown(folder: Path) -> str:
+    """The folder as a player reads it: from their home folder when it is inside it."""
+    try:
+        return str(Path(folder).relative_to(Path.home()))
+    except ValueError:
+        return str(folder)
+
+
 def entries(folder: Path) -> list[Entry]:
     """The library's files, newest first; an absent folder has none."""
     try:

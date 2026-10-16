@@ -15,6 +15,7 @@ from gui.views.widgets import open_folder
 from pokeldn import plugins
 from pokeldn.ldn import radios
 from pokeldn.app import plugin_sources as sources
+from pokeldn.app import library
 from pokeldn.app import plugin_store as store
 from pokeldn.app.paths import SESSION
 
@@ -636,7 +637,7 @@ class PluginsView:
                                     value0=sources.label(self._listing(origin))), t.FAINT, "globe"))
         if package.library:
             lines.append(t.badge(tr('plugins.keeps_files_in', 'Keeps its files in {value0}. Removing the plugin leaves them there.',
-                                    value0=str(plugins.library_path(package.library))), t.BLUE, "folder"))
+                                    value0=library.shown(plugins.library_path(package.library))), t.BLUE, "folder"))
         if package.source:
             lines.append(t.badge(tr('plugins.files_886156', '{value0} · {value1} files · {value2}', value0=os.path.basename(package.source), value1=package.files, value2=store.size_text(package.size)), t.FAINT, "archive"))
         lines.append(self._signature(package, trust))
@@ -754,7 +755,7 @@ class PluginsView:
             content=ft.Column([
                 t.text(tr('plugins.its_files_are_deleted_from_this_computer_and_its_tools__3d0fb7', 'Its files are deleted from this computer and its tools leave the Games page. A session it is running keeps going until it ends.'), 13, t.MUTED),
                 *([t.badge(tr('plugins.library_stays', 'Its library stays: {value0}.',
-                              value0=str(plugins.library_path(plugin.library))), t.MUTED, "folder")]
+                              value0=library.shown(plugins.library_path(plugin.library))), t.MUTED, "folder")]
                   if plugin.library else []),
                 *([checkbox(tr('plugins.also_delete_what_it_saved_otherwise_installing_it_again_75d934', 'Also delete what it saved ({value0}); otherwise installing it again finds it.', value0=store.size_text(store.kept_data(plugin.id))), False,
                             lambda value: state.update(data=value))] if kept else []),

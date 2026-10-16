@@ -28,7 +28,7 @@ class LibraryCard:
             t.icon_button("refresh", lambda e: self.refresh(), tr('library.refresh', 'Refresh'))], spacing=0)
         self.refresh(update=False)
         where = tr('library.kept_in', 'Kept in {value0}. Removing {value1} leaves these files.',
-                   value0=str(self.folder), value1=self.plugin.name)
+                   value0=library.shown(self.folder), value1=self.plugin.name)
         return drop.target(t.card(tr('library.library', 'Library'), ft.Column([self.listing, self.note], spacing=8),
                                   where, trailing=tools), self._add)
 
