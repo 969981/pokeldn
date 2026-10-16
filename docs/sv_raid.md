@@ -1460,6 +1460,23 @@ A weak-handle entry is 0x20 bytes: u64 id (u32 index | u32 generation << 32), +8
 +0x10 the object, u16 +0x18 weak count, u16 +0x1a strong count, u32 +0x1c state (-1 freed, -2 live).
 Blocks hold 0x400 entries (`0xc1adec`); freed ids go to a `deque<u32>` grown by `0xb44724`.
 
+### The server's flow, measured
+
+These hold for an oracle server over the scripted console of [Serving the battle](#serving-the-battle),
+and a server built from them sends the console the same frames, notices included, over nine whole
+battles that the players won:
+
+| rule | measured |
+|---|---|
+| header counters | `step` rises by one per send, a broadcast or one request; `round` is 0 for message 1, 1 from 0x11, and rises with each 0x15 and with 0x25 |
+| one job a frame | message 1 starts Wild::Setup, which sends 0x11 once every slot answered 1, and ends one frame after every slot answered 0x11 |
+| requests | on a frame with no job running, a slot with nothing unanswered is posted a request (5); requests start one a frame, in slot order 0, 2, 3, 4 |
+| a command | the slot's 6 is posted as a job that sends the round (0x15) to every slot |
+| asked again | a slot that has answered every round sent to it is asked again on the next frame |
+| a win | the round that wins is followed, on the next frame, by an empty round 0x25 (20576 zero bytes), then 0x29 with the body `00 00 01 00 01 00`, 0x49, 0x35 and 0x37, each sent once every slot answered the one before: 2 frames after the last answer to 0x25 and to 0x49, on the same frame after the others |
+| a time-up | 0x2b with the body `00 00 00 00 02 00` (63 of 233 battles) |
+| the notice 0x46 | one for each frame on which a job starts, or on which, with no job running, a round's answer (0x16) is read |
+
 ### Serving the battle
 
 `bin/sv_host.py --raid-serve [NAME]` keeps the network through the battle and serves it from the
