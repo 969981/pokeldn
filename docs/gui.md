@@ -40,11 +40,12 @@ window-manager behavior remains unverified.
 
 ## Android setup requirements
 
-The Android GUI requires a guided USB setup flow. The [developer prototype](../examples/android/README.md)
-contains the current native USB frontend. On the tested OnePlus CPH2621, enabling
-the phone's OTG connection setting powered and enumerated the connected ESP32C6 without
-replugging the cable. The current Android prototype has a USB permission prompt; the full
-guided flow remains to be implemented.
+The [Android app](../examples/android/README.md) opens on one page with three steps: the radio
+board, the player's files, and the FireRed/LeafGreen trade. On the tested OnePlus CPH2621,
+enabling the phone's OTG connection setting powered and enumerated the connected ESP32C6 without
+replugging the cable. The board step follows the table below (`Setup.java`); it re-reads the USB
+state when a board is plugged or unplugged, when Android's USB prompt closes and when the player
+returns from Settings. A native-USB board (`303a:1001`) opens the app when plugged in.
 
 | detected state | required guidance |
 |---|---|
@@ -53,6 +54,12 @@ guided flow remains to be implemented.
 | Permission granted, board handshake fails | Check the board connection and supported radio firmware; show the actual error. |
 | Board answers the handshake | Show the detected board and firmware, then allow the game workflow to continue. |
 | Board disconnects or the user returns from Settings | Refresh detection and permission state, update the guidance and resume setup when the board is ready. |
+
+A board seen only through a CP210x, CH34x or FTDI bridge (a classic ESP32) is named as one the
+phone app cannot drive. Imported `prod.keys` must hold `master_key_00`,
+`aes_kek_generation_source` and `aes_key_generation_source`; an imported `.pk3` must be 80 or 100
+bytes with a matching checksum. The phone has no PKHeX, so a phone import is not checked for
+legality. The received Pokemon is saved through Android's file picker.
 
 Settings guidance uses verified manufacturer-specific paths or searchable setting names, with
 a Settings shortcut where Android supports it. The flow presents the relevant next action and

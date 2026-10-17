@@ -5,15 +5,18 @@ Chaquopy and a native USB CDC stream. A OnePlus CPH2621 running Android 16 power
 ESP32C6 over USB-C, completed a smooth retail FireRed trade and saved a PKHeX-legal received
 Pokemon. The console left the room and wireless session cleanly.
 
-The frontend is a diagnostic Activity. Full mobile GUI, on-phone PKHeX, background services,
-firmware installation and retail Android trades for other games remain unimplemented or
-unmeasured. [Android setup requirements](../../docs/gui.md#android-setup-requirements) defines
-the guided USB/OTG flow required for the mobile GUI.
+The launcher opens `AppActivity`: guided board setup, `prod.keys` and `.pk3` import through
+Android's file picker, a FireRed/LeafGreen host trade and saving the received Pokemon
+([Android setup requirements](../../docs/gui.md#android-setup-requirements)). The diagnostic
+`MainActivity` stays reachable from ADB only. On-phone PKHeX, background services, firmware
+installation and other games are not in the app. The guided app's USB path has not run against a
+board yet; the trade worker beneath it is the measured one.
 
 ## Build
 
 Run from the repository root with JDK 21, Android SDK 36 / build tools 36.1.0, Python 3.13
-and Gradle 8.13 installed. The Gradle build pins AGP 8.13.0 and Chaquopy 17.0.0.
+and Gradle 8.13 to 9.5 installed (AGP 8.13 fails on Gradle 9.6 and later). Set `ANDROID_HOME`
+when there is no `local.properties`. `testDebugUnitTest` runs the setup-state tests. The Gradle build pins AGP 8.13.0 and Chaquopy 17.0.0.
 
 ```sh
 python3.13 -m pip wheel --no-deps --wheel-dir examples/android/wheels python-netlink==0.0.15
@@ -48,7 +51,8 @@ python examples/android/provision.py --device PHONE_IP:PORT --keys /path/to/prod
 adb -s PHONE_IP:PORT shell am start -f 0x20000000 -n org.pokeldn.usbprobe/.MainActivity --es mode trade
 ```
 
-On the Switch, open the FireRed/LeafGreen wireless Trade Center and join POKELDN. The host uses
+The app's own import replaces this step for players: it writes the same files, with a checksum
+check in place of the desktop PKHeX check. On the Switch, open the FireRed/LeafGreen wireless Trade Center and join POKELDN. The host uses
 channel 11 and six participant slots, matching the desktop launcher. The Activity's Stop trade
 button requests cooperative cleanup. The native USB bridge retains released DTR/RTS lines and
 the existing Python Radio's framing, checksums, request handling and flow control.
