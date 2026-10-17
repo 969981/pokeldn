@@ -55,10 +55,8 @@ connection setting powered and enumerated the connected ESP32C6 without repluggi
 | Board disconnects or the user returns from Settings | Refresh detection and permission state, update the guidance and resume setup when the board is ready. |
 
 A board seen only through a CP210x, CH34x or FTDI bridge (a classic ESP32) is named as one the
-phone app cannot drive. Imported `prod.keys` must hold `master_key_00`,
-`aes_kek_generation_source` and `aes_key_generation_source`; an imported `.pk3` must be 80 or 100
-bytes with a matching checksum. The phone has no PKHeX, so a phone import is not checked for
-legality. The received Pokemon is saved through Android's file picker.
+phone app cannot drive. PKHeX runs on the phone, compiled for Android. The received Pokemon is saved
+through Android's file picker.
 
 Settings guidance uses verified manufacturer-specific paths or searchable setting names, with
 a Settings shortcut where Android supports it. The flow presents the relevant next action and
@@ -66,16 +64,27 @@ keeps setup progress visible. Developer tooling such as ADB and wireless debuggi
 separate from user setup.
 
 
-On Android a board behind a CP210x, CH34x or FTDI bridge (a classic ESP32) is named as one the
-phone cannot drive. "Open the folder" saves a zip of the folder where the player picks, and file
-choosers are Android's own.
+On Android "Open the folder" saves a zip of the folder where the player picks, and file choosers are
+Android's own.
+
+## iOS setup
+
+The [iOS app](../examples/ios/README.md) is this interface on an iPhone or iPad, installed with
+AltStore or SideStore. An iPhone cannot open a USB serial device, so the app reaches the board over
+Bluetooth: the board runs the **Bluetooth wireless** firmware, installed once from the desktop app's
+Board page (`pokeldn-radio-ble-c6.bin` for an ESP32-C6, `pokeldn-radio-ble.bin` for a classic ESP32),
+and needs USB only for power. The Board page lists it as "Bluetooth radio" once the phone has
+connected; the first launch asks for Bluetooth access. While the phone holds the board, the board
+answers nothing on its USB cable: close the iOS app before using the board from a computer or an
+Android phone. File choosers are iOS's own and copy the chosen file into the app; the app's files
+are under Files, On My iPhone, pokeldn.
 
 ## Phones
 
 Below 760 points wide the app shows its pages through a bottom tab bar and each page's panels one
 at a time, picked on a switcher above them: Games, Options and Session on the Games page; choosing
 a tool brings its options forward and Start brings the session. Dialogs take the screen's width.
-The Control and Update pages are absent on Android.
+The Control and Update pages are absent on Android and iOS.
 
 ## App language
 
