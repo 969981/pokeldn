@@ -145,9 +145,16 @@ def on_ui(page: ft.Page, fn: Callable[[], None]) -> None:
 
 
 class Log:
-    """A monospace log that takes lines from any thread and redraws at most four times a second."""
+    """A monospace log that takes lines from any thread and redraws at most four times a second (once
+    on a phone)."""
 
     MAX = 1500
+    # On a phone the run shares the interface's interpreter, and each redraw diffs every line kept:
+    # an iPhone run fell from 41 to 12 link slots per second (examples/ios/README.md).
+    PHONE = os.environ.get("POKELDN_PLATFORM") in ("android", "ios")
+    if PHONE:
+        MAX = 300
+    FLUSH = 1.0 if PHONE else 0.25
 
     def __init__(self, page: ft.Page, placeholder: str = ""):
         self.page = page
@@ -176,7 +183,7 @@ class Log:
             if self.flush_scheduled:
                 return
             self.flush_scheduled = True
-        threading.Timer(0.25, lambda: on_ui(self.page, self._flush)).start()
+        threading.Timer(self.FLUSH, lambda: on_ui(self.page, self._flush)).start()
 
     def _flush(self) -> None:
         with self.lock:

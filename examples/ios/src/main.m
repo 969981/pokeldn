@@ -280,6 +280,9 @@ static void run_python(void)
     setenv("POKELDN_IOS_DOCUMENTS", documents.UTF8String, 1);
     setenv("POKELDN_IOS_RADIO", [NSString stringWithFormat:@"socket://127.0.0.1:%d", RADIO_PORT].UTF8String, 1);
     if ([NSProcessInfo.processInfo.arguments containsObject:@"--selftest"]) setenv("POKELDN_IOS_SELFTEST", "1", 1);
+    if ([NSProcessInfo.processInfo.arguments containsObject:@"--host-test"]) setenv("POKELDN_IOS_HOSTTEST", "1", 1);
+    if ([NSProcessInfo.processInfo.arguments containsObject:@"--profile"]) setenv("POKELDN_IOS_PROFILE", "1", 1);
+    if ([NSProcessInfo.processInfo.arguments containsObject:@"--clean"]) setenv("POKELDN_IOS_CLEAN", "1", 1);
     setenv("POKELDN_GUI_WEB", [NSString stringWithFormat:@"%d", GUI_PORT].UTF8String, 1);
 
     PyPreConfig preconfig;

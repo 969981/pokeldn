@@ -6,10 +6,13 @@ runs the Bluetooth radio firmware ([Bluetooth](../../docs/hardware_esp32.md#blue
 only for power. Every page, game and tool is the code in `gui/` and `pokeldn/`; only the shell in this
 folder is iOS's.
 
-On an iPhone 13 Pro with a XIAO ESP32C6 running the Bluetooth firmware, the app completed a retail
-FireRed host trade. It was slow: the host sent 12.2 unique link slots per second (Android over USB:
-51), and the trade animation's step took minutes. With a 30 ms connection interval and no run tuning
-the same trade crawled at 4.4. The run takes Android's tuning (`ios_gui._tuned_runs`, the shared Trio
+On an iPhone 13 Pro with a XIAO ESP32C6 running the Bluetooth firmware, the app completes retail
+FireRed host trades: 34.6 unique link slots per second from the interface, 41.0 with `--host-test`
+(a Mac over the same Bluetooth link: 41.7; Android over USB: 51). The interface shares the run's
+interpreter: with a 1500-line session log redrawn four times a second, Flet's diffing held the main
+thread 75% of the time and the run fell to 12.2; a phone keeps 300 lines and redraws once a second
+(`gui/views/widgets.py` Log). With a 30 ms connection interval and no run tuning the same trade
+crawled at 4.4. The run takes Android's tuning (`ios_gui._tuned_runs`, the shared Trio
 loop from `examples/android/src/python/android_host_loop.py`) less its CPU affinity. In the iOS Simulator the
 interface and the self-test run; the simulator has no Bluetooth, so no run reaches a board there.
 
@@ -56,6 +59,17 @@ list devices` names it; the team ID is in Xcode, Settings, Accounts). Xcode issu
 profile only for a project it builds, so `build.py` has it build a one-file stub app with the same
 bundle identifier and reuses that profile. A free personal team's profile lasts seven days. On the
 phone, Settings, General, VPN and Device Management trusts the developer once.
+
+Launch flags, for `xcrun devicectl device process launch --device DEVICE io.pokeldn.app FLAG`:
+
+| flag | what it does |
+|---|---|
+| `--selftest` | one `selftest PASS` or `FAIL` line per native piece in `pokeldn.log`; with a board ready, 200 HELLO round trips and the granted interval |
+| `--host-test` | FireRed Trade (Host) with no interface, from `Documents/offer.pk3` and `Documents/prod.keys` (`devicectl device copy to`), into `host-test.log` and `host-test.jsonl` |
+| `--profile` | samples every thread's Python frame every 10 ms into `Documents/profile.txt` |
+| `--clean` | deletes what the flags above, the session captures and offers left in Documents; picked keys stay |
+
+`devicectl` copies files but deletes none, hence `--clean`.
 
 `--selftest` at launch (`xcrun simctl launch booted io.pokeldn.app --selftest`, or `xcrun devicectl
 device process launch --device DEVICE io.pokeldn.app --selftest`) writes one `selftest PASS` or

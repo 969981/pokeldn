@@ -118,6 +118,77 @@ def selftest():
         check(name, fn)
 
 
+def profile():
+    """`--profile` at launch: every 10 ms, the innermost pokeldn, gui, flet or ldn frame of each thread,
+    counted per thread and written to Documents/profile.txt every 10 s, busiest first."""
+    import collections
+    import time
+    documents = os.environ["POKELDN_IOS_DOCUMENTS"]
+    counts = collections.Counter()
+
+    def where(frame):
+        stack = []
+        while frame is not None:
+            stack.append(frame)
+            frame = frame.f_back
+        for f in stack:   # innermost first
+            path = f.f_code.co_filename
+            if any(part in path for part in ("/pokeldn/", "/gui/", "/flet", "/ldn/", "/trio/", "/uvicorn", "/starlette")):
+                return f"{path.rsplit('/app', 1)[-1]}:{f.f_lineno} {f.f_code.co_name}"
+        return f"{stack[0].f_code.co_filename.rsplit('/', 1)[-1]}:{stack[0].f_lineno} {stack[0].f_code.co_name}"
+
+    def sample():
+        last = time.monotonic()
+        names = {}
+        while True:
+            time.sleep(0.01)
+            names.update({t.ident: t.name for t in threading.enumerate()})
+            me = threading.get_ident()
+            for ident, frame in sys._current_frames().items():
+                if ident != me:
+                    counts[(names.get(ident, str(ident)), where(frame))] += 1
+            if time.monotonic() - last >= 10:
+                last = time.monotonic()
+                with open(f"{documents}/profile.txt", "w") as out:
+                    for (thread, place), n in counts.most_common(80):
+                        out.write(f"{n:7d}  {thread:24.24}  {place}\n")
+
+    threading.Thread(target=sample, name="profile", daemon=True).start()
+
+
+def clean():
+    """`--clean` at launch: what --selftest, --host-test and --profile left in Documents, a prod.keys copied
+    in over the cable, the session captures and offers, and Python's log; the keys the app picked stay."""
+    import glob
+    import shutil
+    documents = os.environ["POKELDN_IOS_DOCUMENTS"]
+    for name in ("offer.pk3", "prod.keys", "profile.txt", "host-test.log", "host-test.jsonl",
+                 "host-test_received.pk3", "pokeldn.log"):
+        try:
+            os.remove(os.path.join(documents, name))
+        except OSError:
+            pass
+    for folder in glob.glob(os.path.join(documents, "data", "session", "*")):
+        shutil.rmtree(folder, ignore_errors=True)
+
+
+def host_test():
+    """`--host-test` at launch: the FireRed Trade (Host) launcher alone, with the app's run tuning and no
+    interface, so its link rate can be set against a run from the interface. Inputs and outputs are
+    in Documents: prod.keys, offer.pk3; host-test.log, host-test.jsonl, host-test_received.pk3."""
+    from pokeldn.app import runner
+    documents = os.environ["POKELDN_IOS_DOCUMENTS"]
+    argv = ["--run", "bin/frlg_trade_host.py", "--live", "--phy", "auto", "--keys", f"{documents}/prod.keys",
+            f"{documents}/offer.pk3", "--slot", "0", "-o", f"{documents}/host-test_received.pk3",
+            "--capture", f"{documents}/host-test.jsonl"]
+    done = threading.Event()
+    log = open(f"{documents}/host-test.log", "w", buffering=1)
+    os.environ["POKELDN_RADIO"] = "esp32:" + os.environ["POKELDN_IOS_RADIO"]
+    runner.InProcess(argv, os.getcwd(), dict(os.environ), lambda line: log.write(line + "\n"),
+                     lambda code: (log.write(f"exit {code}\n"), done.set()))
+    done.wait()
+
+
 def main():
     signal.signal = _signal_on_main_thread_only
     import webbrowser   # Flet's web view opens a browser; on iOS that is Safari, over the app
@@ -138,6 +209,12 @@ def main():
     _tuned_runs()
     if os.environ.get("POKELDN_IOS_SELFTEST"):
         selftest()
+    if os.environ.get("POKELDN_IOS_CLEAN"):
+        clean()
+    if os.environ.get("POKELDN_IOS_PROFILE"):
+        profile()
+    if os.environ.get("POKELDN_IOS_HOSTTEST"):
+        host_test()
     from gui import main as gui_main
     gui_main.run()
 
