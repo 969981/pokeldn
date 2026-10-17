@@ -22,6 +22,8 @@ FIRMWARE_C3 = ROOT / "gui" / "firmware" / "pokeldn-radio-c3.bin"
 FIRMWARE_C6 = ROOT / "gui" / "firmware" / "pokeldn-radio-c6.bin"
 FIRMWARE_PAD = ROOT / "gui" / "firmware" / "pokeldn-pad-s3.bin"
 FIRMWARE_PAD_ESP32 = ROOT / "gui" / "firmware" / "pokeldn-pad.bin"
+FIRMWARE_BLE = ROOT / "gui" / "firmware" / "pokeldn-radio-ble.bin"
+FIRMWARE_BLE_C6 = ROOT / "gui" / "firmware" / "pokeldn-radio-ble-c6.bin"
 APP_ID = "io.github.decryptu.pokeldn"
 UNICORN = ROOT / "gui" / "unicorn"
 MARKER_UNICORN = "pokeldn-unicorn"
@@ -106,10 +108,11 @@ def clear_cfg(exe: Path) -> None:
 
 def main() -> int:
     argparse.ArgumentParser(description=__doc__).parse_args()
-    firmware = (FIRMWARE, FIRMWARE_S3, FIRMWARE_C3, FIRMWARE_C6, FIRMWARE_PAD, FIRMWARE_PAD_ESP32)
+    firmware = (FIRMWARE, FIRMWARE_S3, FIRMWARE_C3, FIRMWARE_C6, FIRMWARE_PAD, FIRMWARE_PAD_ESP32, FIRMWARE_BLE,
+                FIRMWARE_BLE_C6)
     missing = [str(path) for path in firmware if not path.is_file()]
     if missing:
-        raise SystemExit(f"Missing firmware: {', '.join(missing)}. Build all six images "
+        raise SystemExit(f"Missing firmware: {', '.join(missing)}. Build all eight images "
                          "as described in docs/gui.md before packing.")
     client = CLIENT / platform_key()
     if not (client / MARKER).is_file():

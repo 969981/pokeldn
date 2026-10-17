@@ -48,6 +48,37 @@ def _command() -> list[str]:
     raise BuilderError("PKHeX is missing. From source, run: dotnet build -c Release services/pkhex")
 
 
+class _Library:
+    """The helper compiled as a library (services/pkhex/Library.cs), for iOS, which starts no process:
+    its request loop runs on a thread over two pipes, behind Popen's stdin, stdout, poll and wait."""
+
+    def __init__(self, path: str):
+        import ctypes
+        serve = ctypes.CDLL(path).pokeldn_pkhex_serve
+        serve.argtypes, serve.restype = (ctypes.c_int, ctypes.c_int), None
+        requests_read, requests_write = os.pipe()
+        replies_read, replies_write = os.pipe()
+        self.stdin = open(requests_write, "w", encoding="utf-8")
+        self.stdout = open(replies_read, "r", encoding="utf-8")
+        # The library owns and closes its two ends; closing stdin ends its loop.
+        self.thread = threading.Thread(target=serve, args=(requests_read, replies_write), name="pkhex", daemon=True)
+        self.thread.start()
+
+    def poll(self):
+        return None if self.thread.is_alive() else 0
+
+    def wait(self, timeout=None):
+        self.thread.join(timeout)
+        if self.thread.is_alive() and timeout is not None:
+            raise subprocess.TimeoutExpired("pkhex", timeout)
+        return 0
+
+    def kill(self):
+        """A thread cannot be stopped; a stuck check is abandoned with its pipes."""
+        self.thread = threading.Thread(target=lambda: None)
+        self.thread.start()
+
+
 class Service:
     def __init__(self):
         self.lock = threading.Lock()
@@ -63,9 +94,11 @@ class Service:
                 if self.proc is None or self.proc.poll() is not None:
                     self._close()
                     flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
-                    self.proc = subprocess.Popen(_command(), stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                                 stderr=subprocess.DEVNULL, text=True, encoding="utf-8",
-                                                 creationflags=flags)
+                    command = _command()
+                    self.proc = (_Library(command[0]) if command[0].endswith(".dylib") or ".framework/" in command[0] else
+                                 subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                                  stderr=subprocess.DEVNULL, text=True, encoding="utf-8",
+                                                  creationflags=flags))
                 line = self._exchange(request)
                 if not line:
                     raise BuilderError("The Pokemon builder stopped.")

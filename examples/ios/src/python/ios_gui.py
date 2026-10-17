@@ -35,6 +35,37 @@ def _crypto_libraries():
     _raw_api.load_pycryptodome_raw_lib = load
 
 
+def selftest():
+    """`simctl launch booted io.pokeldn.app --selftest` (or devicectl): each native piece a run needs,
+    one PASS or FAIL line each in pokeldn.log."""
+    import traceback
+
+    def check(name, fn):
+        try:
+            print(f"selftest PASS {name}: {fn()}", flush=True)
+        except Exception:
+            print(f"selftest FAIL {name}: {traceback.format_exc()}", flush=True)
+
+    def aes():
+        from Crypto.Cipher import AES
+        return AES.new(bytes(16), AES.MODE_ECB).encrypt(bytes(16)).hex() == "66e94bd4ef8a2c3b884cfa59ca342b2e"
+
+    def zstd():
+        from pokeldn.ldn import crypto
+        return crypto.HAVE_ZSTD and len(crypto._zstd.ZstdCompressor().compress(b"pokeldn" * 50)) < 350
+
+    def pkhex():
+        from pokeldn import pokemon
+        return len(pokemon.SERVICE.species("frlg"))
+
+    def radio():
+        from pokeldn.ldn import esp32
+        return esp32.Radio  # the socket:// open needs a board; its import is what this checks
+
+    for name, fn in (("aes", aes), ("zstd", zstd), ("pkhex", pkhex), ("radio module", radio)):
+        check(name, fn)
+
+
 def main():
     signal.signal = _signal_on_main_thread_only
     import webbrowser   # Flet's web view opens a browser; on iOS that is Safari, over the app
@@ -44,6 +75,7 @@ def main():
                       POKELDN_RADIO="esp32:" + os.environ["POKELDN_IOS_RADIO"])
     app = Path(__file__).resolve().parent
     os.environ["POKELDN_IOS_BUNDLE"] = str(app.parent)
+    os.environ["POKELDN_PKHEX"] = str(app.parent / "Frameworks" / "pokeldn_pkhex.framework" / "pokeldn_pkhex")
     os.chdir(app)
     from pokeldn.app import ios
     ios.install()
@@ -51,6 +83,8 @@ def main():
         _crypto_libraries()
     except ImportError:
         pass
+    if os.environ.get("POKELDN_IOS_SELFTEST"):
+        selftest()
     from gui import main as gui_main
     gui_main.run()
 

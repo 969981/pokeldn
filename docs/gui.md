@@ -683,6 +683,15 @@ idf.py -B build/esp32c3 merge-bin -o "$POKELDN_IMAGES/pokeldn-radio-c3.bin"
 idf.py -B build/esp32c6 -D SDKCONFIG="$PWD/build/esp32c6/sdkconfig" set-target esp32c6
 idf.py -B build/esp32c6 -D SDKCONFIG="$PWD/build/esp32c6/sdkconfig" build
 idf.py -B build/esp32c6 merge-bin -o "$POKELDN_IMAGES/pokeldn-radio-c6.bin"
+export POKELDN_BLE=1   # the Bluetooth builds for the iOS app (hardware_esp32.md, Bluetooth)
+BLE_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.ble"
+idf.py -B build/ble -D SDKCONFIG="$PWD/build/ble/sdkconfig" -D SDKCONFIG_DEFAULTS="$BLE_DEFAULTS" set-target esp32
+idf.py -B build/ble -D SDKCONFIG="$PWD/build/ble/sdkconfig" -D SDKCONFIG_DEFAULTS="$BLE_DEFAULTS" build
+idf.py -B build/ble merge-bin -o "$POKELDN_IMAGES/pokeldn-radio-ble.bin"
+idf.py -B build/ble-c6 -D SDKCONFIG="$PWD/build/ble-c6/sdkconfig" -D SDKCONFIG_DEFAULTS="$BLE_DEFAULTS" set-target esp32c6
+idf.py -B build/ble-c6 -D SDKCONFIG="$PWD/build/ble-c6/sdkconfig" -D SDKCONFIG_DEFAULTS="$BLE_DEFAULTS" build
+idf.py -B build/ble-c6 merge-bin -o "$POKELDN_IMAGES/pokeldn-radio-ble-c6.bin"
+unset POKELDN_BLE
 cd ../pad
 idf.py -B build -D SDKCONFIG="$PWD/build/sdkconfig" set-target esp32s3
 idf.py -B build -D SDKCONFIG="$PWD/build/sdkconfig" build
@@ -693,10 +702,10 @@ python scripts/build_unicorn.py
 python scripts/pack_app.py
 ```
 
-The absolute output paths keep the images in `gui/firmware`. The packer requires all five images,
+The absolute output paths keep the images in `gui/firmware`. The packer requires the radio, Bluetooth radio and controller images,
 the client from `scripts/build_client.py` and the Unicorn from `scripts/build_unicorn.py` (needs CMake); the frozen app check verifies all are included and
 that the bundled client carries `flet_drop`. The release workflow builds each target separately
-and supplies all five images to every desktop packer.
+and supplies every image to every desktop packer.
 
 The app version is `pokeldn.__version__`. It appears in Settings and in the macOS and Windows
 package metadata. Update it and `.github/release-notes.md` together before preparing a release.
