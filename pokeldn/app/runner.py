@@ -280,7 +280,7 @@ def after_run(hook: Callable[[], None]) -> None:
     _after_run.append(hook)
 
 
-if os.environ.get("POKELDN_PLATFORM") == "android":
+if os.environ.get("POKELDN_PLATFORM") in ("android", "ios"):   # neither starts a second Python
     Process = InProcess   # noqa: F811
 
 

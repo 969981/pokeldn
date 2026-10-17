@@ -54,7 +54,8 @@ UPDATE = ("update", tr('main.update_c1c100', 'Update'), "download")
 
 
 ANDROID = os.environ.get("POKELDN_PLATFORM") == "android"
-if ANDROID:   # no Bluetooth controller and no self-update on a phone (examples/android)
+IOS = os.environ.get("POKELDN_PLATFORM") == "ios"
+if ANDROID or IOS:   # no Bluetooth controller and no self-update on a phone (examples/android, examples/ios)
     PAGES = tuple(p for p in PAGES if p[0] != "controller")
 
 
@@ -134,7 +135,7 @@ def main(page: ft.Page) -> None:
             tabs.controls = [item(p) for p in (*PAGES, PLUGINS, SETTINGS)]
             return
         rail.controls = [item(p) for p in PAGES]
-        bottom.controls = [item(UPDATE)] * bool(app.update and not ANDROID) + [item(PLUGINS), item(SETTINGS)]
+        bottom.controls = [item(UPDATE)] * bool(app.update and not (ANDROID or IOS)) + [item(PLUGINS), item(SETTINGS)]
 
     def navigate(key: str, **kwargs) -> None:
         if key == "update":
@@ -386,6 +387,7 @@ def welcome(app: App) -> None:
         t.step_list([
             tr('main.choose_prod_keys_dumped_from_your_own_console_the_keys__07399e', 'Choose prod.keys dumped from your own console. The keys decrypt local wireless messages and stay on this computer.'),
             tr('main.android_board_step', 'Plug an ESP32-S3, C3 or C6 into the phone with a USB data cable.') if ANDROID else
+            tr('main.ios_board_step', 'Power an ESP32-C6, S3 or C3 running the Bluetooth radio firmware; the app finds it on its own.') if IOS else
             tr('main.plug_in_your_esp32_with_a_usb_data_cable_0b0ddf', 'Plug in your ESP32 with a USB data cable.'),
             tr('main.pick_a_game_choose_a_tool_and_follow_the_console_steps_a4a338', 'Pick a game, choose a tool and follow the console steps.'),
         ]),

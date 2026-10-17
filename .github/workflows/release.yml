@@ -1,7 +1,7 @@
 name: Release
 
-# A tag v* builds the radio firmware, the desktop app for macOS, Windows and Linux, and the Android
-# app, and publishes
+# A tag v* builds the radio firmware, the desktop app for macOS, Windows and Linux, the Android
+# app and the iOS app, and publishes
 # them as a GitHub release. Running it by hand builds the same files as workflow artifacts only.
 on:
   push:
@@ -27,6 +27,13 @@ jobs:
             file: pokeldn-radio-c3.bin
           - target: esp32c6
             file: pokeldn-radio-c6.bin
+          # The Bluetooth host link for the iOS app (docs/hardware_esp32.md, Bluetooth).
+          - target: esp32c6
+            file: pokeldn-radio-ble-c6.bin
+            ble: true
+          - target: esp32
+            file: pokeldn-radio-ble.bin
+            ble: true
     steps:
       - uses: actions/checkout@v7
       - name: Build and merge the image
@@ -34,12 +41,16 @@ jobs:
         run: |
           . "$IDF_PATH/export.sh"
           cd firmware/esp32
-          idf.py set-target ${{ matrix.target }}
-          idf.py build
-          idf.py merge-bin -o "$GITHUB_WORKSPACE/${{ matrix.file }}"
+          if [ "${{ matrix.ble }}" = "true" ]; then
+            export POKELDN_BLE=1
+            set -- -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.ble"
+          fi
+          idf.py "$@" set-target ${{ matrix.target }}
+          idf.py "$@" build
+          idf.py "$@" merge-bin -o "$GITHUB_WORKSPACE/${{ matrix.file }}"
       - uses: actions/upload-artifact@v7
         with:
-          name: firmware-${{ matrix.target }}
+          name: firmware-${{ matrix.target }}${{ matrix.ble && '-ble' || '' }}
           path: ${{ matrix.file }}
 
   # The controller firmware (docs/hardware_pad.md): an S3 over USB, a classic ESP32 over Bluetooth.
@@ -244,8 +255,28 @@ jobs:
           name: pokeldn-android-arm64.apk
           path: pokeldn-android-arm64.apk
 
+  # The iOS app (examples/ios/README.md): unsigned, for AltStore or SideStore to sign on the phone.
+  ios:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - name: Build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python -m pip install setuptools wheel
+          python examples/ios/build.py --device
+          cp examples/ios/build/pokeldn-ios.ipa pokeldn-ios.ipa
+      - uses: actions/upload-artifact@v7
+        with:
+          name: pokeldn-ios.ipa
+          path: pokeldn-ios.ipa
+
   checksums:
-    needs: [app, android]
+    needs: [app, android, ios]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/download-artifact@v8

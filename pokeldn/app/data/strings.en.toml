@@ -873,6 +873,7 @@
 "main.finish_the_running_session_flash_or_cleanup_first_4771cf" = "Finish the running session, flash or cleanup first."
 "main.games_d9dae7" = "Games"
 "main.gts_c530c8" = "GTS"
+"main.ios_board_step" = "Power an ESP32-C6, S3 or C3 running the Bluetooth radio firmware; the app finds it on its own."
 "main.it_opened_the_old_version_6f6d59" = "it opened the old version"
 "main.later_73b6e4" = "Later"
 "main.maximize_or_restore_9e47a6" = "Maximize or restore"

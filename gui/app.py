@@ -11,7 +11,7 @@ import serial
 from gui import board, theme
 from gui.popups import Dialogs
 from pokeldn import plugins, pokemon, popup
-from pokeldn.app import android, popups, settings, update
+from pokeldn.app import android, ios, popups, settings, update
 from pokeldn.app.paths import SESSION
 from gui.views.widgets import on_ui
 from pokeldn.app.i18n import t as tr
@@ -49,6 +49,8 @@ class App:
         self.picker = ft.FilePicker()
         if android.active():   # the web view's picker gives no paths
             self.picker = android.Picker()
+        if ios.active():
+            self.picker = ios.Picker()
         self.clipboard = ft.Clipboard()
         self.launcher = ft.UrlLauncher()
         self.process = None        # the running session or flash
