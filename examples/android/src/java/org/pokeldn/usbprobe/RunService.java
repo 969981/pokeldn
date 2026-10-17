@@ -14,6 +14,7 @@ import android.os.IBinder;
  *  embedded Python mid-trade when the screen locks or the player switches apps. */
 public final class RunService extends Service {
     private static final String CHANNEL = "runs";
+    static final String STOP = "org.pokeldn.usbprobe.STOP_RUN";
 
     @Override public int onStartCommand(Intent intent, int flags, int id) {
         NotificationManager notifications = getSystemService(NotificationManager.class);
@@ -30,6 +31,13 @@ public final class RunService extends Service {
         } catch (RuntimeException error) {
             // Android 14 grants a connected-device service only with USB access to a device; without it the run goes on unprotected.
             android.util.Log.w("PokeLDN", "No foreground service: " + error);
+            stopSelf();
+            return START_NOT_STICKY;
+        }
+        // A stop is a start with STOP: Android crashes an app whose foreground service ends before
+        // startForeground, which a run shorter than the service's start would otherwise cause.
+        if (intent != null && STOP.equals(intent.getAction())) {
+            if (Build.VERSION.SDK_INT >= 24) stopForeground(STOP_FOREGROUND_REMOVE);
             stopSelf();
         }
         return START_NOT_STICKY;

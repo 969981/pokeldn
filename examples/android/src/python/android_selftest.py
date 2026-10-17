@@ -6,7 +6,7 @@ import traceback
 MODULES = ('Crypto.Cipher.AES', 'trio', 'zstandard', 'serial', 'esptool', 'websockets', 'ldn',
            'pokeldn.ldn.esp32_wlan', 'pokeldn.ldn.userspace_ip', 'pokeldn.frlg.link.host_app',
            'pokeldn.swsh.host_trade', 'pokeldn.online.gts', 'gui.board', 'gui.views.games',
-           'gui.views.boards', 'gui.views.bank', 'gui.views.gts', 'gui.views.settings')
+           'gui.views.boards', 'gui.views.bank', 'gui.views.gts', 'gui.views.settings', 'unicorn')
 
 
 def run():
@@ -23,6 +23,32 @@ def run():
         lines.append('PASS PKHeX species: %d' % len(species))
     except Exception:
         lines.append('FAIL PKHeX\n' + traceback.format_exc())
+    try:
+        from pokeldn.frlg.rom import buffer_script
+        lines.append(('PASS' if buffer_script.emulation_available() else 'FAIL') + ' unicorn emulation')
+        from unicorn import Uc, UC_ARCH_ARM, UC_MODE_ARM
+        uc = Uc(UC_ARCH_ARM, UC_MODE_ARM)
+        uc.mem_map(0x1000, 0x1000)
+        uc.mem_write(0x1000, bytes.fromhex('0100a0e3'))   # mov r0, #1
+        uc.emu_start(0x1000, 0x1004)
+        from unicorn.arm_const import UC_ARM_REG_R0
+        lines.append(('PASS' if uc.reg_read(UC_ARM_REG_R0) == 1 else 'FAIL') + ' unicorn runs ARM code')
+    except Exception:
+        lines.append('FAIL unicorn\n' + traceback.format_exc())
+    try:
+        import os
+        import tempfile
+        import threading
+        from pokeldn.app import runner
+        done, out, codes = threading.Event(), [], []
+        target = os.path.join(tempfile.mkdtemp(), 'gift')
+        runner.InProcess(['--run', 'bin/swsh_gift_host.py', '--keys', 'unused', '--species', '25', '--level', '25',
+                          '--dump', target], os.getcwd(), dict(os.environ), out.append,
+                         lambda code: (codes.append(code), done.set()))
+        done.wait(120)
+        lines.append(('PASS' if codes == [0] else 'FAIL') + ' in-process launcher: %s %s' % (codes, out[-3:]))
+    except Exception:
+        lines.append('FAIL in-process launcher\n' + traceback.format_exc())
     try:
         import time
         from pokeldn.app import android

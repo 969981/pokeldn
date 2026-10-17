@@ -104,9 +104,9 @@ public final class Bridge {
 
     public static void keepAwake(boolean on) {
         Intent service = new Intent(activity, RunService.class);
+        if (!on) service.setAction(RunService.STOP);
         try {
-            if (!on) activity.stopService(service);
-            else if (Build.VERSION.SDK_INT >= 26) activity.startForegroundService(service);
+            if (Build.VERSION.SDK_INT >= 26) activity.startForegroundService(service);
             else activity.startService(service);
         } catch (RuntimeException error) { Log.e("PokeLDN", "Foreground service", error); }
         activity.runOnUiThread(() -> {

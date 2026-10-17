@@ -54,6 +54,18 @@ def _tuned_runs():
     runner.after_run(after)
 
 
+def _load_unicorn():
+    # Unicorn turns importlib.resources.files("unicorn") into a Path, which Chaquopy's asset paths
+    # refuse; its library comes from LIBUNICORN_PATH (the app's native library folder) anyway.
+    import importlib.resources
+    files = importlib.resources.files
+    importlib.resources.files = lambda package: Path(os.environ["LIBUNICORN_PATH"]) if package == "unicorn" else files(package)
+    try:
+        import unicorn  # noqa: F401
+    finally:
+        importlib.resources.files = files
+
+
 def _shared_trio_loop():
     # The FireRed host's protocol on LDN's own Trio thread (android_host_loop, README, Scheduling).
     import android_host_loop
@@ -68,7 +80,7 @@ def serve(port, files_dir, native_dir):
     signal.signal = _signal_on_main_thread_only
     home = Path(files_dir)
     os.environ.update(HOME=str(home), POKELDN_DATA=str(home / "data"), POKELDN_GUI_WEB=str(port),
-                      POKELDN_PLATFORM="android", POKELDN_PKHEX=str(Path(native_dir) / "libpokeldn_pkhex.so"))
+                      POKELDN_PLATFORM="android", POKELDN_PKHEX=str(Path(native_dir) / "libpokeldn_pkhex.so"), LIBUNICORN_PATH=str(native_dir))
     import shutil
     shutil.rmtree(home / "outbox", ignore_errors=True)   # copies already handed to Android's pickers
     import pokeldn
@@ -76,6 +88,7 @@ def serve(port, files_dir, native_dir):
     from pokeldn.app import android
     android.install()
     _crypto_holds_the_gil()
+    _load_unicorn()
     _tuned_runs()
     _shared_trio_loop()
     from gui import main
