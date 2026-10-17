@@ -4,7 +4,9 @@ The Android app runs the desktop app's own interface on a phone, with an ESP32-S
 board on the phone's USB port. Every page, game and tool is the code in `gui/` and `pokeldn/`;
 only the shell in this folder is Android's. A OnePlus CPH2621 running Android 16 completed a
 smooth retail FireRed trade with a XIAO ESP32C6 through the earlier diagnostic frontend
-(`MainActivity`, below); the full interface's USB path has not run against a board yet.
+(`MainActivity`, below). The full app on the same phone and board identified the board and completed
+a FireRed host trade, with slow movement: the host sent a median 36 link slots per second against the
+diagnostic frontend's 51.
 
 ## How it works
 
