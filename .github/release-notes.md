@@ -1,17 +1,27 @@
-# pokeldn 0.30.0
+# pokeldn 0.31.0
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- An Android app, `pokeldn-android-arm64.apk`: the same interface on a phone, with the board on the
-  phone's USB port through a USB-C or OTG adapter. It needs a 64-bit ARM phone on Android 8 or later.
-  Install the APK, choose `prod.keys` on the welcome screen, then plug in the board and allow access.
-- Scarlet/Violet, Legends Z-A and Let's Go now save a received Pokemon only once the trade completes.
-  A Pokemon the other player showed and then took back is no longer saved as received.
+- An iPhone and iPad app, `pokeldn-ios.ipa`: the same interface, with the board reached over
+  Bluetooth, so the board needs USB only for power. Install it with AltStore or SideStore; the app's
+  AltStore source is
+  `https://raw.githubusercontent.com/Decryptu/pokeldn/main/.github/altstore/source.json`. Flash the
+  board once with the new **Bluetooth wireless** firmware from the desktop app's Board page (an
+  ESP32-C6 or a classic ESP32). FireRed/LeafGreen and Legends Z-A trades are verified from an iPhone.
+- The Android app no longer slows a trade to a crawl: each auto-scroll of the session log made the
+  interface redraw the whole page on the same processor time the trade uses.
+- Leaving the FireRed/LeafGreen Trade Center before sitting down no longer leaves the console on
+  "Please wait".
+- Logs hide personal details by default: trainer names, nicknames, trainer IDs, the device half of
+  MAC addresses and your user folder are masked, so a log can be shared or filmed. Settings, Bug
+  reports turns it off.
+- The app's Stop now ends a FireRed run on Android and iOS.
 
-The radio firmware stays at 1.6.2 and the controller firmware at 1.3.0; no board update is needed.
+The radio firmware stays at 1.6.2 and the controller firmware at 1.3.0; no board update is needed
+except to use the iPhone app.
 
 pokeldn is an unofficial fan project, not affiliated with Nintendo or The Pokemon Company. It is not
 meant for commercial or promotional use; see the License section of the README.
@@ -24,12 +34,13 @@ meant for commercial or promotional use; see the License section of the README.
 | Windows, x64 | `pokeldn-windows-x64.zip` |
 | Linux, x64 | `pokeldn-linux-x64.tar.gz` |
 | Android, arm64 | `pokeldn-android-arm64.apk` |
+| iPhone and iPad (AltStore, SideStore) | `pokeldn-ios.ipa` |
 
 Each app includes PKHeX.Core and firmware for classic ESP32, ESP32-S3, ESP32-C3 and ESP32-C6. Python, .NET
 and ESP-IDF are bundled or unnecessary for running the app. Supply your own `prod.keys`.
-The separate `pokeldn-radio*.bin` (wireless) and `pokeldn-pad*.bin` (controller) files are merged
+The separate `pokeldn-radio*.bin` (wireless; `-ble` for Bluetooth wireless) and `pokeldn-pad*.bin` (controller) files are merged
 firmware images for manual flashing at address `0x0`; the app selects the right image for the
-connected chip. `SHA256SUMS` covers all ten downloads.
+connected chip. `SHA256SUMS` covers all thirteen downloads.
 
 ## First run
 
