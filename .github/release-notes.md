@@ -1,13 +1,15 @@
-# pokeldn 0.29.1
+# pokeldn 0.30.0
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- Faster uploads to the board over USB. The app now counts the board's acknowledgment of a frame
-  it is still writing, so it no longer waits about 20 ms every few frames; a sustained upload to an
-  ESP32-S3 went from about 0.3 to 0.5 MB/s. Contributed by capito27.
+- An Android app, `pokeldn-android-arm64.apk`: the same interface on a phone, with the board on the
+  phone's USB port through a USB-C or OTG adapter. It needs a 64-bit ARM phone on Android 8 or later.
+  Install the APK, choose `prod.keys` on the welcome screen, then plug in the board and allow access.
+- Scarlet/Violet, Legends Z-A and Let's Go now save a received Pokemon only once the trade completes.
+  A Pokemon the other player showed and then took back is no longer saved as received.
 
 The radio firmware stays at 1.6.2 and the controller firmware at 1.3.0; no board update is needed.
 
@@ -21,12 +23,13 @@ meant for commercial or promotional use; see the License section of the README.
 | macOS, Apple silicon | `pokeldn-macos-arm64.zip` |
 | Windows, x64 | `pokeldn-windows-x64.zip` |
 | Linux, x64 | `pokeldn-linux-x64.tar.gz` |
+| Android, arm64 | `pokeldn-android-arm64.apk` |
 
 Each app includes PKHeX.Core and firmware for classic ESP32, ESP32-S3, ESP32-C3 and ESP32-C6. Python, .NET
 and ESP-IDF are bundled or unnecessary for running the app. Supply your own `prod.keys`.
 The separate `pokeldn-radio*.bin` (wireless) and `pokeldn-pad*.bin` (controller) files are merged
 firmware images for manual flashing at address `0x0`; the app selects the right image for the
-connected chip. `SHA256SUMS` covers all nine downloads.
+connected chip. `SHA256SUMS` covers all ten downloads.
 
 ## First run
 
