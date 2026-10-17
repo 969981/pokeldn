@@ -1,3 +1,4 @@
+from gui.localization import translate
 import os
 import re
 from dataclasses import dataclass, field
@@ -13,6 +14,14 @@ from pokeldn.app.i18n import t as tr
 DOCS = os.path.join(ROOT, "docs")
 GUIDE = os.path.join(ROOT, "gui", "guide.md")
 SITE = "https://decryptu.github.io/pokeldn/"
+
+
+def document_path(file: str) -> str:
+    """The app reads Chinese document bodies while retaining the original navigation keys."""
+    if file == "guide":
+        return GUIDE
+    localized = os.path.join(DOCS, "zh-Hans", file)
+    return localized if os.path.isfile(localized) else os.path.join(DOCS, file)
 
 
 @dataclass
@@ -76,7 +85,7 @@ class DocsView:
 
     def show(self, file: str, update: bool = True) -> None:
         self.file = file
-        path = GUIDE if file == "guide" else os.path.join(DOCS, file)
+        path = document_path(file)
         with open(path, encoding="utf-8") as f:
             _, body = split_front_matter(f.read())
         self.markdown.set_value(body)
@@ -95,7 +104,7 @@ class DocsView:
 
         def walk(items, depth):
             for p in items:
-                rows.append(self.row(p.title, p.file, depth, bool(p.children)))
+                rows.append(self.row(translate(p.title), p.file, depth, bool(p.children)))
                 if p.children and p.file in self.open_parents:
                     walk(p.children, depth + 1)
         walk(self.tree, 0)

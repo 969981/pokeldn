@@ -3,6 +3,7 @@ import sys
 from types import SimpleNamespace
 
 import pytest
+from gui.localization import translate
 
 pytest.importorskip("flet")
 
@@ -19,6 +20,28 @@ def test_saved_pokemon_offer_keeps_its_card_description():
     field = offer()
     view = SimpleNamespace(values={field.key: {"file": "pikachu.pk3", "species": 25, "legal": True}})
     assert GamesView.description(view, field) == field.help
+
+
+def test_plugin_error_and_findings_can_render_translated_metadata():
+    from gui.views.plugins import PluginsView
+    dialogs = []
+    view = SimpleNamespace(app=SimpleNamespace(page=SimpleNamespace(show_dialog=dialogs.append)))
+    PluginsView.error_dialog(view, "插件错误", "unknown error")
+    assert dialogs[0].content.value == "未知错误"
+    assert PluginsView._findings(["unknown error"]) is not None
+
+
+def test_raid_gallery_renders_chinese_species_without_changing_event_keys():
+    from gui.views.raid_event import RaidEventPicker
+    dropdown = SimpleNamespace()
+    picker = SimpleNamespace(view=SimpleNamespace(values={}), field=SimpleNamespace(key="--raid-event"),
+                             dropdown=dropdown, control=SimpleNamespace(update=lambda: None))
+    event = SimpleNamespace(key="013 Walking Wake", title="Walking Wake", species=("Walking Wake", "Iron Leaves"))
+    RaidEventPicker._fill(picker, [event], "")
+    assert dropdown.options[1].key == event.key
+    assert "波荡水、铁斑叶" in dropdown.options[1].text
+    assert dropdown.options[1].content.controls[0].value == "波荡水"
+    assert "Walking Wake" not in dropdown.options[1].text
 
 
 def test_choice_card_includes_help_for_the_saved_selection():
@@ -94,8 +117,8 @@ def test_a_pasted_team_fills_the_trades_after_its_picker_up_to_the_limit(monkeyp
     sets = [{"species_id": n, "notes": []} for n in (25, 133, 150)]
     message = queue.slots[0]["picker"].on_team(sets)
     assert saved[-1] == [{"species": 1}, {"species": 25}, {"species": 133}, {"species": 4}]
-    assert [s["title"].value for s in queue.slots] == ["Trade 1", "Trade 2", "Trade 3", "Trade 4"]
-    assert "trades 2, 3" in message and "1 did not fit" in message
+    assert [s["title"].value for s in queue.slots] == ["交换 1", "交换 2", "交换 3", "交换 4"]
+    assert "交换 2, 3" in message and "1 只未加入" in message
     assert queue.add_box.disabled
 
 
@@ -113,7 +136,7 @@ def test_a_queue_keeps_each_trades_pokemon_in_order_through_add_and_remove(monke
     assert len(queue.slots) == 3
     queue._remove(queue.slots[1])
     assert saved[-1] == [{"file": "a.pk9"}, {"file": "c.pk9"}]
-    assert [s["title"].value for s in queue.slots] == ["Trade 1", "Trade 2"]
+    assert [s["title"].value for s in queue.slots] == ["交换 1", "交换 2"]
     assert not queue.add_box.disabled
     queue._remove(queue.slots[0])
     queue._remove(queue.slots[0])
@@ -130,7 +153,7 @@ def test_files_dropped_on_a_trade_or_on_add_a_trade_fill_untouched_trades_then_n
     assert [v.get("file") for v in saved[-1]] == [None, "b.pk9", None]
     queue._append(["c.pk9", "d.pk9", "e.pk9"])
     assert [v.get("file") for v in saved[-1]] == [None, "b.pk9", None, "c.pk9", "d.pk9"]
-    assert queue.count.value.startswith("1 did not fit")
+    assert queue.count.value.startswith("1 只未加入")
 
     queue = stub_queue([{"species": 1}, {}, {}], 6, saved.append)
     queue._append(["f.pk9"])
@@ -220,6 +243,10 @@ def test_start_waits_for_keys_and_a_built_offer_but_not_for_a_doubtful_board(tmp
     states = [state for state, *_ in SessionPanel.checklist(panel)]
     assert ("block" in states) == blocked
     assert ("ok" in states) and len(states) >= 2
+    if not offer:
+        missing = next(how for _, what, how, _ in SessionPanel.checklist(panel) if what == "用于交换的宝可梦")
+        assert "请先生成用于交换的宝可梦" in missing
+        assert "Build the Pokemon" not in missing
 
 
 def test_a_board_that_never_answers_on_a_bridge_is_named_by_its_rom_and_sent_to_the_usb_socket(monkeypatch):
@@ -261,11 +288,11 @@ def test_a_port_the_user_may_not_open_names_the_group_not_a_busy_port(tmp_path, 
     assert status.state == "denied" and "usermod -aG" in status.detail
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="a sysfs interface name carries ':', not a Windows file name")
+@pytest.mark.skipif(sys.platform == "win32", reason="Linux sysfs paths contain colons, unsupported on Windows")
 @pytest.mark.parametrize("tty, title", [
-    (None, "Board found without a serial port"),          # brltty took it: no tty under the interface
-    ("ttyUSB0", "No board plugged in"),                    # usb-serial: <interface>/ttyUSB0
-    ("tty/ttyACM0", "No board plugged in"),                # cdc-acm: <interface>/tty/ttyACM0
+    (None, "已找到开发板，但没有串口"),          # brltty took it: no tty under the interface
+    ("ttyUSB0", "未连接开发板"),                    # usb-serial: <interface>/ttyUSB0
+    ("tty/ttyACM0", "未连接开发板"),                # cdc-acm: <interface>/tty/ttyACM0
 ])
 def test_a_ch340_on_usb_with_no_tty_names_brltty_on_linux(tmp_path, monkeypatch, tty, title):
     device = tmp_path / "1-1"
@@ -286,10 +313,10 @@ def test_a_ch340_on_usb_with_no_tty_names_brltty_on_linux(tmp_path, monkeypatch,
 
 
 @pytest.mark.parametrize("devices, title, step", [
-    ("USB\\VID_10C4&PID_EA60\\0001\r\n", "Board found without a driver", "silabser.inf"),
-    ("USB\\VID_1A86&PID_7523\\5&2A1B&0&2\r\n", "Board found without a driver", "CH341SER.EXE"),
-    ("USB\\VID_046D&PID_C52B\\6&3&0&1\r\n", "No board plugged in", None),   # a mouse receiver
-    ("", "No board plugged in", None),
+    ("USB\\VID_10C4&PID_EA60\\0001\r\n", "已找到开发板，但未安装驱动", "silabser.inf"),
+    ("USB\\VID_1A86&PID_7523\\5&2A1B&0&2\r\n", "已找到开发板，但未安装驱动", "CH341SER.EXE"),
+    ("USB\\VID_046D&PID_C52B\\6&3&0&1\r\n", "未连接开发板", None),   # a mouse receiver
+    ("", "未连接开发板", None),
 ])
 def test_a_bridge_with_no_driver_names_its_install_steps_on_windows(monkeypatch, devices, title, step):
     """A CP210x or CH340 with no Windows driver gets no COM port; Device Manager lists it with a
@@ -308,6 +335,29 @@ def test_a_bridge_with_no_driver_names_its_install_steps_on_windows(monkeypatch,
     assert calls[0][0] == "powershell" and "ConfigManagerErrorCode" in calls[0][-1]
     assert status.state == "missing" and status.title == title
     assert step is None or step in status.detail
+
+
+@pytest.mark.parametrize("platform", ["win32", "linux", "darwin"])
+def test_board_help_is_chinese_and_only_shows_the_platforms_setup(monkeypatch, platform):
+    import flet as ft
+    from gui.views.boards import BoardView
+
+    monkeypatch.setattr(sys, "platform", platform)
+    view = BoardView.__new__(BoardView)
+    view.app = SimpleNamespace()
+
+    def texts(control):
+        if isinstance(control, ft.Text):
+            yield control.value
+        for child in [*(getattr(control, "controls", None) or []), getattr(control, "content", None)]:
+            if isinstance(child, ft.Control):
+                yield from texts(child)
+
+    shown = "\n".join(texts(view.help_card()))
+    assert "找不到开发板或开发板没有响应？" in shown
+    assert ("silabser.inf" in shown) == (platform == "win32")
+    assert ("CH341SER.EXE" in shown) == (platform == "win32")
+    assert ("sudo usermod -aG dialout $USER" in shown) == (platform == "linux")
 
 
 def _release_server(routes: dict):
@@ -365,8 +415,8 @@ def test_the_released_firmware_lands_only_when_every_image_matches_its_checksum(
 @pytest.mark.parametrize("form", [0, 1])
 def test_a_pokemon_file_shows_its_own_species_and_shininess(monkeypatch, form):
     import asyncio
-    monkeypatch.setattr(pokemon.builder.SERVICE, "species", lambda game: [{"id": 25, "name": "Pikachu"}])
-    monkeypatch.setattr(pokemon.builder.SERVICE, "import_file", lambda game, path: {
+    monkeypatch.setattr(pokemon.SERVICE, "species", lambda game: [{"id": 25, "name": "Pikachu"}])
+    monkeypatch.setattr(pokemon.SERVICE, "import_file", lambda game, path: {
         "file": path, "species": "Charizard", "species_id": 6, "form_id": form,
         "level": 50, "shiny": True, "legal": True,
         "encounter": "", "moves": [], "report": ""})
@@ -383,7 +433,7 @@ def test_a_pokemon_file_shows_its_own_species_and_shininess(monkeypatch, form):
     picker.sprite.show = lambda species, shiny, update=True, form=0: shown.append((species, shiny, form))
     asyncio.run(picker._use_file(None))
     assert shown == [(6, True, form)]
-    assert picker.options.label.value == "1 set"
+    assert picker.options.label.value == "1 项已设置"
     assert (saved[-1]["species"], saved[-1]["shiny"], picker.species.value, picker.shiny.value) == (6, True, "6", True)
 
 
@@ -420,7 +470,7 @@ def test_the_gift_builder_renders_every_mode_and_kind_and_exports_what_it_shows(
 
     view = SimpleNamespace(tool=tool, values={}, extra={},
         app=SimpleNamespace(settings=Settings(), picker=SimpleNamespace(save_file=save_file), ui=lambda f: None,
-                          page=SimpleNamespace(run_task=lambda *a: None)))
+                            page=SimpleNamespace(run_task=lambda *args: None)))
     view.set_value = lambda field, value, rebuild=False: view.values.__setitem__(field.key, value)
     module = gift_builder.module(gift_builder.GAMES[key])
     builder = view_module.GiftBuilder(view, field)
@@ -441,14 +491,22 @@ def test_the_gift_builder_renders_every_mode_and_kind_and_exports_what_it_shows(
     builder.value["mode"] = "preset"
     for preset in module.PRESETS:
         builder.value["preset"] = preset.key
-        builder.cards()
+        cards = builder.cards()
+        shown = [c.value for card in cards for c in walk(card) if isinstance(c, ft.Text)]
+        for group in {p.group for p in module.PRESETS}:
+            assert translate(group) in shown and group not in shown
+        for intro in getattr(module, "GROUP_INTROS", {}).values():
+            assert translate(intro) in shown and intro not in shown
         for member in getattr(preset, "members", ()):   # every boost ticked: refused, still drawn
             builder.value["options"][preset.key]["on"].append(member.key)
             builder.cards()
     builder.value["mode"] = "build"
     for kind, *_ in module.KINDS:
         builder.state["kind"] = kind
-        builder.cards()
+        cards = builder.cards()
+        shown = [c.value for card in cards for c in walk(card) if isinstance(c, ft.Text)]
+        assert {translate(label) for _, label, _ in module.KINDS} <= set(shown)
+        assert not {label for _, label, _ in module.KINDS} & set(shown)
         assert builder.status.color != view_module.t.RED or kind == "code", builder.status.value
     builder.state["kind"] = module.KINDS[0][0]
     builder.commit = lambda rebuild=False: None
@@ -557,9 +615,9 @@ def test_a_pop_up_is_a_dialog_naming_its_program_with_the_callers_buttons(monkey
     assert ask.open and note.open and not ask.modal
     header = ask.title.controls[1].controls
     assert [c.value for c in header] == ["Trade host", "Trade the shiny?"]
-    assert ask.content.content.value == "A Gholdengo." and ask.content.content.selectable
+    assert ask.content.content.value == "A 赛富豪." and ask.content.content.selectable
     assert ask.title.controls[0].src == "icons/warning-diamond.svg" and ask.title.controls[0].color == t.AMBER
-    assert labels(ask) == ["Skip", "Trade"] and labels(note) == ["Close"] and note.content is None
+    assert labels(ask) == ["跳过", "交换"] and labels(note) == ["关闭"] and note.content is None
     note.actions[0].on_click(None)
     assert not note.open and answers == [{"id": "note", "n": 2, "answer": "ack"}]
     note.on_dismiss(None)                       # Flet reports the close the manager made: nothing more
@@ -593,7 +651,7 @@ def test_a_runs_progress_lines_draw_a_bar_with_rate_and_time_left_and_stay_out_o
     panel._line("[lcs] the console sent its version")
     bar, detail = panel.transfer.content.controls[1].controls
     assert panel.transfer.visible and round(bar.value, 3) == round(1047 / 5200, 3)
-    assert detail.value == "1.05 of 5.20 GB · 4.70 MB/s · 15 min left"
+    assert detail.value == "1.05 / 5.20 GB · 4.70 MB/s · 剩余 15 分钟"
     assert logged == ["[lcs] the console sent its version"]
 
 
@@ -620,7 +678,7 @@ def test_a_runs_panel_lines_are_kept_for_its_plugin_and_drawn_on_its_page(monkey
     session._line(cards.PREFIX + '{"file":"Game 1.0.2.nsp","state":"bad","text":"A signature does not check"}')
     session._line(cards.PREFIX + '{"id":"x","tone":"pink"}')
     assert changed == ["updates", "updates"]
-    assert len(logged) == 1 and "cannot read" in logged[0]
+    assert len(logged) == 1 and "无法读取" in logged[0]
 
     column = StatusCards(owner).control()
     (card,) = column.controls
@@ -763,11 +821,11 @@ def test_settings_keep_a_six_digit_switch_id_beside_the_five_digit_one(tmp_path,
     def type_into(label, text, at=0):
         fields[label][at].on_change(SimpleNamespace(control=SimpleNamespace(value=text)))
 
-    type_into("ID, Switch games", "967295")
-    type_into("Secret ID", "4294", at=1)
-    type_into("ID, Switch games", "1000000")      # seven digits
-    type_into("Secret ID", "4295", at=1)          # past 32 bits
-    type_into("ID, FireRed and LeafGreen", "65536")
+    type_into("ID（Switch 游戏）", "967295")
+    type_into("里 ID", "4294", at=1)
+    type_into("ID（Switch 游戏）", "1000000")      # seven digits
+    type_into("里 ID", "4295", at=1)          # past 32 bits
+    type_into("ID（火红／叶绿）", "65536")
     saved = settings_module.load()
     assert (saved.tid, saved.sid, saved.switch_tid, saved.switch_sid) == (1, 2, 967295, 4294)
     assert saved.ids("frlg") == (1, 2) and saved.ids("za") == (0xFFFF, 0xFFFF)
@@ -799,9 +857,234 @@ def test_the_boost_settings_leave_with_the_last_unticked_boost(monkeypatch):
     preset = next(p for p in gift_builder.module(gift_builder.GAMES["frlg-gift"]).PRESETS if hasattr(p, "members"))
     member = preset.members[0]
     builder._toggle(preset, member.key)
-    assert frlg_builder.KEEP.label in texts(builder.presets())
+    assert "保存增强功能供以后使用" in texts(builder.presets())
     builder._toggle(preset, member.key)
-    assert frlg_builder.KEEP.label not in texts(builder.presets())
+    assert "保存增强功能供以后使用" not in texts(builder.presets())
+
+
+def test_official_events_search_in_chinese_keeps_original_event_keys(monkeypatch):
+    import flet as ft
+    from gui.views import gifts as view_module
+    from pokeldn.app.catalog import GAMES
+    from pokeldn.app.settings import Settings
+    from pokeldn.swsh import events
+
+    tool = next(t for game in GAMES for t in game.tools if t.key == "swsh-gift")
+    field = next(f for f in tool.fields if f.kind == "builder")
+    view = SimpleNamespace(tool=tool, values={}, extra={},
+                           app=SimpleNamespace(settings=Settings(), picker=None, ui=lambda f: None))
+    view.set_value = lambda *args, **kwargs: None
+    builder = view_module.GiftBuilder(view, field)
+    builder.value["event_search"] = "皮卡丘"
+    listing = builder.events()
+
+    def walk(control):
+        yield control
+        for child in [*(getattr(control, "controls", None) or []), getattr(control, "content", None)]:
+            if isinstance(child, ft.Control):
+                yield from walk(child)
+
+    controls = list(walk(listing))
+    assert any("皮卡丘" in c.value for c in controls if isinstance(c, ft.Text))
+    count = next(c.value for c in controls if isinstance(c, ft.Text) and c.value.endswith("张卡片"))
+    assert int(count.split(" / ")[0]) > 0
+    tile = next(c for c in controls if isinstance(c, ft.Container) and c.on_click
+                and isinstance(c.content, ft.Row))
+    tile.on_click(None)
+    selected = events.by_key()[builder.value["event"]]
+    assert "Pikachu" in selected["label"]
+    assert events.gift(selected["key"]).variants["swsh"].data["wc8"] == selected["record"]
+
+
+def test_advanced_descriptions_cover_each_current_tool_without_changing_cli_help():
+    import re
+    from gui.advanced_zh_hans import description
+    from pokeldn.app.catalog import GAMES
+    from pokeldn.app.introspect import flags_of
+
+    for game in GAMES:
+        for tool in game.tools:
+            if tool.unavailable:
+                continue
+            for flag in flags_of(tool.script):
+                shown = description(flag.help, flag.option)
+                assert re.search(r'[\u4e00-\u9fff]', shown), (tool.key, flag.option, shown)
+    host = next(t for game in GAMES for t in game.tools if t.key == 'frlg-trade-host')
+    slot = next(f for f in flags_of(host.script) if f.option == '--slot')
+    assert slot.help.startswith('0-based host party slot')
+    assert slot.default == 1
+
+
+def test_advanced_rows_show_chinese_help_and_keep_saved_argument_values():
+    import flet as ft
+    from pokeldn.app.catalog import GAMES
+    from pokeldn.app.introspect import flags_of
+
+    tool = next(t for game in GAMES for t in game.tools if t.key == 'frlg-trade-host')
+    view = SimpleNamespace(tool=tool, values={}, extra={'--slot': '2'})
+    flags = {f.option: f for f in flags_of(tool.script)}
+
+    def walk(control):
+        yield control
+        for child in [*(getattr(control, 'controls', None) or []), getattr(control, 'content', None)]:
+            if isinstance(child, ft.Control):
+                yield from walk(child)
+
+    for key, expected in [('--slot', '队伍位置'), ('--slots', '逗号'), ('--out-format', '已解密'),
+                          ('--union-room', '联合房间'), ('--colosseum', '竞技场')]:
+        row = GamesView.flag_row(view, flags[key])
+        assert any(expected in c.value for c in walk(row) if isinstance(c, ft.Text))
+    assert view.extra['--slot'] == '2'
+    assert next(c for c in walk(GamesView.flag_row(view, flags['--slot'])) if isinstance(c, ft.TextField)).value == '2'
+
+
+def test_advanced_search_finds_chinese_and_original_parameter_names():
+    from pokeldn.app.catalog import GAMES
+    tool = next(t for game in GAMES for t in game.tools if t.key == 'frlg-trade-host')
+    view = SimpleNamespace(tool=tool, values={}, extra={}, flag_list=SimpleNamespace(controls=[]))
+    view.flag_row = lambda flag: flag.option
+    for query in ['竞技场', '--colosseum', 'COLOSSEUM']:
+        view.search = query
+        GamesView._fill_flags(view)
+        assert '--colosseum' in view.flag_list.controls
+
+
+def test_docs_load_chinese_bodies_without_changing_navigation_or_links():
+    from pathlib import Path
+    from gui.views import docs
+    from scripts.pack_app import runtime_files
+
+    original = Path(docs.DOCS)
+    bundled = set(runtime_files())
+    for path in original.glob('*.md'):
+        selected = Path(docs.document_path(path.name))
+        assert selected == original / 'zh-Hans' / path.name
+        source_meta, _ = docs.split_front_matter(path.read_text(encoding='utf-8'))
+        local_meta, body = docs.split_front_matter(selected.read_text(encoding='utf-8'))
+        assert source_meta == local_meta
+        assert any('\u4e00' <= c <= '\u9fff' for c in body)
+        assert 'docs/zh-Hans/' + path.name in bundled
+    assert Path(docs.document_path('guide')) == Path(docs.GUIDE)
+    home = Path(docs.document_path('index.md')).read_text(encoding='utf-8')
+    assert '支持的游戏与功能' in home and '文档章节' in home
+    assert '[无线通信层](ldn.md)' in home
+    assert 'Seven games, all on retail hardware' not in home
+
+
+def test_chinese_docs_keep_original_code_and_link_destinations():
+    import re
+    from collections import Counter
+    from pathlib import Path
+    from gui.views import docs
+
+    for path in Path(docs.DOCS).glob('*.md'):
+        source = path.read_text(encoding='utf-8')
+        translated = Path(docs.document_path(path.name)).read_text(encoding='utf-8')
+        # Inline identifiers and examples remain readable and executable as authored.
+        code = lambda text: Counter(m[0] for m in re.finditer(r'(`+).*?\1', text, re.S))
+        assert code(source) == code(translated), path.name
+        links = lambda text: Counter(re.findall(r'\]\(([^\n]*?)\)', text))
+        assert links(source) == links(translated), path.name
+        fences = lambda text: [m[0] for m in re.finditer(
+            r'(?m)^(`{3,}|~{3,})[^\n]*\n.*?^\1[^\n]*(?:\n|$)',text,re.S)]
+        assert fences(source) == fences(translated), path.name
+        assert 'ZXQK' not in translated and 'ZXQBOUNDARYQXZ' not in translated
+
+
+def test_desktop_translates_all_static_pkhex_validation_messages():
+    import re
+    from pathlib import Path
+    from gui.localization import translate
+
+    program = (Path(__file__).resolve().parents[1] / 'services/pkhex/Program.cs').read_text(encoding='utf-8')
+    messages = re.findall(r'(?:throw new \w+\(|(?:errors|notes)\.Add\()"([^"\n]+)"', program)
+    assert messages
+    for message in messages:
+        assert re.search(r'[\u4e00-\u9fff]', translate(message)), message
+
+
+def test_display_logs_keep_raw_diagnostics_and_identifiers():
+    from gui.views.widgets import Log
+    from gui.localization import translate_app_log, translate
+
+    raw = '[app] Firmware for ESP32-S3: C:/Pikachu/firmware.bin'
+    assert Log._line(raw).value == raw
+    assert translate_app_log('[app] Checking COM3; the board may restart.') == '[app] 正在检查 COM3；开发板可能会重启。'
+    assert translate_app_log('Writing at 0x1000... (50%)') == 'Writing at 0x1000... (50%)'
+    assert translate('16 bytes; returned 1 after 2 frames (4 instructions) and answers 0x00000001.') == '16 字节；在 2 帧后返回 1（执行 4 条指令），回复值为 0x00000001。'
+
+
+def test_flash_progress_is_chinese_and_preserves_protocol_parsing():
+    from types import SimpleNamespace
+    from gui.views.boards import BoardView
+
+    view = SimpleNamespace(app=SimpleNamespace(chips={}, ui=lambda fn: fn()), selected='COM3',
+                           log=SimpleNamespace(add=lambda line: None),
+                           progress=SimpleNamespace(value=None, update=lambda: None),
+                           progress_text=SimpleNamespace(value='', update=lambda: None))
+    BoardView._flash_line(view, '[app] Firmware for ESP32-S3: C:/firmware.bin')
+    BoardView._flash_line(view, 'Writing at 0x1000... (50%)')
+    assert view.app.chips['COM3'] == 'ESP32-S3'
+    assert view.progress.value == 0.5
+    assert view.progress_text.value == '正在写入 50%'
+
+
+def test_all_gift_presets_outfits_and_summaries_have_chinese_display():
+    import re
+    from gui.localization import translate, gift_description
+    from pokeldn.app.gift_builder import module
+    from pokeldn.swsh import gift_builder as swsh
+
+    for game in ('frlg', 'swsh'):
+        for preset in module(game).PRESETS:
+            for item in [preset, *getattr(preset, 'members', ())]:
+                for key in ('label', 'summary', 'group'):
+                    text = getattr(item, key, '')
+                    if text:
+                        assert re.search(r'[\u4e00-\u9fff]', translate(text)), (game, key, text)
+                        if game == 'swsh':
+                            assert not re.search(r'[A-Za-z]{3,}', translate(text).replace('POKELDN', '')), text
+    for outfit in swsh.OUTFITS:
+        assert re.search(r'[\u4e00-\u9fff]', translate(outfit.label)), outfit.label
+    for kind in ('money', 'clothing', 'items', 'bp', 'egg', 'pokemon'):
+        state = swsh.blank(kind=kind)
+        when, lines = gift_description('swsh', state, lambda kind, ident: '皮卡丘' if kind == 'species' else '大师球')
+        assert re.search(r'[\u4e00-\u9fff]', when), when
+        assert all(re.search(r'[\u4e00-\u9fff]', line) for line in lines), lines
+
+
+@pytest.mark.parametrize("pattern,ball_id", [("Poke", 4), ("Great", 3), ("Ultra", 2)])
+def test_ball_guy_clothing_keeps_the_character_and_ball_pattern_in_both_pickers(pattern, ball_id):
+    from gui.localization import SERVICE, event_label
+    from gui.views.gifts import GiftBuilder
+    from pokeldn.swsh import events
+
+    ball = next(n["name"] for n in SERVICE.names("swsh", "balls") if n["id"] == ball_id)
+    expected = f"休闲 T 恤（阿球·{ball}）"
+    view = object.__new__(GiftBuilder)
+    view.value = {"build": {"outfits": []}}
+    view.number_field = lambda *args, **kwargs: ft.Container()
+    clothing = view.swsh_clothing()
+    assert expected in [c.value for c in walk(clothing) if isinstance(c, ft.Text)]
+    card = next(c for c in events.load() if c["label"].startswith(f"Casual Tee ({pattern} Ball Guy)"))
+    assert event_label("swsh", card).startswith(expected)
+    assert card["group"] == "Clothing"
+
+
+def test_static_gift_validation_messages_are_translated():
+    import ast
+    import re
+    from pathlib import Path
+    from gui.localization import translate
+
+    root = Path(__file__).resolve().parents[1]
+    for name in ('pokeldn/gifts.py', 'pokeldn/swsh/gift_builder.py', 'pokeldn/frlg/gift/builder.py',
+                 'pokeldn/app/gift_builder.py', 'pokeldn/frlg/rom/custom_code.py'):
+        for node in ast.walk(ast.parse((root / name).read_text(encoding='utf-8'))):
+            if isinstance(node, ast.Raise) and isinstance(node.exc, ast.Call) and node.exc.args:
+                message = node.exc.args[0]
+                if isinstance(message, ast.Constant) and isinstance(message.value, str):
+                    assert re.search(r'[\u4e00-\u9fff]', translate(message.value)), (name, message.value)
 
 
 @pytest.mark.parametrize("game,key,species", [
@@ -829,7 +1112,7 @@ def test_gift_presets_show_the_pokemon_species_and_still_select_it(monkeypatch, 
     builder.commit = lambda rebuild=False: None
     preset = builder.module.PRESET[key]
     tile = next(c for c in raid_controls(builder.presets())
-                if isinstance(c, ft.Container) and c.on_click and preset.label in gift_texts(c))
+                if isinstance(c, ft.Container) and c.on_click and translate(preset.label) in gift_texts(c))
     sprites = [c.data for c in tile.content.controls if isinstance(c.data, tuple)]
     assert sprites == ([(species, False)] if species else [])
     tile.on_click(None)
@@ -846,12 +1129,12 @@ def test_official_gift_icons_follow_the_record_and_keep_selection(monkeypatch, s
     monkeypatch.setattr(view_module, "Sprite", lambda app, n, shiny, size, form=0:
                         SimpleNamespace(control=ft.Container(data=(n, shiny, form), width=size)))
     builder = view_module.GiftBuilder.__new__(view_module.GiftBuilder)
-    builder.app, builder.module = None, gift_builder
+    builder.app, builder.module, builder.game = None, gift_builder, "swsh"
     builder.value = {"event": "other"}
     builder.commit = lambda rebuild=False: None
     raw = (wc8.pokemon_card(species, shiny_type=shiny_type, form=form) if species else
            gift_builder.record(gift_builder.blank(kind="items")))
-    card = {"key": "test", "label": "Test gift", "summary": "A gift", "record": raw}
+    card = {"key": "test", "label": "Test gift", "summary": "A gift", "record": raw, "group": "Pokemon" if species else "Items"}
     tile = builder._event_tile(card)
     sprites = [c.data for c in tile.content.controls if isinstance(c.data, tuple)]
     assert sprites == ([(species, shiny_type in (2, 3), form)] if species else [])
@@ -915,7 +1198,7 @@ def test_gift_form_replies_cannot_change_another_editor_or_a_newer_request(monke
     work, replies = [], []
     monkeypatch.setattr(view_module.threading, "Thread", lambda target, daemon: SimpleNamespace(
         start=lambda: work.append(target)))
-    monkeypatch.setattr(view_module.pokemon.SERVICE, "options", lambda *a: {
+    monkeypatch.setattr(view_module.SERVICE, "options", lambda *a: {
         "forms": [{"id": 0, "name": "Kanto"}, {"id": 1, "name": "Galar"}]})
     builder = view_module.GiftBuilder.__new__(view_module.GiftBuilder)
     builder.game = "swsh"
@@ -956,7 +1239,7 @@ def test_offline_gift_catalog_rebuilds_never_start_sprite_workers(monkeypatch, t
     monkeypatch.setattr(view_module.threading, "Thread", unexpected)
     builder = view_module.GiftBuilder.__new__(view_module.GiftBuilder)
     builder.app = SimpleNamespace(settings=SimpleNamespace(sprites=False))
-    builder.module = gift_builder
+    builder.module, builder.game = gift_builder, "swsh"
     builder.value = {"event": ""}
     for _ in range(3):
         for card in gift_builder.OFFICIAL.load():
@@ -987,15 +1270,15 @@ def test_a_pokemon_home_card_is_outlined_in_amber_and_says_why(monkeypatch):
                            app=SimpleNamespace(settings=Settings(), picker=None, ui=lambda f: None))
     view.set_value = lambda field, value, rebuild=False: view.values.__setitem__(field.key, value)
     builder = view_module.GiftBuilder(view, field)
-    warning = pokemon.builder.HOME_TRACKER_WARNINGS["empty"]
-    reason = f"{warning}. {events.HOME_WHY}"
+    warning = translate(pokemon.builder.HOME_TRACKER_WARNINGS["empty"])
+    reason = translate(f"{pokemon.builder.HOME_TRACKER_WARNINGS['empty']}. {events.HOME_WHY}")
     for group, home in ((events.HOME, True), ("Pokemon", False)):
         card = next(e for e in events.load() if e["group"] == group)
         builder.value.update(mode="event", event=card["key"], event_search=card["label"])
         builder.cards()
         assert (reason in texts(builder.effects)) == home, group
         tile = next(c for c in walk(builder.events()) if isinstance(c, ft.Container) and c.on_click
-                    and card["label"] in texts(c))
+                    and view_module.event_label("swsh", card) in texts(c))
         assert (warning in texts(tile)) == home, group
         assert (tile.border.top.color == view_module.t.AMBER) == home, group
 
@@ -1015,6 +1298,60 @@ def test_viewer_cleanup_removes_only_this_apps_older_viewers(tmp_path, monkeypat
     assert sorted(p.name for p in removed) == ["legacy-mac", "marked"]
     assert sorted(p.name for p in tmp_path.iterdir()) == ["current", "other-app", "vanilla"]
     assert (folders["current"] / flet_client.MARKER).is_file()
+
+
+def test_save_pokemon_uses_its_trainer_through_the_chinese_service(monkeypatch):
+    owner = {"ot": "ASH", "tid": 12345, "sid": 54321, "language": 2, "gender": 0}
+    calls, offered = [], []
+
+    def make(game, species, trainer, *args):
+        calls.append((game, species, trainer))
+        return {"file": "party.pk3", "species": "皮卡丘", "level": 5, "legal": True,
+                "encounter": "", "moves": []}
+
+    monkeypatch.setattr(pokemon.SERVICE, "make", make)
+    monkeypatch.setattr(pokemon.threading, "Thread",
+                        lambda target, **kwargs: SimpleNamespace(start=target))
+    view = SimpleNamespace(value={"species": 25}, game="frlg", version="firered", trainer=owner,
+                           options=SimpleNamespace(problem=lambda: None),
+                           build_button=SimpleNamespace(disabled=False),
+                           control=SimpleNamespace(update=lambda: None),
+                           app=SimpleNamespace(ui=lambda fn: None), on_change=offered.append,
+                           _message=lambda *args, **kwargs: None, _show_result=lambda: None)
+    pokemon.PokemonPicker._build(view, None)
+    assert calls == [("frlg", 25, owner)]
+    assert offered[0]["file"] == "party.pk3"
+    assert "皮卡丘" in offered[0]["summary"]
+
+
+def test_chinese_gift_view_exposes_save_backup_without_compiling_a_gift(tmp_path, monkeypatch):
+    import flet as ft
+    from gui.views import gifts as gift_view
+    from pokeldn.app import saves
+    from pokeldn.app.catalog import GAMES
+    from pokeldn.app.settings import Settings
+
+    monkeypatch.setattr(saves, "library", lambda: tmp_path)
+    tool = next(t for game in GAMES for t in game.tools if t.key == "frlg-gift")
+    field = next(f for f in tool.fields if f.kind == "builder")
+    view = SimpleNamespace(tool=tool, values={}, extra={},
+                           app=SimpleNamespace(settings=Settings(), picker=None, ui=lambda fn: None),
+                           set_value=lambda *args, **kwargs: None)
+    builder = gift_view.GiftBuilder(view, field)
+    builder.value["mode"] = "save"
+    cards = builder.cards()
+
+    def texts(control):
+        if isinstance(control, ft.Text):
+            yield control.value
+        for child in [*(getattr(control, "controls", None) or []), getattr(control, "content", None)]:
+            if isinstance(child, ft.Control):
+                yield from texts(child)
+
+    shown = [text for card in cards for text in texts(card)]
+    assert "我的存档" in shown
+    assert "从 Switch 备份" in shown
+    assert "完整存档将按训练家姓名保存在“我的存档”中。" in shown
 
 
 # flet_desktop's own extractall passes no filter.
@@ -1042,6 +1379,40 @@ def test_flet_unpacks_the_xz_viewer_the_packer_writes(tmp_path, monkeypatch):
     assert (cache / "Flet.app" / "App").read_bytes() == b"package:flet_drop"
 
 
+def test_banked_and_remote_summaries_keep_player_nicknames():
+    from gui.localization import summary_text
+    assert summary_text("Pikachu · level 5 · shiny · 'Eevee'") == "皮卡丘 · 等级 5 · 异色 · 'Eevee'"
+    assert summary_text("皮卡丘 · 等级 5 · “Pikachu”") == "皮卡丘 · 等级 5 · “Pikachu”"
+
+
+def test_bank_import_names_and_locations_are_chinese_and_keep_custom_box_names():
+    from gui.views.bank import ImportDialog
+    from pokeldn.app.bank import ImportedPokemon
+    app = SimpleNamespace(settings=SimpleNamespace(sprites=False))
+    view = SimpleNamespace(app=app, STATES=ImportDialog.STATES)
+    for where, expected in (("Party, slot 1", "同行队伍，第 1 个位置"),
+                            ("Box 2, slot 3", "盒子 2，第 3 个位置"),
+                            ("Eevee, slot 4", "Eevee，第 4 个位置")):
+        record = ImportedPokemon(where, "Pikachu", 25, False, "banked", "sv", "")
+        control = ImportDialog._pokemon(view, record)
+        texts = [c.value for c in raid_controls(control) if isinstance(c, ft.Text)]
+        assert "皮卡丘" in texts and expected in texts
+        assert record.species == "Pikachu" and record.where == where
+
+
+def test_raid_gallery_labels_use_chinese_without_changing_folder_keys():
+    from gui.localization import raid_label
+    from pokeldn.app.events_gallery import title
+    key = "002 Charizard the Unrivaled/001 Round 2"
+    assert title(key) == "Charizard the Unrivaled · Round 2"
+    assert raid_label(title(key)) == "最强喷火龙 · 第 2 轮"
+    assert raid_label("5 stars: Walking Wake, Iron Leaves") == "5 星：波荡水、铁斑叶"
+    assert raid_label("Shiny Rayquaza Appears") == "异色 烈空坐登场"
+    assert raid_label("Gimmighoul Spotlight Returns") == "索财灵 精选活动再次登场"
+    assert raid_label("Inceneroar the Unrivaled") == "最强炽焰咆哮虎"
+    assert raid_label("Iron Valiant the Unrivaled and Roaring Moon the Unrivaled") == "最强铁武者与最强轰鸣月"
+
+
 def test_an_event_narrows_the_raid_card_to_what_it_spawns():
     """Walking Wake's spotlight: Scarlet's den only, Paldea, the progresses its five stars draw at."""
     from pokeldn.app.catalog import GAMES
@@ -1061,9 +1432,9 @@ def test_an_event_narrows_the_raid_card_to_what_it_spawns():
     assert saved
     field = {f.key: f for f in tool.fields}
     assert GamesView.raid_choices(view, field["--raid-progress"]) == (
-        ("5star", "5-star raids"), ("6star", "6-star raids"))
-    assert GamesView.raid_choices(view, field["--raid-map"]) == (("paldea", "Paldea"),)
-    assert GamesView.raid_choices(view, field["--raid-version"]) == (("scarlet", "Scarlet"), ("violet", "Violet"))
+        ("5star", "5 星团体战"), ("6star", "6 星团体战"))
+    assert GamesView.raid_choices(view, field["--raid-map"]) == (("paldea", "帕底亚"),)
+    assert GamesView.raid_choices(view, field["--raid-version"]) == (("scarlet", "朱"), ("violet", "紫"))
     assert GamesView.raid_choices(view, field["--raid-seed"]) is None
     assert GamesView.raid_context(view)["den"] == "5 stars: Walking Wake"
 
@@ -1144,7 +1515,7 @@ def test_the_raid_partners_card_shows_its_progress_s_pool_and_seats_two_at_most(
     picker = RaidPartnersPicker(view, field)
     assert (picker.stage, picker.default, len(picker.pool)) == (1, 4, 16)
     assert values["--raid-partner"]["picks"] == ["Ava"]
-    assert picker._summary() == "Ava, one drawn · 3-star raids"
+    assert picker._summary() == "Ava，另 1 名随机安排 · 3 星团体战"
     picker._pick("Zoe")
     assert values["--raid-partner"]["picks"] == ["Ava", "Zoe"]
     picker = RaidPartnersPicker(view, field)
@@ -1185,7 +1556,7 @@ def test_each_console_joining_takes_a_partner_s_slot():
     assert "With 3 consoles joining, the raid seats no partner." in command.problems(tool, values)
     picker = RaidPartnersPicker(view, field)
     assert (picker.free, values["--raid-partner"]["picks"]) == (0, [])
-    assert picker._summary() == "None, 3 consoles fill the slots"
+    assert picker._summary() == "无 NPC 搭档，3 台游戏机占满空位"
 
 
 def test_a_favoured_raid_partner_s_card_shows_a_star_and_why(tmp_path):
@@ -1196,6 +1567,7 @@ def test_a_favoured_raid_partner_s_card_shows_a_star_and_why(tmp_path):
     import flet as ft
     from gui import theme
     from gui.views.raid_partners import RaidPartnersPicker
+    from gui.localization import translate
     from pokeldn import gen9
     from pokeldn.app.catalog import GAMES
     from pokeldn.sv import raid_partners
@@ -1211,19 +1583,19 @@ def test_a_favoured_raid_partner_s_card_shows_a_star_and_why(tmp_path):
                                app=SimpleNamespace(settings=SimpleNamespace(save=lambda: None, sprites=False),
                                                    ui=lambda work: None))
         card = list(raid_controls(RaidPartnersPicker(view, field).control))
-        for rank, ink, tier in ((1, theme.AMBER, "Favoured by raiders"),
-                                (2, theme.SILVER, "Next tier for raiders")):
-            reasons = [why for r, why, _ in wanted.values() if r == rank]
+        for rank, ink, tier in ((1, theme.AMBER, "推荐搭档"),
+                                (2, theme.SILVER, "次选搭档")):
+            reasons = [translate(why) for r, why, _ in wanted.values() if r == rank]
             assert [c.value for c in card if isinstance(c, ft.Text) and c.color == ink] == reasons
             assert ([c.tooltip for c in card if isinstance(c, ft.Container) and str(c.tooltip).startswith(tier)]
-                    == [f"{tier}: {detail}." for r, _, detail in wanted.values() if r == rank])
+                    == [f"{tier}：{translate(detail)}。" for r, _, detail in wanted.values() if r == rank])
         texts = {c.value for c in card if isinstance(c, ft.Text)}
         if values:
-            assert {"Camerupt", "Lv. 29"} <= texts and "Lv. —" not in texts
-            assert any(str(text).startswith("Level 29 partners, four fifths of Our Pokemon's level 37.")
+            assert {"喷火驼", "等级 29"} <= texts and "等级 —" not in texts
+            assert any(str(text).startswith("搭档等级为 29，即我方宝可梦等级 37 的五分之四。")
                        for text in texts)
         else:
-            assert {"Gardevoir", "Lv. —"} <= texts
+            assert {"沙奈朵", "等级 —"} <= texts
 
 
 def test_a_narrow_window_stands_the_raid_partners_two_to_a_row():
@@ -1259,6 +1631,7 @@ def test_the_raid_partners_level_follows_our_pokemon(tmp_path):
     again, its note and cards showing the new one."""
     import flet as ft
     from gui.views.raid_partners import RaidPartnersPicker
+    from gui.localization import translate
     from pokeldn import gen9
     from pokeldn.app.catalog import GAMES
     tool = next(t for game in GAMES for t in game.tools if t.key == "sv-raid-host")
@@ -1277,15 +1650,13 @@ def test_the_raid_partners_level_follows_our_pokemon(tmp_path):
 
     def shown():
         texts = [c.value for c in raid_controls(view.raid_partners.control) if isinstance(c, ft.Text)]
-        return {text for text in texts if str(text).startswith(("Lv.", "Level "))}
+        return {text for text in texts if str(text).startswith(("等级 ", "搭档等级为"))}
     view.raid_partners = RaidPartnersPicker(view, field)
     view.raid_partners.body.update = lambda: None
-    assert view.raid_partners.level == 80 and "Lv. 80" in shown()
+    assert view.raid_partners.level == 80 and "等级 80" in shown()
     GamesView.set_value(view, ours, {"file": str(records[90])})
     assert view.raid_partners.level == 72
-    assert shown() == {"Lv. 72", "Level 72 partners, four fifths of Our Pokemon's level 90. Pick up to two, "
-                                  "in the order they take the empty slots; a partner you leave is drawn when "
-                                  "the host starts."}
+    assert shown() == {"等级 72", "搭档等级为 72，即我方宝可梦等级 90 的五分之四。 最多选择 2 名，依次填补空位；未选择的搭档在主持开始时随机安排。"}
 
 
 def test_the_finder_wants_the_rewards_its_unfolded_list_names():
@@ -1293,7 +1664,7 @@ def test_the_finder_wants_the_rewards_its_unfolded_list_names():
     the raids searched cannot give, or a list still being made stops the search."""
     from gui.views.reward_filter import RewardFilter
     wants = RewardFilter(SimpleNamespace(ui=lambda f: f()), lambda: ([], {}))
-    wants.names = {1606: "Ability Patch", 795: "Bottle Cap"}
+    wants.names = {1606: "特性膏药", 795: "银色王冠"}
     wants.choices, wants.open = {1606: (1, 2, 3)}, True
     assert wants.wanted() is None
     wants.rows = [{"item": 1606, "least": 1}, {"item": 1606, "least": 2}]
@@ -1301,9 +1672,9 @@ def test_the_finder_wants_the_rewards_its_unfolded_list_names():
     wants.open = False
     assert wants.wanted() is None
     wants.open = True
-    for rows, choices, error in (([{"item": None, "least": 1}], {1606: (1,)}, "Choose an item"),
-                                 ([{"item": 795, "least": 1}], {1606: (1,)}, "No raid searched gives Bottle Cap"),
-                                 ([{"item": 1606, "least": 1}], None, "still being listed")):
+    for rows, choices, error in (([{"item": None, "least": 1}], {1606: (1,)}, "请为每项奖励选择道具"),
+                                 ([{"item": 795, "least": 1}], {1606: (1,)}, "搜索范围内没有团体战掉落银色王冠"),
+                                 ([{"item": 1606, "least": 1}], None, "奖励列表仍在加载")):
         wants.rows, wants.choices = rows, choices
         with pytest.raises(ValueError, match=error):
             wants.wanted()
@@ -1311,7 +1682,7 @@ def test_the_finder_wants_the_rewards_its_unfolded_list_names():
     wants.rows, wants.choices = [{"item": 795, "least": 2}], {1606: (1,)}
     wants._render(update=False)
     picker = wants.list.controls[0].controls[0].controls[0].controls[1]
-    assert [o.text for o in picker.options] == ["Bottle Cap (not given here)", "Ability Patch"]
+    assert [o.text for o in picker.options] == ["银色王冠 （此范围不掉落）", "特性膏药"]
 
 
 def raid_controls(control):
@@ -1334,10 +1705,10 @@ def test_a_raid_card_tells_a_shiny_jumbo_boss_by_its_title_and_tags():
     context = raid_search.contexts("scarlet", "paldea", "5star", "standard")[0]
     row, stars = raid_search._drawer(context)(0)
     boss = dict(raid_encounter.boss_fields(0, row), trainer_id=0, secret_id=0, pid=0, scale=0xFF)
-    for compact, tags in ((True, []), (False, ["Shiny", "Jumbo mark"])):
+    for compact, tags in ((True, []), (False, ["异色", "大个子之证"])):
         card = list(raid_controls(raid_seed.boss_card(app, 0, stars, boss, context, compact=compact)))
-        assert [c.value for c in card if isinstance(c, ft.Text) and c.value in ("Shiny", "Jumbo mark")] == tags
-        assert [c.tooltip for c in card if isinstance(c, ft.Image) and c.tooltip] == ["Shiny", "Jumbo mark"]
+        assert [c.value for c in card if isinstance(c, ft.Text) and c.value in ("异色", "大个子之证")] == tags
+        assert [c.tooltip for c in card if isinstance(c, ft.Image) and c.tooltip] == ["异色", "大个子之证"]
 
 
 def test_the_raid_card_lists_its_scripted_actions_after_its_rewards(monkeypatch):
@@ -1352,8 +1723,8 @@ def test_the_raid_card_lists_its_scripted_actions_after_its_rewards(monkeypatch)
     naming = []
     monkeypatch.setattr(raid_seed.threading, "Thread",
                         lambda target, args, daemon: SimpleNamespace(start=lambda: naming.append((target, args))))
-    monkeypatch.setattr(builder.SERVICE, "names", lambda game, kind: {
-        "bag": [{"id": 1127, "name": "Exp. Candy XL"}], "moves": [{"id": 315, "name": "Overheat"}]}[kind])
+    monkeypatch.setattr(raid_seed.SERVICE, "names", lambda game, kind: {
+        "bag": [{"id": 1127, "name": "经验糖果XL"}], "moves": [{"id": 315, "name": "过热"}]}[kind])
     desc = [2500, 65, 55, 9999, 40, 0, 0, 20, 70, 30, 3, 1, 99, 315, 2, 2, 70, 0] + [0] * 19
     charizard = dict(species=6, form=0, ability=4, flawless_ivs=0, level=100, capture_level=100,
                      moves=[406, 0, 0, 0], tera=17, stars=7, rate=1, identifier=1, fixed_rewards="1",
@@ -1365,49 +1736,49 @@ def test_the_raid_card_lists_its_scripted_actions_after_its_rewards(monkeypatch)
     picker = raid_seed.RaidSeedPicker(app, "00000001", lambda _v: None, lambda: context, lambda _c: None)
     texts = lambda: [c.value for c in raid_controls(picker.preview) if isinstance(c, ft.Text)]
     shown = texts()
-    assert shown.index("The raid's own rewards") < shown.index("Scripted actions")
-    assert "Naming the moves..." in shown
+    assert shown.index("团体战默认奖励") < shown.index("脚本行动")
+    assert "正在加载招式名称…" in shown
     target, args = naming.pop()
     target(*args)
     shown = texts()
-    actions = shown[shown.index("Scripted actions") + 1:]
-    assert actions == ["Shield activation", "65%", "HP remaining", "55%", "time remaining",
-                       "Charizard uses Overheat", "99%", "time remaining",
-                       "Players' stats & status reset", "70%", "HP remaining"]
-    assert "Exp. Candy XL" in shown
+    actions = shown[shown.index("脚本行动") + 1:]
+    assert actions == ["展开护盾", "65%", "剩余 HP", "55%", "剩余时间",
+                       "喷火龙使用过热", "99%", "剩余时间",
+                       "玩家的能力变化和异常状态重置", "70%", "剩余 HP"]
+    assert "经验糖果XL" in shown
     no_actions = dict(charizard, boss_desc=[500] + [0] * 36)
     picker.context = lambda: raid_search.contexts(event=raid_event.Event(
         1, "", (no_actions,), event.fixed, event.lottery, event.dens))[0]
     picker._show("00000001", update=False)
-    assert texts()[-1] == "No scripted actions."
+    assert texts()[-1] == "没有脚本行动。"
 
 
 GIFT_EVENTS = [
     {"key": "0503-964-0-10", "card_id": 503, "title": "Gavin’s Palafin Gift", "date": "2023-04-13",
-     "species": "Palafin", "species_id": 964, "form": "", "level": 50, "shiny": "never", "tera": "Water",
-     "ot": "Gavin", "language": 0, "ball": "Cherish Ball", "held_item": "Mystic Water",
-     "moves": ["Jet Punch", "Wave Crash", "Haze", "Protect"], "legal": True, "home_tracker": ""},
+     "species": "海豚侠", "species_id": 964, "form": "", "level": 50, "shiny": "never", "tera": "Water",
+     "ot": "Gavin", "language": 0, "ball": "贵重球", "held_item": "神秘水滴",
+     "moves": ["喷射拳", "波动冲", "黑雾", "守住"], "legal": True, "home_tracker": ""},
     {"key": "9021-906-0-11", "card_id": 9021, "title": "Pokémon HOME Gift", "date": "2023-05-30",
-     "species": "Sprigatito", "species_id": 906, "form": "", "level": 5, "shiny": "never", "tera": "Grass",
-     "ot": "", "language": 0, "ball": "Poke Ball", "held_item": "", "moves": ["Scratch", "Tail Whip", "Leafage"],
+     "species": "新叶喵", "species_id": 906, "form": "", "level": 5, "shiny": "never", "tera": "Grass",
+     "ot": "", "language": 0, "ball": "Poke Ball", "held_item": "", "moves": ["抓", "摇尾巴", "树叶"],
      "legal": True, "home_tracker": "empty"},
     {"key": "1501-25-0-2", "card_id": 1501, "title": "Flying Tera Type Pikachu Gift", "date": "2022-11-17",
-     "species": "Pikachu", "species_id": 25, "form": "", "level": 5, "shiny": "never", "tera": "Flying",
-     "ot": "", "language": 0, "ball": "Poke Ball", "held_item": "", "moves": ["Fly", "Tail Whip"],
+     "species": "皮卡丘", "species_id": 25, "form": "", "level": 5, "shiny": "never", "tera": "Flying",
+     "ot": "", "language": 0, "ball": "Poke Ball", "held_item": "", "moves": ["飞翔", "摇尾巴"],
      "legal": True, "home_tracker": ""},
 ]
 GIFT_COPIES = {
-    "0503-964-0-10": {"file": "palafin.pk9", "title": "Gavin’s Palafin Gift", "species": "Palafin",
-                      "species_id": 964, "form": "", "level": 50, "shiny": False, "nature": "Adamant",
-                      "ability": "Zero to Hero", "ball": "Cherish Ball", "held_item": "Mystic Water", "legal": True,
+    "0503-964-0-10": {"file": "palafin.pk9", "title": "Gavin’s Palafin Gift", "species": "海豚侠",
+                      "species_id": 964, "form": "", "level": 50, "shiny": False, "nature": "固执",
+                      "ability": "全能变身", "ball": "贵重球", "held_item": "神秘水滴", "legal": True,
                       "home_tracker": "", "encounter": "Event Gift (WC9)",
-                      "moves": ["Jet Punch", "Wave Crash", "Haze", "Protect"], "ot": "Gavin", "your_ot": False,
+                      "moves": ["喷射拳", "波动冲", "黑雾", "守住"], "ot": "Gavin", "your_ot": False,
                       "refused": ""},
-    "9021-906-0-11": {"file": "sprigatito.pk9", "title": "Pokémon HOME Gift", "species": "Sprigatito",
-                      "species_id": 906, "form": "", "level": 5, "shiny": False, "nature": "Jolly",
-                      "ability": "Protean", "ball": "Poke Ball", "held_item": "", "legal": True,
+    "9021-906-0-11": {"file": "sprigatito.pk9", "title": "Pokémon HOME Gift", "species": "新叶喵",
+                      "species_id": 906, "form": "", "level": 5, "shiny": False, "nature": "爽朗",
+                      "ability": "变幻自如", "ball": "Poke Ball", "held_item": "", "legal": True,
                       "home_tracker": "empty", "encounter": "Event Gift (WC9)",
-                      "moves": ["Scratch", "Tail Whip", "Leafage"], "ot": "ASH", "your_ot": True, "refused": ""},
+                      "moves": ["抓", "摇尾巴", "树叶"], "ot": "ASH", "your_ot": True, "refused": ""},
 }
 GIFT_TRAINER = {"ot": "ASH", "tid": 1, "sid": 2, "language": 2, "gender": 0}
 
@@ -1428,9 +1799,9 @@ def gift_picker(monkeypatch, value=None, view=None):
     monkeypatch.setattr(event_gifts.threading, "Thread", lambda target, daemon, args=None: SimpleNamespace(
         start=lambda: args is None and work.append(target)))
     asked = []
-    monkeypatch.setattr(builder.SERVICE, "gift_events",
+    monkeypatch.setattr(event_gifts.SERVICE, "gift_events",
                         lambda game, who: asked.append((game, who)) or GIFT_EVENTS)
-    monkeypatch.setattr(builder.SERVICE, "gift_event", lambda game, key, who:
+    monkeypatch.setattr(event_gifts.SERVICE, "gift_event", lambda game, key, who:
                         asked.append((game, key, who)) or GIFT_COPIES[key])
     app = SimpleNamespace(settings=SimpleNamespace(sprites=False, trainer=lambda game: GIFT_TRAINER),
                           page=None, ui=lambda fn: fn())
@@ -1471,20 +1842,20 @@ def test_the_mystery_gift_card_finds_an_event_pokemon_and_offers_a_fresh_copy(mo
     one picked is made for the app's trainer and becomes the trade's offer."""
     control, run, asked, saved = gift_picker(monkeypatch)
     assert asked == [("sv", GIFT_TRAINER)]
-    assert {"Gavin’s Palafin Gift", "Palafin · Lv 50 · Tera Water · Mystic Water",
-            "OT Gavin · 13 Apr 2023", "Your OT · 17 Nov 2022",
-            "3 of 3 event Pokemon, newest first"} <= set(gift_texts(control))
-    for typed, count in (("gavin haze", 1), ("tera flying 2022", 1), ("shiny", 0)):
+    assert {"Gavin’s Palafin Gift", "海豚侠 · 等级 50 · 太晶属性：水 · 神秘水滴",
+            "OT Gavin · 2023 年 4 月 13 日", "你的初训家 · 2022 年 11 月 17 日",
+            "3 / 3 只活动宝可梦，按时间从新到旧排序"} <= set(gift_texts(control))
+    for typed, count in (("gavin 黑雾", 1), ("飞行 2022", 1), ("异色", 0)):
         gift_search(control, typed)
-        assert f"{count} of 3 event Pokemon, newest first" in gift_texts(control)
+        assert f"{count} / 3 只活动宝可梦，按时间从新到旧排序" in gift_texts(control)
     gift_search(control, "")
-    gift_tile(control, "Palafin").on_click(None)
+    gift_tile(control, "海豚侠").on_click(None)
     run()
     assert asked[-1] == ("sv", "0503-964-0-10", GIFT_TRAINER)
     assert {k: saved[-1][0][k] for k in ("file", "event", "species", "legal", "your_ot")} == {
         "file": "palafin.pk9", "event": "0503-964-0-10", "species": 964, "legal": True, "your_ot": False}
-    assert {"Legal", "Jet Punch, Wave Crash, Haze, Protect · OT Gavin"} <= set(gift_texts(control))
-    assert gift_tile(control, "Palafin").border.top.color == t.BLUE
+    assert {"合法", "喷射拳、波动冲、黑雾、守住 · OT Gavin"} <= set(gift_texts(control))
+    assert gift_tile(control, "海豚侠").border.top.color == t.BLUE
 
 
 def test_a_gift_the_trainer_could_not_receive_says_why_and_is_not_picked(monkeypatch):
@@ -1497,19 +1868,20 @@ def test_a_gift_the_trainer_could_not_receive_says_why_and_is_not_picked(monkeyp
     monkeypatch.setitem(GIFT_COPIES, "1501-25-0-2", {"title": pikachu["title"], "legal": True, "your_ot": True,
                                                      "refused": why})
     control, run, asked, saved = gift_picker(monkeypatch)
-    assert f"Illegal: {why}" in gift_texts(control)
-    gift_tile(control, "Pikachu").on_click(None)
+    assert f"不合法：{translate(why)}" in gift_texts(control)
+    gift_tile(control, "皮卡丘").on_click(None)
     run()
     assert asked[-1] == ("sv", "1501-25-0-2", GIFT_TRAINER) and saved == []
-    assert f"Your trainer from Settings cannot receive this gift: {why}." in gift_texts(control)
+    assert f"设置中的训练家无法接收此礼物：{translate(why)}。" in gift_texts(control)
 
 
 def remove_gift(control, at=0):
-    buttons = [c for c in raid_controls(control) if getattr(c, "tooltip", None) == "Remove this gift"]
+    buttons = [c for c in raid_controls(control) if getattr(c, "tooltip", None) == "移除此礼物"]
     buttons[at].on_click(None)
 
 
 def test_event_queue_restores_a_single_saved_gift_and_keeps_duplicates_in_trade_order(monkeypatch):
+    from gui.views import event_gifts
     from pokeldn import pokemon as builder
     legacy = dict(GIFT_COPIES["0503-964-0-10"], species=964, event="0503-964-0-10")
     control, run, asked, saved = gift_picker(monkeypatch, legacy)
@@ -1518,38 +1890,38 @@ def test_event_queue_restores_a_single_saved_gift_and_keeps_duplicates_in_trade_
     def make(game, key, who):
         calls.append(key)
         return dict(GIFT_COPIES[key], file=f"copy-{len(calls)}.pk9")
-    monkeypatch.setattr(builder.SERVICE, "gift_event", make)
-    for name in ("Sprigatito", "Palafin", "Palafin", "Sprigatito", "Palafin"):
+    monkeypatch.setattr(event_gifts.SERVICE, "gift_event", make)
+    for name in ("新叶喵", "海豚侠", "海豚侠", "新叶喵", "海豚侠"):
         gift_tile(control, name).on_click(None)
         run()
     assert [v["file"] for v in saved[-1]] == ["palafin.pk9", *[f"copy-{n}.pk9" for n in range(1, 6)]]
-    assert "6 of 6 gifts queued, traded in this order · queue full" in gift_texts(control)
-    assert gift_tile(control, "Palafin").disabled
-    gift_tile(control, "Palafin").on_click(None)
+    assert "已加入队列 6 / 6 份礼物，按此顺序交换 · 队列已满" in gift_texts(control)
+    assert gift_tile(control, "海豚侠").disabled
+    gift_tile(control, "海豚侠").on_click(None)
     assert len(calls) == 5
     remove_gift(control, 2)
     assert [v["file"] for v in saved[-1]] == ["palafin.pk9", "copy-1.pk9", "copy-3.pk9",
                                               "copy-4.pk9", "copy-5.pk9"]
-    assert not gift_tile(control, "Palafin").disabled
-    gift_tile(control, "Sprigatito").on_click(None)
+    assert not gift_tile(control, "海豚侠").disabled
+    gift_tile(control, "新叶喵").on_click(None)
     run()
     assert saved[-1][-1]["file"] == "copy-6.pk9"
     for _ in range(6):
         remove_gift(control)
-    assert saved[-1] == [] and "Choose up to 6 gifts; they trade in this order." in gift_texts(control)
+    assert saved[-1] == [] and "选择最多 6 份礼物，将按此顺序交换。" in gift_texts(control)
 
 
 def test_removing_a_gift_while_another_is_being_made_keeps_the_progress_visible(monkeypatch):
     control, run, asked, saved = gift_picker(monkeypatch)
-    gift_tile(control, "Palafin").on_click(None)
+    gift_tile(control, "海豚侠").on_click(None)
     run()
-    gift_tile(control, "Sprigatito").on_click(None)
+    gift_tile(control, "新叶喵").on_click(None)
     remove_gift(control)
-    assert "Making a fresh copy..." in gift_texts(control)
-    assert gift_tile(control, "Palafin").disabled
+    assert "正在生成新的副本…" in gift_texts(control)
+    assert gift_tile(control, "海豚侠").disabled
     run()
     assert [v["event"] for v in saved[-1]] == ["9021-906-0-11"]
-    assert "Making a fresh copy..." not in gift_texts(control)
+    assert "正在生成新的副本…" not in gift_texts(control)
 
 
 def test_a_gift_build_finishing_after_navigation_saves_to_its_original_tool(monkeypatch):
@@ -1557,7 +1929,7 @@ def test_a_gift_build_finishing_after_navigation_saves_to_its_original_tool(monk
     view = SimpleNamespace(game=SimpleNamespace(key="sv"), values=original)
     view.set_value = lambda field, value: view.values.__setitem__(field.key, value)
     control, run, asked, saved = gift_picker(monkeypatch, view=view)
-    gift_tile(control, "Palafin").on_click(None)
+    gift_tile(control, "海豚侠").on_click(None)
     view.values = other
     run()
     assert original["--trade-offer"][0]["event"] == "0503-964-0-10"
@@ -1575,7 +1947,7 @@ def test_a_gifts_form_reaches_its_browser_queue_and_session_preview(monkeypatch)
     control, run, _, saved = gift_picker(monkeypatch)
     assert "423-east" in asked
     asked.clear()
-    gift_tile(control, "Palafin").on_click(None)
+    gift_tile(control, "海豚侠").on_click(None)
     run()
     assert saved[-1][0]["form_id"] == 1 and "423-east" in asked
     panel = SimpleNamespace(offered_entries=lambda: saved[-1], offered=None, traded=0,
@@ -1598,18 +1970,18 @@ def test_a_home_gift_shows_what_the_home_tracker_setting_gave_it(monkeypatch, tm
     from pokeldn.app.catalog import GAMES
     monkeypatch.setitem(GIFT_EVENTS[1], "home_tracker", mode)
     monkeypatch.setitem(GIFT_COPIES["9021-906-0-11"], "home_tracker", mode)
-    warning = builder.HOME_TRACKER_WARNINGS[mode]
+    warning = translate(builder.HOME_TRACKER_WARNINGS[mode])
     control, run, asked, saved = gift_picker(monkeypatch)
-    sprigatito, palafin = gift_tile(control, "Sprigatito"), gift_tile(control, "Palafin")
+    sprigatito, palafin = gift_tile(control, "新叶喵"), gift_tile(control, "海豚侠")
     assert (sprigatito.border.top.color, palafin.border.top.color) == (t.AMBER, t.BORDER)
     assert [x.value for x in raid_controls(sprigatito) if isinstance(x, ft.Text)][-1] == warning
     assert gift_texts(control).count(warning) == 1
-    gift_search(control, {"empty": "tracker", "made": "deposited"}[mode])     # a word of the warning alone
-    assert "1 of 3 event Pokemon, newest first" in gift_texts(control)
-    gift_tile(control, "Sprigatito").on_click(None)
+    gift_search(control, {"empty": "追踪码", "made": "存入"}[mode])     # a word of the warning alone
+    assert "1 / 3 只活动宝可梦，按时间从新到旧排序" in gift_texts(control)
+    gift_tile(control, "新叶喵").on_click(None)
     run()
     assert (saved[-1][0]["legal"], saved[-1][0]["home_tracker"]) == (True, mode)
-    assert {"Legal", warning} <= set(gift_texts(control))
+    assert {"合法", warning} <= set(gift_texts(control))
     copy = tmp_path / "sprigatito.pk9"
     copy.write_bytes(b"")
     tools = {t.key: t for game in GAMES for t in game.tools}
@@ -1640,7 +2012,7 @@ def test_made_for_the_receiving_player_follows_the_gift_picked(monkeypatch):
     GamesView.set_value(view, offer, dict(GIFT_COPIES["0503-964-0-10"], event="0503-964-0-10"))
     why = "This gift has its card's own trainer, OT Gavin, and goes as made."
     assert (switch.value, switch.disabled, switch.opacity) == (False, True, 0.45)
-    assert note.value == f"{receiver.help} {why}"
+    assert note.value == f"{receiver.help} {translate(why)}"
     assert GamesView.input(view, receiver).disabled                  # a redraw draws it locked too
     GamesView.set_value(view, offer, dict(GIFT_COPIES["9021-906-0-11"], event="9021-906-0-11"))
     assert (switch.value, switch.disabled, switch.opacity, note.value) == (True, False, 1.0, receiver.help)
@@ -1704,18 +2076,27 @@ def test_find_a_raid_offers_its_default_seeds_from_any_first_seed(monkeypatch):
     app = SimpleNamespace(page=SimpleNamespace(show_dialog=shown.append, pop_dialog=lambda: None),
                           ui=lambda f: f())
     monkeypatch.setattr(raid_search, "FAST", False)       # no warm-up thread
+    monkeypatch.setattr(pokemon.threading, "Thread", lambda target, daemon: SimpleNamespace(start=target))
+    monkeypatch.setattr(ft.Dropdown, "update", lambda self: None)
     picker = raid_seed.RaidSeedPicker(app, "", lambda _v: None,
                                       lambda: {"version": "violet", "map_name": "paldea", "progress": "6star",
                                                "content": "standard"}, lambda _c: None)
     picker._open(None)
     controls = list(raid_controls(shown[0].content))
+    species = next(c for c in controls if isinstance(c, ft.Dropdown)
+                   and any(o.key == "460" for o in c.options))
+    expected = {str(s["id"]): s["name"] for s in pokemon.SERVICE.species("sv")}
+    assert {o.key: o.text for o in species.options if o.key != "-"} == {
+        str(s): expected[str(s)] for s, _ in raid_search.species()}
+    species.value = "460"
+    assert next(o.text for o in species.options if o.key == species.value) == "暴雪王"
     labels = [c for c in controls if isinstance(c, ft.Column) and c.controls and isinstance(c.controls[0], ft.Container)
               and isinstance(c.controls[0].content, ft.Text)]
-    first = next(c.controls[1] for c in labels if c.controls[0].content.value == "First seed")
-    count = next(c.controls[1] for c in labels if c.controls[0].content.value == "Seeds to search")
+    first = next(c.controls[1] for c in labels if c.controls[0].content.value == "起始种子")
+    count = next(c.controls[1] for c in labels if c.controls[0].content.value == "搜索种子数量")
     assert count.value == str(raid_search.DEFAULT_COUNT)
     start, shuffle = first.controls
-    assert start.value == "00000000" and shuffle.tooltip == "Start at a random seed"
+    assert start.value == "00000000" and shuffle.tooltip == "随机选择起始种子"
     monkeypatch.setattr(type(start), "update", lambda self: None)
     values = set()
     for _ in range(5):
@@ -1736,6 +2117,7 @@ def test_the_finder_greys_out_the_size_marks_an_event_rules_out(monkeypatch):
                           ui=lambda f: f())
     monkeypatch.setattr(raid_search, "FAST", False)
     monkeypatch.setattr(ft.Dropdown, "update", lambda self: None)
+    monkeypatch.setattr(pokemon.threading, "Thread", lambda target, daemon: SimpleNamespace(start=target))
     base = dict(form=0, ability=0, flawless_ivs=0, level=12, capture_level=12, moves=[33, 0, 0, 0], tera=1,
                 rate=1, fixed_rewards="1", lottery_rewards="1", boss_desc=[500] + [0] * 36, evs=[0] * 6, rom=0,
                 group=1, capture_rate=1, ivs=None, gender=None, nature=None, shiny=0, held_item=0, time=None)
@@ -1746,17 +2128,23 @@ def test_the_finder_greys_out_the_size_marks_an_event_rules_out(monkeypatch):
     picker = raid_seed.RaidSeedPicker(app, "", lambda _v: None, lambda: context, lambda _c: None)
     picker._open(None)
     dropdowns = [c for c in raid_controls(shown[0].content) if isinstance(c, ft.Dropdown)]
-    size = next(d for d in dropdowns if d.options[0].text == "Eligible or not")
-    stars = next(d for d in dropdowns if d.options[0].text == "Any stars")
+    species = next(d for d in dropdowns if any(o.key == "25" for o in d.options))
+    assert {o.key: o.text for o in species.options} == {"-": "未设置", "25": "皮卡丘", "6": "喷火龙"}
+    version = next(d for d in dropdowns if any(o.key == "scarlet" for o in d.options))
+    assert {o.key: o.text for o in version.options if o.key != "any"} == {"scarlet": "朱", "violet": "紫"}
+    crystal = next(d for d in dropdowns if any(o.key == "1" and "星" in o.text for o in d.options))
+    assert all("star" not in o.text for o in crystal.options)
+    size = next(d for d in dropdowns if d.options[0].text == "不限体型证章")
+    stars = next(d for d in dropdowns if d.options[0].text == "任意星级")
     greyed = lambda: [o.text for o in size.options if o.disabled]
-    assert greyed() == ["Mini mark"]
+    assert greyed() == ["小不点之证"]
     size.value = "jumbo"
     stars.value = "6"
     stars.on_select(None)
-    assert greyed() == ["Any mark", "Mini mark", "Jumbo mark"] and size.value == "any"
+    assert greyed() == ["任意体型证章", "小不点之证", "大个子之证"] and size.value == "any"
     stars.value = "any"
     stars.on_select(None)
-    assert greyed() == ["Mini mark"]
+    assert greyed() == ["小不点之证"]
 
 
 def test_the_finder_s_bar_shows_how_far_a_search_is(monkeypatch):
@@ -1790,11 +2178,11 @@ def test_the_finder_s_bar_shows_how_far_a_search_is(monkeypatch):
     count.value = "1000"
     assert not bar.visible
     rank = next(c for c in raid_controls(shown[0].content)
-                if isinstance(c, ft.Dropdown) and c.options[0].text == "Lowest overall bulk")
+                if isinstance(c, ft.Dropdown) and c.options[0].text == "最低综合耐久")
     rank.value = "rewards"
     shown[0].actions[-1].on_click(None)
     status = next(c for c in raid_controls(shown[0].content) if isinstance(c, ft.Text)
-                  and c.value.startswith("Most desired rewards"))
+                  and c.value.startswith("“所需奖励最多”"))
     assert not seen and not bar.visible and status.color == raid_seed.t.RED
     rank.value = "overall"
     shown[0].actions[-1].on_click(None)
@@ -1804,15 +2192,15 @@ def test_the_finder_s_bar_shows_how_far_a_search_is(monkeypatch):
 def test_the_finder_tells_how_far_a_search_is_and_how_long_it_has_left():
     from gui.views.raid_seed import duration, searching
     assert [duration(s) for s in (0, 59.9, 60, 200, 3600, 7500)] == [
-        "0 s", "59 s", "1 min 0 s", "3 min 20 s", "1 h 0 min", "2 h 5 min"]
-    assert searching(0, 1000, 0) == "Searching 0 of 1,000 seeds..."
-    assert searching(500, 1000, 2) == "Searching 500 of 1,000 seeds, 250 a second, 2 s left..."
+        "0 秒", "59 秒", "1 分 0 秒", "3 分 20 秒", "1 小时 0 分", "2 小时 5 分"]
+    assert searching(0, 1000, 0) == "正在搜索种子 0 / 1,000…"
+    assert searching(500, 1000, 2) == "正在搜索种子 500 / 1,000，每秒 250 个，预计剩余 2 秒…"
     assert searching(50_000_000, 1 << 32, 2) == (
-        "Searching 50,000,000 of 4,294,967,296 seeds, 25.0 million a second, 2 min 49 s left...")
+        "正在搜索种子 50,000,000 / 4,294,967,296，每秒 25.0 百万 个，预计剩余 2 分 49 秒…")
     assert searching(28_448_764_162, 180_388_626_432, 28.209) == (
-        "Searching 28,448,764,162 of 180,388,626,432 seeds, 1.01 billion a second, 2 min 30 s left...")
-    assert "1.00 billion a second" in searching(999_960_000, 1 << 32, 1)
-    assert "999.9 million a second" in searching(999_900_000, 1 << 32, 1)
+        "正在搜索种子 28,448,764,162 / 180,388,626,432，每秒 1.01 十亿 个，预计剩余 2 分 30 秒…")
+    assert "1.00 十亿 个" in searching(999_960_000, 1 << 32, 1)
+    assert "999.9 百万 个" in searching(999_900_000, 1 << 32, 1)
 
 
 def test_the_finder_s_checkboxes_flip_and_tell(monkeypatch):
@@ -1849,6 +2237,23 @@ def test_an_event_missing_from_the_gallery_stays_chosen_and_shows_missing(monkey
     picker = card.RaidEventPicker(view, field)
     assert view.values == {"--raid-event": key, card.CATCH: True} and not saved
     if downloaded:
-        assert (picker.summary.value, picker.summary.color) == ("Walking Wake", t.BLUE)
+        assert (picker.summary.value, picker.summary.color) == ("波荡水", t.BLUE)
     else:
-        assert (picker.summary.value, picker.summary.color) == ("Missing: Walking Wake", t.RED)
+        assert (picker.summary.value, picker.summary.color) == ("缺失：波荡水", t.RED)
+
+
+@pytest.mark.parametrize("mode", ["empty", "made"])
+def test_home_tracker_setting_updates_both_chinese_and_launcher_services(monkeypatch, mode):
+    from gui.views.settings import SettingsView
+    from gui.localization import SERVICE
+    from pokeldn import pokemon as builder
+
+    monkeypatch.setattr(SERVICE, "home_tracker", "made" if mode == "empty" else "empty")
+    monkeypatch.setattr(builder.SERVICE, "home_tracker", SERVICE.home_tracker)
+    saved = {}
+    view = object.__new__(SettingsView)
+    view.save = lambda key, value: saved.update({key: value})
+    view._home_tracker(mode)
+    assert saved == {"home_tracker": mode}
+    assert SERVICE.home_tracker == builder.SERVICE.home_tracker == mode
+    assert SERVICE.display_language == "zh-Hans"

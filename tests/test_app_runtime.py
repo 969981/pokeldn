@@ -5,6 +5,8 @@ import sys
 from pathlib import Path
 import threading
 
+import pytest
+
 from pokeldn.app import runner
 from pokeldn.app.command import limit_error
 from pokeldn.app.catalog import Field
@@ -17,10 +19,15 @@ def test_headless_entry_point_runs_without_gui_dependencies():
     assert "flet" not in result.stderr
 
 
-def test_cli_uses_the_shared_catalog():
+@pytest.mark.parametrize("stdio_encoding", ["cp1252", "ascii", "gbk", "utf-8"])
+def test_cli_uses_the_shared_catalog(stdio_encoding):
     result = subprocess.run([sys.executable, "-m", "pokeldn", "--list"], capture_output=True,
-                            text=True, check=True)
+                            encoding="utf-8", timeout=30,
+                            env=dict(os.environ, PYTHONIOENCODING=stdio_encoding, PYTHONUTF8="0"))
+    assert result.returncode == 0, result.stderr
+    assert not result.stderr
     assert "swsh-host" in result.stdout and "za-join" in result.stdout
+    assert "火红／叶绿" in result.stdout
 
 
 def test_limits_apply_to_hexadecimal_values():
@@ -30,6 +37,7 @@ def test_limits_apply_to_hexadecimal_values():
 
 
 def test_packer_uses_tracked_defaults_and_requires_firmware(monkeypatch, tmp_path):
+    monkeypatch.setattr(sys, "argv", ["pack_app.py"])
     import importlib.util
     path = Path(__file__).resolve().parents[1] / "scripts" / "pack_app.py"
     spec = importlib.util.spec_from_file_location("pack_app", path)

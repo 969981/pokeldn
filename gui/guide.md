@@ -1,136 +1,84 @@
-# Start here
+# 入门指南
 
-pokeldn trades with Pokemon games on a Switch or Switch 2 over local wireless. An ESP32 board on USB is
-the radio. Nothing is installed on the console.
+pokeldn 通过本地无线通信与 Switch 或 Switch 2 上的宝可梦游戏交换。通过 USB 连接的 ESP32 开发板负责无线通信，游戏机无需安装软件。
 
-## What you need
+## 准备工作
 
-- A classic ESP32 board (ESP32-D0WD, WROOM-32E) with a USB serial bridge, or an ESP32-S3,
-  ESP32-C3 or ESP32-C6 connected through its native USB port. All use 2.4 GHz. S2 boards are
-  unsupported. Attach the supplied antenna on a Seeed Studio XIAO ESP32C3; a XIAO ESP32C6 uses its
-  built-in antenna.
-- A USB data cable. Charge-only cables show no port.
-- `prod.keys` dumped from your own Switch. The app asks for it once.
-- One of the seven games on the Games page.
+- 经典 ESP32 开发板（ESP32-D0WD、WROOM-32E，带 USB 串口桥），或通过原生 USB 接口连接的 ESP32-S3、ESP32-C3、ESP32-C6。均使用 2.4 GHz，不支持 S2。Seeed Studio XIAO ESP32C3 需要连接附带天线，XIAO ESP32C6 使用内置天线。
+- USB 数据线。仅支持充电的线缆不会显示串口。
+- 从自己的 Switch 导出的 `prod.keys`。应用首次使用时会要求选择。
+- “游戏”页中的七款游戏之一。
 
-## First run
+## 首次使用
 
-1. Board: plug the board in and choose Install beside Wireless. The app detects the chip, writes the
-   firmware, then checks the board on its own. The top of the page says Up to date when it answers.
-2. Games: pick a game and a tool. A Host tool waits for your console to join; a Join tool finds the
-   console's own search.
-3. Pokemon to offer: search a species and press Build. PKHeX makes a legal one for that game, owned by
-   the trainer in Settings.
-4. Before you start, in the Session panel, lists anything still missing, with a button to fix it.
-   Follow the steps under On the console, then press Start.
+1. **开发板**：连接开发板并在“无线”固件旁点击“安装”。应用自动识别芯片、写入固件并检查开发板。收到响应后显示“已是最新版本”。
+2. **游戏**：选择游戏和功能。“主机”等待游戏机加入，“加入”搜索游戏机创建的连接。
+3. **用于交换的宝可梦**：搜索种类并点击“生成”。PKHeX 会生成适用于该游戏的合法宝可梦，初训家采用“设置”中的信息。
+4. **开始前**：“会话”面板列出尚未完成的准备项及对应按钮。按照“在游戏机上操作”的步骤进行，再点击“开始”。
 
-An ESP32-S3, C3 or C6 board with two USB ports talks to the app only through the port marked USB. Flashing
-through the other one (COM or UART) works, but the board then never answers; the Board page says so.
-With several boards plugged in, Use this board picks the one sessions use.
+ESP32-S3、C3、C6 若有两个 USB 接口，应用只通过标有 USB 的接口通信。COM 或 UART 接口也能刷写，但刷写后开发板无法响应，页面会提示更换接口。连接多个开发板时，点击“用于交换”选择会话使用的开发板。
 
-More options, under the species, sets the nature, ability, gender, held item, ball, friendship, IVs and
-EVs (AVs in Let's Go, effort levels in Legends Arceus). Empty fields stay random. The lists hold only
-what the species can legally have in that game, and Build refuses a combination PKHeX finds illegal,
-with the reason. A traded Pokemon keeps its friendship only when Your trainer, in Settings, is the
-console's player; FireRed and LeafGreen set it to 70 on every trade.
+种类下方的“更多选项”可设置性格、特性、性别、携带道具、精灵球、亲密度、个体值和努力值（Let's Go 使用觉醒值，传说 阿尔宙斯使用奋斗等级）。留空表示随机。列表只显示当前游戏中可合法使用的选项；若组合不合法，PKHeX 会拒绝生成并说明原因。只有“设置 → 初训家”与游戏机上的玩家一致时，交换后的宝可梦才会保留亲密度；《火红／叶绿》每次交换均将亲密度设为 70。
 
-Add a trade, below the Pokemon, queues up to six for one session; each completed trade offers the
-next. It shows on every trade tool. Each trade's received Pokemon gets its own file.
+“添加交换”可在同一会话中加入最多六次交换。每完成一次，应用提供下一只。所有交换功能均支持队列，每次接收的宝可梦各自保存为文件。
 
-Files can be dragged onto the app: a Pokemon file or a Showdown team (`.txt`) onto a trade fills it,
-and onto Add a trade queues one trade per file. A gift file dropped on the Gift card opens it, and a
-`.bin` dropped on the Board page's Firmware card installs it after a confirmation.
+应用支持拖放文件：宝可梦文件或 Showdown 队伍文本（`.txt`）拖入交换项可导入；拖到“添加交换”则按文件建立队列。礼物文件拖到“礼物”卡片可打开，`.bin` 拖到开发板页的“固件”卡片会在确认后安装。
 
-The Pokemon the console sends you are saved in `Documents/pokeldn/Received`, and a copy goes to the
-Bank. The Bank's plus button, or a drop on its grid, imports a Pokemon file or a whole game save: each
-legal Pokemon in it is banked once, and the file itself is left as it is. One from an older game leaves
-its held item behind and forgets its HMs, as HOME's way in asks.
+收到的宝可梦保存在 `Documents/pokeldn/Received`，同时在银行保存一份副本。点击银行的加号按钮，或将文件拖到网格中，可导入宝可梦文件或整个游戏存档；其中每只合法宝可梦只存入一次，原文件保持不变。来自较早游戏的宝可梦会按 HOME 的传入规则移除携带道具并忘记秘传招式。
 
-## Free up storage
+## 清理存储
 
-Settings, Storage shows how much space can be freed. Press Clear local files, then Clear files to
-remove saved session records, logs, temporary offers and unused built Pokemon. Save any records
-needed for a bug report first. Received Pokemon, selected offers, keys, firmware and settings are
-kept. Finish the current run before clearing files.
+“设置 → 存储”显示可释放空间。点击“清理本地文件”，再点击“清理文件”，删除会话记录、日志、临时交换文件和未使用的已生成宝可梦。请先保存问题报告需要的记录。保留已接收的宝可梦、已选择的交换文件、密钥、固件和设置。请先结束当前运行，再清理文件。
 
-## FireRed and LeafGreen language
+## 火红／叶绿卡带语言
 
-Mystery Gift's Console card shows the version and automatic language detection. Choose FireRed
-or LeafGreen. After you choose pokeldn in the game's Friend list, the game reports its cartridge
-code; pokeldn selects its language's gift script and RAM addresses before sending code. Both
-versions support English, French, German, Italian, Spanish and Japanese.
+神秘礼物的“游戏机”卡片显示游戏版本与自动语言检测。选择火红或叶绿后，在游戏的好友列表中选择 pokeldn，游戏会报告卡带代码；pokeldn 会在发送代码前选择对应语言的礼物脚本和内存地址。两个版本均支持英语、法语、德语、意大利语、西班牙语和日语。
 
-Saving a native `.wc3` asks for its cartridge when the gift differs by version or language.
-A `.pokegift` keeps all variants and selects the right one when the console connects.
+原生 `.wc3` 礼物如果因版本或语言而异，保存时需选择目标卡带。`.pokegift` 保留所有变体，并在游戏机连接时自动选择。
 
-Trainer language in Advanced describes pokeldn's own trainer on the link. It does not select
-the console's language.
+“高级”中的训练家语言描述 pokeldn 在连接中报告的训练家语言，不用于选择游戏机的语言。
 
-## Basic and Advanced
+## 基本与高级
 
-Basic shows the fields most runs need; the tested settings for each game are applied underneath.
-Advanced lists every option the game's session accepts, with its own help text. A value set there
-overrides the Basic field. Leave it alone unless a guide or a bug report asks for a change.
+“基本”页显示日常设置，各游戏自动应用经过测试的默认参数。“高级”页列出会话支持的全部参数及中文说明，支持中文搜索，此处的值覆盖基本设置。除非指南或问题排查要求修改，请保留默认值。参数名、协议标识和日志保留原文，便于对照源码排查。
 
-The settings most players never change sit at the top of Advanced, already set: the time limit
-before a session stops on its own, the wireless channel, and New PID each run. New PID gives each
-offered Pokemon a new PID so a save that already received it takes it again; turn it off for a file
-whose PID must stay, such as an event Pokemon.
+不常修改的设置包括会话时间限制、无线信道和“每次运行使用新 PID”。新 PID 可使接收过同一宝可梦的存档再次接收。活动宝可梦等必须保留 PID 的文件，请关闭此选项。
 
-## Your own Pokemon files
+## 使用自己的宝可梦文件
 
-Or use a Pokemon file takes a file exported from PKHeX. The app checks it with PKHeX and shows whether
-it is legal before you offer it. An illegal Pokemon can crash the other game when it is drawn.
+“或使用宝可梦文件”可导入 PKHeX 导出的文件。应用先用 PKHeX 检查合法性，再用于交换。不合法的宝可梦可能在另一台游戏机显示时导致游戏崩溃。
 
-## Mystery Gift
+## 神秘礼物
 
-Each Mystery Gift tool starts with four choices. Use a preset sends a ready-made gift. On
-Sword/Shield, Official events lists real event cards (Pokemon, items, clothing, Battle Points) with
-a search box. Build your
-own opens a form: on FireRed/LeafGreen a Wonder Card with its text, who hands it over and what it
-gives, a Wonder News, or your own ARM code; on Sword/Shield a Pokemon, an egg, items or Battle
-Points. Open a file sends a `.pokegift` someone shared, a `.wc3` card on FireRed/LeafGreen or a
-`.wc8` card on Sword/Shield.
+“使用预设”发送现成礼物；“自行制作”打开编辑表单；“打开文件”发送 `.pokegift`，或火红／叶绿的 `.wc3`、剑／盾的 `.wc8`。剑／盾还可在“官方活动”中搜索真实活动卡片，支持中文宝可梦名称和“异色”等关键词，也保留英文搜索。
 
-Customize turns a preset into a form you can change. Before you send shows what the console gets,
-when it happens and which cartridges it works on; a problem shows there in red and Start stays off.
+火红／叶绿支持神奇卡片、神奇新闻和自定义 ARM 代码，火红和叶绿均支持英语、法语、德语、意大利语、西班牙语及日语卡带。剑／盾支持宝可梦、蛋、道具、对战点数及官方服装。卡带中的实际文字仍须使用游戏支持的字符，界面语言不会改变礼物内容。
 
-On FireRed/LeafGreen, Game boosts lets you change how the game plays, such as speeding it up or adding a
-Pokemon follower. Select the boosts and send them; they start immediately and stop when the game
-restarts. To use them again after a restart, enable Save boosts for later, send the boosts, then send
-Mom restores your boosts. Talk to Mom at home in Pallet Town after each restart to turn them back
-on. The follower is always saved. Receiving another Wonder Card replaces Mom's gift; send it again
-to restore her ability to turn the saved boosts on.
+“自定义”将预设转换为可编辑表单。“发送前”显示礼物效果、生效时机及支持的卡带。问题以红色显示，解决前无法开始。
 
-Read the save shows results in the Session log. Trainer ID (TID) is the number on your Trainer Card;
-Secret ID (SID) is normally hidden. The party readout shows each Pokemon in your last saved party,
-with its nature, six IVs (individual stat values from 0 to 31) and EVs (training points). These tools
-keep your save and Wonder Card unchanged. The trainer-details and party tools also save a copy of
-the read data in Received.
+游戏增强可同时选择加速、穿墙等功能，并设置按钮和生效范围。重启游戏或关闭游戏机后停止。启用“保存增强功能供以后使用”后，先发送增强功能，再发送“由妈妈恢复增强功能”；每次重启后与真新镇家中的妈妈对话即可恢复。接收其他神奇卡片后需要再次发送妈妈的礼物。宝可梦跟随须单独运行，异色倒计时与个体值显示不能同时占用右上角。
 
-Console code runs inside the game while it receives the gift. Check offline runs it on a simulated
-console first; code that would hang the menu is refused. Native code can change the running game or
-its save. Send only code whose source and behavior you have checked.
+游戏机代码在接收礼物时运行。“离线检查”先在模拟环境运行，拒绝会使菜单卡住的代码。原生代码能修改游戏及存档，请仅发送已核对来源和行为的代码。
 
-Save gift file stores the selected gift for reuse or sharing. It works without a board.
+“保存礼物文件”可导出当前礼物以供复用或分享，无需连接开发板；支持相应游戏的原生礼物格式。
 
-On FireRed/LeafGreen, Your save copies the whole save from the Switch to this computer, or puts one
-back. Back up from the Switch leaves the console's save as it was; the copy appears in Your saves,
-named after the trainer. Put a save on the Switch writes the chosen save beside the console's own;
-the console checks every part, loads it and saves, and keeps its old save if anything goes wrong.
-Back the console up first. A restore waits until PKHeX finds the whole party legal, or until you turn
-on Restore anyway.
+火红／叶绿的“我的存档”可将 Switch 上的完整存档复制到电脑，也可将存档写回。备份不会改变游戏机存档，副本按训练家姓名显示在存档库中。恢复时游戏机会校验所有部分、加载并保存；如果出错则保留旧存档。请先备份。恢复前会等待 PKHeX 确认整个队伍合法，或由你启用“仍然恢复”。
 
-Your saves are kept in `Documents/pokeldn/Saves`. Rename one to tell it apart, export it as a `.sav`
-for an emulator or PKHeX, or add a `.sav` with + or by dropping it on the card. View and edit shows
-the trainer, the party and the PC boxes: change the name, money or coins, reorder or remove party
-Pokemon, add one built for this save's trainer, and check a box's legality. Keep as a new save adds
-the result beside the original, which stays unchanged.
+存档保存在 `Documents/pokeldn/Saves`。可重命名、导出 `.sav` 供模拟器或 PKHeX 使用，也可点击 + 或拖放导入 `.sav`。“查看与编辑”显示训练家、队伍与电脑盒子，支持修改姓名、金钱和代币，调整或删除队伍成员，按当前训练家生成宝可梦，以及检查盒子合法性。“保存为新存档”将结果另存为副本，保留原始存档。
 
-## When a run fails
+## 运行失败时
 
-- Stop, then back out of the console's search screen and search again. Most games keep a stale session
-  for a short while.
-- Change one thing per run.
-- Settings, Record every session, Open the records shows the recording of every session; attach the
-  latest one to a bug report.
+- 点击“停止”，退出游戏机搜索画面，再重新搜索。多数游戏暂时保留旧会话。
+- 每次只修改一项设置。
+- 在“设置 → 记录每次会话 → 打开记录文件夹”查看会话记录，将最新记录附在问题报告中。
+
+## 手柄控制和宏
+
+在“开发板”页为 ESP32-S3 或经典 ESP32 安装“手柄”固件，再打开“手柄控制”页。
+
+- ESP32-S3：将开发板连接到 Switch 的 USB-C 接口，电脑通过蓝牙连接到开发板。
+- 经典 ESP32：保持开发板连接到电脑，并在 Switch 上打开“手柄 → 更改握法／顺序”，将它作为 Pro 手柄配对。
+
+点击“连接”后，可使用屏幕按键和摇杆，或打开“键盘控制”。“录制到宏”会记录按住时长及操作间隔。宏编辑器支持按键、等待和嵌套重复，并区分“运行一次”和“循环”部分。“在开发板上运行”会把宏加载到开发板，电脑睡眠或断开后仍可继续。
+
+宏保存在 `Documents/pokeldn/Macros`，可导入或导出 `.pokemacro` 文件。开发板移动到 Switch 时若暂时断电，应用会自动重新搜索；点击“停止搜索”可结束等待。固件切换方式见[手柄开发板](../docs/hardware_pad.md)。

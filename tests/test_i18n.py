@@ -14,6 +14,46 @@ from scripts.extract_strings import ROOT, TEMPLATE, extract, render
 SAMPLE = ROOT / "examples/plugins/pseudo"
 
 
+def test_builtin_chinese_needs_no_plugin_and_keeps_english_available():
+    from pokeldn.app.settings import Settings
+    assert Settings().app_language == i18n.BUILTIN_CHINESE
+    i18n.select(i18n.BUILTIN_CHINESE)
+    assert i18n.t("rewards.tera_shard_bundle_6365de", "Tera shard bundle") == "太晶碎块组合"
+    assert i18n.t("settings.app_language_b8352b", "App language") == "应用语言"
+    i18n.select()
+    assert i18n.t("settings.app_language_b8352b", "App language") == "App language"
+
+
+def test_builtin_chinese_covers_current_keys_and_preserves_format_fields():
+    from collections import Counter
+    from string import Formatter
+    import tomllib
+    chinese = tomllib.loads((ROOT / "pokeldn/app/data/strings.zh-Hans.toml").read_text(encoding="utf-8"))
+    def fields(value):
+        return Counter((name, spec, conversion) for _, name, spec, conversion in Formatter().parse(value)
+                       if name is not None)
+    for key, default in extract().items():
+        assert key in chinese, key
+        assert fields(chinese[key]) == fields(default), key
+
+
+@pytest.mark.parametrize("already_migrated", [False, True])
+def test_old_chinese_positional_offer_survives_the_stable_key_upgrade(tmp_path, monkeypatch, already_migrated):
+    import json
+    from pokeldn.app import settings
+    path = tmp_path / "settings.json"
+    monkeypatch.setattr(settings, "PATH", path)
+    offer = {"file": "chosen.pk3", "species": 25, "summary": "皮卡丘"}
+    values = {"#用于交换的宝可梦": offer, "--trades": "2"}
+    if already_migrated:
+        values["#Pokemon to offer"] = {"file": "new-choice.pk3"}
+    path.write_text(json.dumps({"tool_values": {"frlg-trade-host": {"values": values, "extra": {"--verbose": True}}}}), encoding="utf-8")
+    saved = settings.load().tool_values["frlg-trade-host"]
+    assert saved["values"]["#Pokemon to offer"] == ({"file": "new-choice.pk3"} if already_migrated else offer)
+    assert "#用于交换的宝可梦" not in saved["values"]
+    assert saved["values"]["--trades"] == "2" and saved["extra"] == {"--verbose": True}
+
+
 @pytest.fixture
 def isolated(tmp_path, monkeypatch):
     monkeypatch.setattr(paths, "DATA", tmp_path / "data")

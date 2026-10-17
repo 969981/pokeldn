@@ -1,3 +1,5 @@
+from gui.localization import summary as pokemon_summary, summary_text
+from gui.localization import SERVICE, translate
 import threading
 from pathlib import Path
 
@@ -95,16 +97,16 @@ class PokemonPicker:
 
     def _load_species(self) -> None:
         try:
-            species = builder.SERVICE.species(self.game)
+            species = SERVICE.species(self.game)
             error = ""
         except Exception as exc:
-            species, error = [], str(exc)
+            species, error = [], translate(str(exc))
 
         def show():
             self.species.trailing_icon = t.pixel_icon("chevron-down", color=t.MUTED)
             if error:
                 self.species.hint_text = tr('pokemon.unavailable_ca1844', 'Unavailable')
-                self._message(error, t.RED)
+                self._message(translate(error), t.RED)
             else:
                 self.species.options = [ft.DropdownOption(key=str(s["id"]), text=s["name"]) for s in species]
                 self.species.value = str(self.value["species"]) if self.value.get("species") else None
@@ -132,18 +134,18 @@ class PokemonPicker:
 
         def work():
             try:
-                info = builder.SERVICE.make(self.game, self.value["species"],
+                info = SERVICE.make(self.game, self.value["species"],
                                             self.trainer or self.app.settings.trainer(self.game),
                                             level, bool(self.value.get("shiny")),
                                             self.value.get("nickname", ""), VERSIONS.get(self.version, ""),
                                             self.value.get("options"))
-                self.value.update(file=info["file"], summary=builder.summary(info), legal=info["legal"],
+                self.value.update(file=info["file"], summary=pokemon_summary(info), legal=info["legal"],
                                   encounter=info["encounter"], moves=info["moves"],
                                   home_tracker=info.get("home_tracker", ""))
                 self.on_change(dict(self.value))
                 done = self._show_result
             except Exception as exc:
-                message = str(exc)
+                message = translate(str(exc))
                 done = lambda: self._message(message, t.RED)   # noqa: E731
             self.app.ui(lambda: (done(), setattr(self.build_button, "disabled", False), self.control.update()))
 
@@ -177,12 +179,12 @@ class PokemonPicker:
             self._paste(None, text)
             return
         try:
-            info = builder.SERVICE.import_file(self.game, path)
+            info = SERVICE.import_file(self.game, path)
         except Exception as exc:
             self._message(tr('pokemon.not_a_pokemon_this_game_can_take_cbe79a', 'Not a Pokemon this game can take: {value0}', value0=exc), t.RED)
             self.control.update()
             return
-        self.value.update(file=info["file"], summary=builder.summary(info), legal=info["legal"],
+        self.value.update(file=info["file"], summary=pokemon_summary(info), legal=info["legal"],
                           encounter=info["encounter"], moves=info["moves"],
                           report="" if info["legal"] else info["report"], home_tracker=info.get("home_tracker", ""),
                           species=info["species_id"], shiny=info["shiny"])
@@ -225,10 +227,10 @@ class PokemonPicker:
 
             def work():
                 try:
-                    sets, error = builder.SERVICE.paste(self.game, text, self.app.settings.trainer(self.game),
+                    sets, error = SERVICE.paste(self.game, text, self.app.settings.trainer(self.game),
                                                         VERSIONS.get(self.version, "")), ""
                 except Exception as exc:
-                    sets, error = [], str(exc)
+                    sets, error = [], translate(str(exc))
 
                 def done():
                     apply.disabled = False
@@ -296,7 +298,7 @@ class PokemonPicker:
         lines = [ft.Row([
             t.pixel_icon("shield" if legal else "warning-diamond",
                     color=t.GREEN if legal else t.RED),
-            t.text(self.value.get("summary", ""), 13, weight=ft.FontWeight.W_600, expand=True),
+            t.text(summary_text(self.value.get("summary", "")), 13, weight=ft.FontWeight.W_600, expand=True),
             t.badge(tr('pokemon.legal_4787ea', 'Legal') if legal else tr('pokemon.not_legal_c66729', 'Not legal'), t.GREEN if legal else t.RED,
                     "check" if legal else "warning-diamond"),
         ], spacing=8)]
@@ -466,7 +468,7 @@ class OfferOptions:
 
     def _label(self) -> None:
         count = sum(1 for k, v in self.chosen.items() if (v if isinstance(v, dict) else v is not None))
-        self.label.value = tr('pokemon.set_f4c8f3', '{value0} set', value0=count) if count else "random"
+        self.label.value = tr('pokemon.set_f4c8f3', '{value0} set', value0=count) if count else tr('pokemon.random_67bc48', 'Random')
 
     def _toggle(self, e) -> None:
         self._show(not self.open)
@@ -506,11 +508,11 @@ class OfferOptions:
 
         def work():
             try:
-                found = builder.SERVICE.options(self.picker.game, species, app.settings.trainer(self.picker.game),
+                found = SERVICE.options(self.picker.game, species, app.settings.trainer(self.picker.game),
                                                 VERSIONS.get(self.picker.version, ""), target[1])
-                found["move_names"], error = builder.SERVICE.names(self.picker.game, "moves"), ""
+                found["move_names"], error = SERVICE.names(self.picker.game, "moves"), ""
             except Exception as exc:
-                found, error = None, str(exc)
+                found, error = None, translate(str(exc))
 
             def show():
                 if self.loaded_for != target:
@@ -681,7 +683,7 @@ class NamePicker:
 
     def _load(self) -> None:
         try:
-            names = self.names if self.names is not None else builder.SERVICE.names(self.game, self.kind)
+            names = self.names if self.names is not None else SERVICE.names(self.game, self.kind)
         except Exception:
             names = None
 

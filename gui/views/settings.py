@@ -1,3 +1,4 @@
+from gui.localization import SERVICE, translate
 import copy
 import os
 import threading
@@ -14,7 +15,7 @@ from pokeldn.app import storage
 from gui.views.widgets import PathField, open_folder
 from pokeldn.app.i18n import t as tr
 
-LANGUAGES = (("2", tr("settings.language_english", "English")),
+LANGUAGES = (("9", "简体中文"), ("10", "繁体中文"), ("2", tr("settings.language_english", "English")),
              ("3", tr("settings.language_french", "French")),
              ("5", tr("settings.language_german", "German")),
              ("4", tr("settings.language_italian", "Italian")),
@@ -134,7 +135,7 @@ class SettingsView:
                          padding=ft.Padding(4, 12, 0, 0)),
             section(tr('settings.your_setup_d0e2ca', 'Your setup')),
             t.card(tr('settings.app_language_b8352b', 'App language'), t.dropdown(
-                [("", tr('settings.english_ba118b', 'English')), *((p.id, p.name) for p in plugins.discover() if p.locale and not p.error)],
+                [("zh-Hans", "简体中文"), ("", tr('settings.english_ba118b', 'English')), *((p.id, p.name) for p in plugins.discover() if p.locale and not p.error)],
                 s.app_language, on_select=lambda e: self._language(e.control.value)),
                 tr('settings.community_language_packs_restart_pokeldn_to_apply_this__f11c09', 'Community language packs. Restart pokeldn to apply this choice.')),
             t.card(tr('settings.switch_keys_f1b42d', 'Switch keys'), ft.Column([keys.control, self.keys_state], spacing=8),
@@ -172,13 +173,13 @@ class SettingsView:
         ]
 
     def _language(self, plugin_id: str) -> None:
-        if plugin_id and plugin_id not in self.app.settings.plugins:
+        if plugin_id and plugin_id != "zh-Hans" and plugin_id not in self.app.settings.plugins:
             self.save("plugins", [*self.app.settings.plugins, plugin_id])
         self.save("app_language", plugin_id)
 
     def _home_tracker(self, value: str) -> None:
         self.save("home_tracker", value)
-        pokemon.SERVICE.home_tracker = value
+        pokemon.SERVICE.home_tracker = SERVICE.home_tracker = value
 
     def _toggle_advanced(self, e) -> None:
         self.show_advanced = not self.show_advanced
@@ -195,9 +196,9 @@ class SettingsView:
         release, state = self.app.update, self.app.update_state
         self.update_state.value = {
             "checking": tr('settings.checking_2e5f79', 'Checking...'),
-            "current": f"You have the latest version ({__version__}).",
+            "current": tr('settings.latest_version', 'You have the latest version ({value0}).', value0=__version__),
             "offline": tr('settings.github_did_not_answer_check_your_connection_c1e29b', 'GitHub did not answer. Check your connection.'),
-            "available": f"pokeldn {release.version} is available." if release else "",
+            "available": tr('settings.version_available', 'pokeldn {value0} is available.', value0=release.version) if release else "",
         }.get(state, "")
         self.update_state.color = t.GREEN if state == "available" else t.MUTED
 

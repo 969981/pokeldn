@@ -127,8 +127,10 @@ def test_the_site_base_url_matches_the_repository():
 
 def _standalone(script):
     env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
-    return subprocess.run([sys.executable, script, "--help"],
-                          capture_output=True, text=True, env=env, cwd=Path.cwd(), timeout=120)
+    command = [sys.executable, script, "--help"]
+    # Native tools may emit a different encoding; import-error names remain ASCII.
+    return subprocess.run(command, capture_output=True, text=True,
+                          encoding="utf-8", errors="replace", env=env, cwd=Path.cwd(), timeout=120)
 
 
 REPO_MODULES = {"pokeldn", "ldn"} | {
