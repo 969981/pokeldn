@@ -36,6 +36,11 @@ def _tuned_runs():
         state['interval'] = sys.getswitchinterval()
         cpu = android_compat.performance_cpu()
         if cpu is not None:
+            # The rest of the app (the WebView's GPU thread measured 23% on that core) moves off it.
+            try:
+                state['moved'] = android_compat.clear_core(cpu)
+            except OSError:   # untried on a phone: never let it stop a run
+                state['moved'] = {}
             os.sched_setaffinity(0, {cpu})
         sys.setswitchinterval(0.001)
         android.keep_awake(True)
@@ -50,6 +55,7 @@ def _tuned_runs():
         sys.setswitchinterval(state.get('interval', 0.005))
         if 'affinity' in state:
             os.sched_setaffinity(0, state['affinity'])
+        android_compat.restore(state.pop('moved', {}))
         android.keep_awake(False)
 
     runner.before_run(before)

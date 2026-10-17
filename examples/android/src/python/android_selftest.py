@@ -76,6 +76,25 @@ def run():
     except Exception:
         lines.append('FAIL in-process launcher\n' + traceback.format_exc())
     try:
+        import os
+        import threading
+        import android_compat
+        cpu = android_compat.performance_cpu()
+        if cpu is None:
+            lines.append('PASS core clearing skipped: no cpu_capacity (emulator)')
+        else:
+            moved = android_compat.clear_core(cpu)
+            me = threading.get_native_id()
+            left = [t for t in map(int, os.listdir('/proc/self/task')) if t != me and t in moved
+                    and cpu in os.sched_getaffinity(t)]
+            android_compat.restore(moved)
+            back = all(os.sched_getaffinity(t) == m for t, m in moved.items()
+                       if os.path.exists('/proc/self/task/%d' % t))
+            lines.append(('PASS' if moved and not left and back else 'FAIL')
+                         + ' cpu %d cleared of %d threads and restored' % (cpu, len(moved)))
+    except Exception:
+        lines.append('FAIL core clearing\n' + traceback.format_exc())
+    try:
         import time
         from pokeldn.app import android
         android.keep_awake(True)
