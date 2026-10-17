@@ -1,27 +1,15 @@
-# pokeldn 0.31.0
+# pokeldn 0.31.1
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- An iPhone and iPad app, `pokeldn-ios.ipa`: the same interface, with the board reached over
-  Bluetooth, so the board needs USB only for power. Install it with AltStore or SideStore; the app's
-  AltStore source is
-  `https://raw.githubusercontent.com/Decryptu/pokeldn/main/.github/altstore/source.json`. Flash the
-  board once with the new **Bluetooth wireless** firmware from the desktop app's Board page (an
-  ESP32-C6 or a classic ESP32). FireRed/LeafGreen and Legends Z-A trades are verified from an iPhone.
-- The Android app no longer slows a trade to a crawl: each auto-scroll of the session log made the
-  interface redraw the whole page on the same processor time the trade uses.
-- Leaving the FireRed/LeafGreen Trade Center before sitting down no longer leaves the console on
-  "Please wait".
-- Logs hide personal details by default: trainer names, nicknames, trainer IDs, the device half of
-  MAC addresses and your user folder are masked, so a log can be shared or filmed. Settings, Bug
-  reports turns it off.
-- The app's Stop now ends a FireRed run on Android and iOS.
+- Windows: Microsoft Defender quarantined 0.31.0's `pokeldn.exe` as `Trojan:Win32/Bearfoos.A!ml`, a
+  false positive reported to Microsoft. The Windows app is now built with its own compiled launcher
+  and a valid file checksum, which antivirus programs are less likely to mistake for malware.
 
-The radio firmware stays at 1.6.2 and the controller firmware at 1.3.0; no board update is needed
-except to use the iPhone app.
+The radio firmware stays at 1.6.2 and the controller firmware at 1.3.0; no board update is needed.
 
 pokeldn is an unofficial fan project, not affiliated with Nintendo or The Pokemon Company. It is not
 meant for commercial or promotional use; see the License section of the README.
