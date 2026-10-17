@@ -4,9 +4,17 @@ The Android app runs the desktop app's own interface on a phone, with an ESP32-S
 board on the phone's USB port. Every page, game and tool is the code in `gui/` and `pokeldn/`;
 only the shell in this folder is Android's. A OnePlus CPH2621 running Android 16 completed a
 smooth retail FireRed trade with a XIAO ESP32C6 through the earlier diagnostic frontend
-(`MainActivity`, below). The full app on the same phone and board identified the board and completed
-a FireRed host trade, with slow movement: the host sent a median 36 link slots per second against the
-diagnostic frontend's 51.
+(`MainActivity`, below). The full app on the same phone and board completes FireRed host trades at the
+diagnostic frontend's speed. It had been slow (a median 36 link slots per second against 51, and as
+low as 9): the session log auto-scrolls, each scroll event reached `theme.fade`'s handler, and Flet's
+automatic update after the handler re-diffed the whole page (72 to 85 ms, up to 350 times a run) on the
+interpreter the run shares. The handler now turns that automatic update off.
+
+`touch files/data/ui_trace.on` (with `adb shell run-as org.pokeldn.usbprobe`) makes the app write
+`files/data/ui_trace.txt` (`pokeldn.app.sampler.trace_updates`): every Flet patch by control type and
+calling `gui` function, page property changes and browser events, every 10 s. Never sample other
+threads' frames under Chaquopy: dropping a frame there freed a Java object on an unattached thread and
+the app aborted (JNI DeleteRef, JNIEnv from another thread), even after attaching the thread.
 
 ## How it works
 

@@ -1466,6 +1466,8 @@
 "settings.pixel_art_sprites_come_from_pokeapi_and_are_kept_on_thi_a49320" = "Pixel-art sprites come from PokeAPI and are kept on this computer after the first download. The app works without them."
 "settings.pokeldn_is_agplv3_pokemon_are_checked_with_pkhex_core_g_689838" = "pokeldn is AGPLv3. Pokemon are checked with PKHeX.Core (GPLv3)."
 "settings.pokemon_sprites_bba928" = "Pokemon sprites"
+"settings.private_logs" = "Hide personal details in logs"
+"settings.private_logs_detail" = "Masks trainer names, nicknames, trainer IDs, the device half of MAC addresses and your user folder in the logs shown here, so you can share them or record your screen. Turn it off only if a developer asks for the full log."
 "settings.prod_keys_dumped_from_your_own_console_needed_to_talk_t_26673c" = "prod.keys dumped from your own console. Needed to talk to the games; it never leaves this computer."
 "settings.received_pokemon_1d657d" = "Received Pokemon"
 "settings.record_every_session_f5f9d8" = "Record every session"

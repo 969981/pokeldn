@@ -23,6 +23,7 @@ class Settings:
     app_language: str = ""   # language-pack plugin id; empty selects English
     baud: int = 921600
     capture: bool = True
+    private_logs: bool = True   # mask names, trainer IDs, MACs and the home folder in the logs shown (redact.py)
     board_trace: bool = False
     sprites: bool = True    # download Pokemon sprites from PokeAPI; the cache is read either way
     check_updates: bool = True   # ask GitHub for a newer release at launch

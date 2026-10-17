@@ -119,41 +119,9 @@ def selftest():
 
 
 def profile():
-    """`--profile` at launch: every 10 ms, the innermost pokeldn, gui, flet or ldn frame of each thread,
-    counted per thread and written to Documents/profile.txt every 10 s, busiest first."""
-    import collections
-    import time
-    documents = os.environ["POKELDN_IOS_DOCUMENTS"]
-    counts = collections.Counter()
-
-    def where(frame):
-        stack = []
-        while frame is not None:
-            stack.append(frame)
-            frame = frame.f_back
-        for f in stack:   # innermost first
-            path = f.f_code.co_filename
-            if any(part in path for part in ("/pokeldn/", "/gui/", "/flet", "/ldn/", "/trio/", "/uvicorn", "/starlette")):
-                return f"{path.rsplit('/app', 1)[-1]}:{f.f_lineno} {f.f_code.co_name}"
-        return f"{stack[0].f_code.co_filename.rsplit('/', 1)[-1]}:{stack[0].f_lineno} {stack[0].f_code.co_name}"
-
-    def sample():
-        last = time.monotonic()
-        names = {}
-        while True:
-            time.sleep(0.01)
-            names.update({t.ident: t.name for t in threading.enumerate()})
-            me = threading.get_ident()
-            for ident, frame in sys._current_frames().items():
-                if ident != me:
-                    counts[(names.get(ident, str(ident)), where(frame))] += 1
-            if time.monotonic() - last >= 10:
-                last = time.monotonic()
-                with open(f"{documents}/profile.txt", "w") as out:
-                    for (thread, place), n in counts.most_common(80):
-                        out.write(f"{n:7d}  {thread:24.24}  {place}\n")
-
-    threading.Thread(target=sample, name="profile", daemon=True).start()
+    """`--profile` at launch: pokeldn.app.sampler writing Documents/profile.txt."""
+    from pokeldn.app import sampler
+    sampler.start(os.path.join(os.environ["POKELDN_IOS_DOCUMENTS"], "profile.txt"))
 
 
 def clean():

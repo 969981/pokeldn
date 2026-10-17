@@ -389,7 +389,10 @@ def fade(scrollable: ft.ScrollableControl, size: float = 24) -> ft.ShaderMask:
         mask.shader = shader
         return changed
 
+    # A scroll or size event otherwise ends in Flet's automatic update of the whole page: on a phone,
+    # where a run shares the interpreter, an auto-scrolling log cost 72 ms per line (examples/android).
     def resized(e) -> None:
+        ft.context.disable_auto_update()
         edges["height"] = e.height
         if paint():
             mask.update()
@@ -397,6 +400,7 @@ def fade(scrollable: ft.ScrollableControl, size: float = 24) -> ft.ShaderMask:
     previous = scrollable.on_scroll
 
     def scrolled(e) -> None:
+        ft.context.disable_auto_update()
         top, bottom = e.pixels > e.min_scroll_extent + 1, e.pixels < e.max_scroll_extent - 1
         if (top, bottom) != (edges["top"], edges["bottom"]):
             edges["top"], edges["bottom"] = top, bottom

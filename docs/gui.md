@@ -509,6 +509,24 @@ chosen copy, shows the setting's warning: "PKHeX flags the missing HOME tracker"
 deposited in HOME". The trade offers it like any other
 ([The copy a trade offers](gift_simulated.md#the-copy-a-trade-offers)).
 
+## Private logs
+
+Settings, Hide personal details in logs (on by default) masks, in the session and board logs the app
+shows and copies (`pokeldn/app/redact.py`):
+
+| masked | shown instead | kept |
+|---|---|---|
+| the home folder in a path (`/Users/NAME`, `/home/NAME`, `C:\Users\NAME`) | `~` | the rest of the path |
+| the iOS app container (`/var/mobile/Containers/Data/Application/UUID`) | `<app>` | |
+| the device half of a MAC address | `**:**:**` | the vendor half (Nintendo, Espressif) |
+| a quoted value after `ot_name`, `ht_name`, `OT`, `nickname`, `trainer`, `player` or `name` | `***` | `POKELDN` and `PKLDN`, the program's own trainer |
+| a value after `TID`, `SID`, `tid`, `sid`, `trainer_id` | `***` | |
+| a trainer name seen once, and the trainer name from Settings, wherever it appears again in the run, as a whole word | `***` | |
+
+A nickname is masked where it stands and nowhere else: it is often the species' own name. Session
+records (`captures/`) carry the raw messages and are not masked. Local link addresses (`169.254.x.x`,
+`127.0.0.x`) identify nobody and stay.
+
 ## Pop-ups
 
 A run the app started, another of its child processes, or the app's own code can put a pop-up over
