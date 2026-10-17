@@ -48,6 +48,12 @@ def _command() -> list[str]:
     raise BuilderError("PKHeX is missing. From source, run: dotnet build -c Release services/pkhex")
 
 
+def _library(command: list[str]) -> bool:
+    """The helper as a library: a .dylib, or the iOS bundle's framework (examples/ios/build.py). Python on
+    macOS lives in Python.framework too, so the framework is matched by name."""
+    return len(command) == 1 and (command[0].endswith(".dylib") or "/pokeldn_pkhex.framework/" in command[0])
+
+
 class _Library:
     """The helper compiled as a library (services/pkhex/Library.cs), for iOS, which starts no process:
     its request loop runs on a thread over two pipes, behind Popen's stdin, stdout, poll and wait."""
@@ -95,7 +101,7 @@ class Service:
                     self._close()
                     flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
                     command = _command()
-                    self.proc = (_Library(command[0]) if command[0].endswith(".dylib") or ".framework/" in command[0] else
+                    self.proc = (_Library(command[0]) if _library(command) else
                                  subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                                   stderr=subprocess.DEVNULL, text=True, encoding="utf-8",
                                                   creationflags=flags))

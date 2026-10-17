@@ -647,3 +647,14 @@ for line in sys.stdin:
         assert instance.prepare('pla', REFERENCE_RECORD) == REFERENCE_RECORD
     finally:
         instance.close()
+
+
+@pytest.mark.parametrize("command,library", [
+    # GitHub's macOS runner: Python itself lives in Python.framework, and a test's helper runs on it.
+    (["/Users/runner/hostedtoolcache/Python/3.13.15/arm64/Python.framework/Versions/3.13/bin/python3"], False),
+    (["/private/var/containers/Bundle/Application/X/pokeldn.app/Frameworks/pokeldn_pkhex.framework/pokeldn_pkhex"], True),
+    (["/tmp/pkhex-osx/pokeldn-pkhex.dylib"], True),
+    (["dotnet", "/tmp/pokeldn-pkhex.dll"], False),
+])
+def test_only_the_helper_built_as_a_library_runs_in_process(command, library):
+    assert pokemon._library(command) is library
