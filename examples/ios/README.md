@@ -6,8 +6,11 @@ runs the Bluetooth radio firmware ([Bluetooth](../../docs/hardware_esp32.md#blue
 only for power. Every page, game and tool is the code in `gui/` and `pokeldn/`; only the shell in this
 folder is iOS's.
 
-On an iPhone 13 Pro the app starts, takes prod.keys through the document picker and finds a XIAO
-ESP32C6 running the Bluetooth firmware. No trade has run from a phone yet. In the iOS Simulator the
+On an iPhone 13 Pro with a XIAO ESP32C6 running the Bluetooth firmware, the app completed a retail
+FireRed host trade. It was slow: the host sent 12.2 unique link slots per second (Android over USB:
+51), and the trade animation's step took minutes. With a 30 ms connection interval and no run tuning
+the same trade crawled at 4.4. The run takes Android's tuning (`ios_gui._tuned_runs`, the shared Trio
+loop from `examples/android/src/python/android_host_loop.py`) less its CPU affinity. In the iOS Simulator the
 interface and the self-test run; the simulator has no Bluetooth, so no run reaches a board there.
 
 ## How it works

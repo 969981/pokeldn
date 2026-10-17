@@ -80,17 +80,20 @@ def stage_code(app: Path) -> None:
     shutil.copytree(ROOT / 'examples/android/src/python/fastapi', app / 'fastapi',
                     ignore=shutil.ignore_patterns('__pycache__'))
     shutil.copy2(HERE / 'src/python/ios_gui.py', app / 'ios_gui.py')
+    # The FireRed host's protocol on LDN's own Trio thread, as measured on Android (its README, Scheduling).
+    shutil.copy2(ROOT / 'examples/android/src/python/android_host_loop.py', app / 'android_host_loop.py')
 
 
-# msgpack without its C extension, built from its sdist as examples/android/build.py builds it.
-LOCAL = (('msgpack==1.2.3', {'MSGPACK_PUREPYTHON': '1'}),)
+# Built from sdists as examples/android/build.py builds them: msgpack without its C extension, and
+# python-netlink, which pokeldn.ldn imports for host mode and has no wheel.
+LOCAL = (('msgpack==1.2.3', {'MSGPACK_PUREPYTHON': '1'}), ('python-netlink==0.0.15', {}))
 
 
 def pure_packages(target: Target, packages: Path) -> None:
     wheels = BUILD / 'wheels'
     wheels.mkdir(parents=True, exist_ok=True)
     for spec, extra in LOCAL:
-        name = spec.split('==')[0]
+        name = spec.split('==')[0].replace('-', '_')
         if not list(wheels.glob(f'{name}-*.whl')):
             run(sys.executable, '-m', 'pip', 'wheel', '--quiet', '--no-deps', '--no-binary', ':all:',
                 '-w', wheels, spec, env={**os.environ, **extra})
@@ -253,8 +256,6 @@ def info_plist(target: Target) -> dict:
         'UIRequiredDeviceCapabilities': ['arm64'], 'LSRequiresIPhoneOS': True,
         'NSBluetoothAlwaysUsageDescription': 'pokeldn talks to its radio board over Bluetooth.',
         'NSAppTransportSecurity': {'NSAllowsLocalNetworking': True},
-        'CFBundleIcons': {'CFBundlePrimaryIcon': {'CFBundleIconFiles': ['AppIcon60x60', 'AppIcon76x76'],
-                                                  'CFBundleIconName': 'AppIcon'}},
         'UIApplicationSceneManifest': {'UIApplicationSupportsMultipleScenes': False, 'UISceneConfigurations': {
             'UIWindowSceneSessionRoleApplication': [{'UISceneConfigurationName': 'Default',
                                                      'UISceneDelegateClassName': 'SceneDelegate'}]}},
@@ -285,10 +286,15 @@ def main() -> int:
                  '-framework', 'UIKit', '-framework', 'CoreGraphics', '-framework', 'WebKit', '-framework', 'CoreBluetooth', '-framework', 'UniformTypeIdentifiers',
                  '-Xlinker', '-rpath', '-Xlinker', '@executable_path/Frameworks',
                  '-o', bundle / 'pokeldn', HERE / 'src' / 'main.m')
-    (bundle / 'Info.plist').write_bytes(plistlib.dumps(info_plist(target)))
-    for name, size in (('AppIcon60x60@2x.png', 120), ('AppIcon60x60@3x.png', 180), ('AppIcon76x76@2x~ipad.png', 152)):
-        run('sips', '-z', size, size, ROOT / 'gui' / 'assets' / 'icon.png', '--out', bundle / name,
-            stdout=subprocess.DEVNULL)
+    info = info_plist(target)
+    # An Icon Composer document (HERE/AppIcon.icon) compiled into Assets.car: iOS draws it as its own
+    # layered icon instead of masking a flat PNG. Replace the folder with an export to change the icon.
+    partial = work / 'icon-partial.plist'
+    run('xcrun', 'actool', HERE / 'AppIcon.icon', '--compile', bundle, '--app-icon', 'AppIcon',
+        '--platform', target.sdk, '--minimum-deployment-target', MIN_IOS, '--target-device', 'iphone',
+        '--target-device', 'ipad', '--output-partial-info-plist', partial, stdout=subprocess.DEVNULL)
+    info.update(plistlib.loads(partial.read_bytes()))
+    (bundle / 'Info.plist').write_bytes(plistlib.dumps(info))
     shutil.copytree(framework / target.slice / 'Python.framework', bundle / 'Frameworks' / 'Python.framework',
                     symlinks=True)
     lib = bundle / 'python' / 'lib'

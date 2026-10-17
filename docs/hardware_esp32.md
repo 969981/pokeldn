@@ -774,6 +774,11 @@ second each), slower than over the cable by the player's account. The C6 BLE ima
 partition to within 13 KB. The board advertises only its name: the iOS app scans with no service
 filter and matches `POKELDN-RADIO`.
 
+A XIAO ESP32C6 that asked for 15 ms only at connect ran at 30 ms (61.5 ms per HELLO from an iPhone 13
+Pro, a FireRed room at a crawl); asked again once the central subscribes, it gets 15 ms
+(`ble_itvl_us=15000` in STATUS, 32.1 ms per HELLO). A request at connect arrives while the central
+still discovers services.
+
 On macOS, bleak aborts (SIGABRT) in a process whose responsible app has no Bluetooth grant; a script
 started with `open -n -a Terminal FILE.command` runs under Terminal's.
 

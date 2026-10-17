@@ -285,7 +285,7 @@ class GamesView:
         for game in self.catalog:
             open_ = game is self.game
             rows.append(ft.Container(ft.Row([
-                ft.Container(ft.Image(src=Path(game.icon).read_bytes() if game.icon else f"games/{game.key}.png", width=36, height=36,
+                ft.Container(ft.Image(src=t.image_src(Path(game.icon).read_bytes()) if game.icon else f"games/{game.key}.png", width=36, height=36,
                                       fit=ft.BoxFit.CONTAIN, filter_quality=ft.FilterQuality.NONE,
                                       semantics_label=game.name),
                              width=40, height=36, alignment=ft.Alignment.CENTER),

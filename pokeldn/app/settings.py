@@ -93,4 +93,7 @@ def load() -> Settings:
     known = Settings.__dataclass_fields__
     if data.get("ot") == "PkCamp":   # the default before POKELDN
         data["ot"] = Settings.ot
+    from pokeldn.app import ios
+    if ios.active():
+        data = {k: ios.rebase(v) for k, v in data.items()}
     return Settings(**{k: v for k, v in data.items() if k in known})

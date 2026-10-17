@@ -35,6 +35,38 @@ def _crypto_libraries():
     _raw_api.load_pycryptodome_raw_lib = load
 
 
+def _tuned_runs():
+    """The run tuning the FireRed host measured on Android (examples/android/README.md, Scheduling),
+    less the CPU affinity iOS does not offer: a 1 ms thread switch interval, crypto calls that keep the
+    GIL, the protocol on LDN's Trio thread, and the radio closed after each in-process run."""
+    import ctypes
+    from Crypto.Util import _raw_api
+    if _raw_api.backend == "ctypes":
+        _raw_api.CDLL = ctypes.PyDLL
+    import android_host_loop
+    from pokeldn.app import runner
+    from pokeldn.frlg.link.host_app import HostApplication
+    HostApplication._timing = {}
+    HostApplication.run = android_host_loop.run
+    state = {}
+
+    def before():
+        state["interval"] = sys.getswitchinterval()
+        sys.setswitchinterval(0.001)
+
+    def after():
+        from ldn import wlan
+        from pokeldn.ldn import esp32_wlan
+        radio, esp32_wlan._radio = esp32_wlan._radio, None   # a second process would have closed it
+        if radio is not None:
+            radio.close()
+        wlan.set_factory(None)
+        sys.setswitchinterval(state.get("interval", 0.005))
+
+    runner.before_run(before)
+    runner.after_run(after)
+
+
 def selftest():
     """`simctl launch booted io.pokeldn.app --selftest` (or devicectl): each native piece a run needs,
     one PASS or FAIL line each in pokeldn.log."""
@@ -59,8 +91,28 @@ def selftest():
         return len(pokemon.SERVICE.species("frlg"))
 
     def radio():
+        """With a board ready over Bluetooth: HELLO round trips through main.m's bridge, against a Mac's
+        32 ms on the same board (docs/hardware_esp32.md, Bluetooth)."""
+        import time
+        from pokeldn.app import ios
         from pokeldn.ldn import esp32
-        return esp32.Radio  # the socket:// open needs a board; its import is what this checks
+        for _ in range(100):   # the bridge connects in the first seconds
+            if ios.radio_state() == "ready":
+                break
+            time.sleep(0.1)
+        else:
+            return "no board ready; module imports"
+        r = esp32.Radio.open_serial(ios.port())
+        try:
+            n, start = 200, time.monotonic()
+            for _ in range(n):
+                r.request(esp32.CMD_HELLO, b"", esp32.MSG_INFO, timeout=3)
+            rtt = (time.monotonic() - start) / n * 1000
+            status = r.request(esp32.CMD_STATUS, b"", esp32.MSG_STATUS, timeout=3).decode(errors="replace")
+            interval = next((w for w in status.split() if w.startswith("ble_itvl_us=")), "")
+            return f"{r.info.text}; HELLO round trip {rtt:.1f} ms; {interval}"
+        finally:
+            r.close()
 
     for name, fn in (("aes", aes), ("zstd", zstd), ("pkhex", pkhex), ("radio module", radio)):
         check(name, fn)
@@ -83,6 +135,7 @@ def main():
         _crypto_libraries()
     except ImportError:
         pass
+    _tuned_runs()
     if os.environ.get("POKELDN_IOS_SELFTEST"):
         selftest()
     from gui import main as gui_main

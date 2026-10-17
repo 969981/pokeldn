@@ -1,4 +1,6 @@
 from dataclasses import fields
+import base64
+import os
 
 import flet as ft
 import flet.canvas as cv
@@ -443,3 +445,11 @@ def step_list(steps: list[str]) -> ft.Column:
             ft.Container(text(step, 13), expand=True, padding=ft.Padding(0, lead, 0, gap)),
         ], spacing=10, intrinsic_height=True, vertical_alignment=ft.CrossAxisAlignment.STRETCH))
     return ft.Column(rows, spacing=0, tight=True)
+
+
+def image_src(data: bytes) -> bytes | str:
+    """An image's bytes as an ft.Image src. iOS's WKWebView draws nothing for a bytes src and draws a
+    data URI (examples/ios/README.md); the decoder reads the format from the bytes, not the label."""
+    if os.environ.get("POKELDN_PLATFORM") == "ios":
+        return "data:image/png;base64," + base64.b64encode(data).decode()
+    return data
