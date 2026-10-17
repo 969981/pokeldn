@@ -45,25 +45,25 @@ class BankView:
         self.heading = t.text("", 12, t.MUTED)
         self.detail = ft.Column(spacing=24, scroll=ft.ScrollMode.AUTO, expand=True)
         self.note = t.text("", 12, t.MUTED)
-        self.control = ft.Row([
-            t.panel(ft.Column([
+        self.panes = t.Panes(
+            (tr('bank.pane_boxes', 'Boxes'), "archive", t.panel(ft.Column([
                 t.panel_header(tr('bank.bank_676c47', 'Bank'),
                                t.icon_button("plus", self._pick, tr('bank.import_a_pokemon_file_or_a_game_save_da7f8c', 'Import a Pokemon file or a game save')),
                                t.icon_button("folder", lambda e: open_folder(str(self._folder())),
                                              tr('bank.open_the_bank_folder_438a67', 'Open the bank folder')),
                                t.icon_button("refresh", lambda e: self.refresh(), tr('bank.refresh_0e9161', 'Refresh'))),
                 t.fade(self.boxes),
-            ], spacing=0, expand=True), width=t.SIDEBAR_WIDTH),
-            drop.target(ft.Container(t.fade(ft.ListView(
+            ], spacing=0, expand=True), width=t.SIDEBAR_WIDTH)),
+            (tr('bank.pane_box', 'Box'), "package", drop.target(ft.Container(t.fade(ft.ListView(
                 [ft.Container(self.heading, padding=ft.Padding(4, 14, 4, 0)), self.grid],
                 spacing=12, padding=ft.Padding(0, 0, 0, 24), expand=True)), expand=True, border_radius=16),
-                self._import, expand=True),
-            t.panel(ft.Column([
+                self._import, expand=True)),
+            (tr('bank.pane_pokemon', 'Pokemon'), "user", t.panel(ft.Column([
                 t.panel_header(tr('bank.pokemon_224642', 'Pokemon')),
                 ft.Container(ft.Column([self.detail, self.note], spacing=8, expand=True),
                              padding=ft.Padding(18, 8, 18, 18), expand=True),
-            ], spacing=0, expand=True), width=t.SESSION_WIDTH),
-        ], spacing=t.GAP, expand=True, vertical_alignment=ft.CrossAxisAlignment.STRETCH)
+            ], spacing=0, expand=True), width=t.SESSION_WIDTH)))
+        self.control = self.panes.control
 
     def enter(self, **_) -> None:
         self.visible = True

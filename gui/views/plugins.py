@@ -67,7 +67,7 @@ class PluginsView:
     def __init__(self, app):
         self.app = app
         self.notice = ft.Container()
-        self.column = ft.Column(spacing=t.GAP, width=760)
+        self.column = ft.Column(spacing=t.GAP, width=None if t.compact else 760, expand=t.compact)
         self.zone = ft.Container()
         self.scroll = ft.ListView([ft.Row([self.column], alignment=ft.MainAxisAlignment.CENTER)],
                                   padding=ft.Padding(4, 8, 4, 24), expand=True)
@@ -96,8 +96,8 @@ class PluginsView:
         header = ft.Container(ft.Row([
             t.pixel_icon("plug", size=24, color=t.RED),
             t.text(tr('plugins.plugins_9514b7', 'Plugins'), 22, weight=ft.FontWeight.W_600, expand=True),
-            t.secondary_button(tr('plugins.how_to_make_one_ca2bd2', 'How to make one'), lambda e: self.app.navigate("docs", doc="plugins.md"),
-                               "book-open"),
+            *([] if t.compact else [t.secondary_button(tr('plugins.how_to_make_one_ca2bd2', 'How to make one'),
+                                                       lambda e: self.app.navigate("docs", doc="plugins.md"), "book-open")]),
             t.button(tr('plugins.add_a_plugin_98bbc5', 'Add a plugin'), self._pick, "plus"),
         ], spacing=10), padding=ft.Padding(4, 12, 0, 0))
         self.zone = self._zone(compact=bool(rows))
