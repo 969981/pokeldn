@@ -36,6 +36,25 @@ def run():
     except Exception:
         lines.append('FAIL unicorn\n' + traceback.format_exc())
     try:
+        import os
+        import pytest
+        import android_test_esp32
+        import android_test_host_end_to_end
+        import sys
+        import pkgutil
+        import bin
+        for found in pkgutil.iter_modules(bin.__path__):   # the desktop's conftest puts bin/ on sys.path
+            sys.modules.setdefault(found.name, importlib.import_module('bin.' + found.name))
+        here = os.path.dirname(android_test_esp32.__file__)
+        # Three tests read desktop tools (tools/ldn) or another test module, which the app does not ship.
+        code = pytest.main(['-q', '-p', 'no:cacheprovider', '-k',
+                            'not reconciles and not first_contact and not sword_host_and_joiner_trade',
+                            os.path.join(here, 'android_test_esp32.py'),
+                            os.path.join(here, 'android_test_host_end_to_end.py')])
+        lines.append(('PASS' if code == 0 else 'FAIL') + ' simulated boards and host sessions (pytest exit %s)' % code)
+    except Exception:
+        lines.append('FAIL simulated stack\n' + traceback.format_exc())
+    try:
         from pokeldn.app import catalog, command
         missing = [tool.key for game in catalog.GAMES for tool in game.tools
                    if '--keys' not in command.accepted(tool.script)]

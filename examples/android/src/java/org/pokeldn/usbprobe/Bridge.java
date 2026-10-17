@@ -23,6 +23,7 @@ public final class Bridge {
     private static UsbManager manager;
     private static volatile boolean denied;
     private static volatile int changes;
+    private static boolean serviceStarted;
     private static File saving;
 
     private static final BroadcastReceiver events = new BroadcastReceiver() {
@@ -103,16 +104,21 @@ public final class Bridge {
     }
 
     public static void keepAwake(boolean on) {
-        Intent service = new Intent(activity, RunService.class);
-        if (!on) service.setAction(RunService.STOP);
-        try {
-            if (Build.VERSION.SDK_INT >= 26) activity.startForegroundService(service);
-            else activity.startService(service);
-        } catch (RuntimeException error) { Log.e("PokeLDN", "Foreground service", error); }
         activity.runOnUiThread(() -> {
             if (on) activity.getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
             else activity.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         });
+        // Android 14 grants a connected-device foreground service only with USB access to a device, and
+        // crashes an app whose foreground start is refused: no board, no service (an online-only run).
+        boolean service = on && "ready".equals(usbState());
+        if (service == serviceStarted) return;
+        serviceStarted = service;
+        Intent intent = new Intent(activity, RunService.class);
+        if (!service) intent.setAction(RunService.STOP);
+        try {
+            if (Build.VERSION.SDK_INT >= 26) activity.startForegroundService(intent);
+            else activity.startService(intent);
+        } catch (RuntimeException error) { Log.e("PokeLDN", "Foreground service", error); }
     }
 
     /** Asks where to put a copy of `path`; Android's picker names it `name`. */

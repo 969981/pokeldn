@@ -52,9 +52,14 @@ adb logcat -s PokeLDN
 ```
 
 About 15 s after start it logs one `selftest PASS` or `selftest FAIL` line per check: every module
-a run imports, PKHeX listing species, Unicorn running ARM code, each catalog tool reading its
-launcher's flags, a launcher run in-process (`bin/swsh_gift_host.py --dump`), and the foreground
-service starting and stopping. No board is needed; the arm64 emulator passes all 25.
+a run imports, PKHeX listing species, Unicorn running ARM code, the simulated-board tests of
+`tests/test_esp32.py` and `tests/test_host_end_to_end.py` (53 of 56; three read desktop tools the
+app does not ship), each catalog tool reading its launcher's flags, a launcher run in-process
+(`bin/swsh_gift_host.py --dump`), and the screen and service hold turning on and off. No board is
+needed; the arm64 emulator passes all 26.
+
+The foreground service starts only while the app holds USB access to the board: Android 14 refuses
+a connected-device service without it and then stops the app.
 
 ## The diagnostic frontend
 

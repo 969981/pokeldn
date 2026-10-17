@@ -11,7 +11,9 @@ _signal = signal.signal
 
 def _signal_on_main_thread_only(signum, handler):
     # Flet and the launchers install SIGINT handlers; Chaquopy runs them off Python's main thread.
-    if threading.current_thread() is threading.main_thread():
+    # Trio asks signal.signal whether it is on the main thread: it gets the real refusal.
+    caller = sys._getframe(1).f_globals.get("__name__", "")
+    if threading.current_thread() is threading.main_thread() or caller.startswith("trio"):
         return _signal(signum, handler)
     return signal.getsignal(signum)
 
