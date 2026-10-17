@@ -1,0 +1,113 @@
+name: Sync upstream branches
+
+# main follows Decryptu/pokeldn:main
+# ew follows easyworld/pokeldn:main
+# This workflow lives on the default branch (main), because only default-branch
+# workflows receive GitHub Actions scheduled events.
+on:
+  schedule:
+    - cron: '17 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'Which local branch to sync'
+        type: choice
+        required: true
+        default: both
+        options:
+          - both
+          - main
+          - ew
+      overwrite_local:
+        description: 'Allow replacing locally developed branch contents'
+        type: boolean
+        default: false
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: dual-upstream-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Mirror each branch from its own upstream
+        shell: bash
+        env:
+          REQUESTED_TARGET: ${{ inputs.target || 'both' }}
+          OVERWRITE_LOCAL: ${{ inputs.overwrite_local || 'false' }}
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+
+          # Keep the scheduler file on main; ew remains an exact upstream snapshot.
+          workflow_backup="$RUNNER_TEMP/sync-upstreams.yml"
+          cp .github/workflows/sync-upstreams.yml "$workflow_backup"
+
+          git remote add decryptu https://github.com/Decryptu/pokeldn.git
+          git remote add easyworld https://github.com/easyworld/pokeldn.git
+          git fetch --no-tags origin \
+            +refs/heads/main:refs/remotes/origin/main \
+            +refs/heads/ew:refs/remotes/origin/ew
+          git fetch --no-tags decryptu \
+            +refs/heads/main:refs/remotes/decryptu/main
+          git fetch --no-tags easyworld \
+            +refs/heads/main:refs/remotes/easyworld/main
+
+          sync_branch() {
+            local target="$1" source_remote="$2" source_repo="$3"
+            local source_ref="refs/remotes/$source_remote/main"
+            local subject source_sha
+
+            git checkout --force -B "$target" "refs/remotes/origin/$target"
+            subject="$(git log -1 --format=%s)"
+
+            # Fail closed on manual commits instead of silently losing work.
+            if [[ "$OVERWRITE_LOCAL" != 'true' ]]; then
+              if [[ "$subject" == "chore(sync): configure dual upstream mirrors" ]] || \
+                 [[ "$subject" == "chore(sync): $target from "* ]] || \
+                 [[ "$target" == 'ew' && "$subject" == 'Sync ew with easyworld/pokeldn main (7de491e)' ]]; then
+                :
+              else
+                echo "::error::Refusing to overwrite local commits on $target ($subject). Manually review changes, or explicitly use overwrite_local on a manual run."
+                return 1
+              fi
+            fi
+
+            source_sha="$(git rev-parse "$source_ref")"
+            git restore --source="$source_ref" --staged --worktree -- :/
+            if [[ "$target" == 'main' ]]; then
+              mkdir -p .github/workflows
+              cp "$workflow_backup" .github/workflows/sync-upstreams.yml
+              git add -- .github/workflows/sync-upstreams.yml
+            fi
+            git add -A
+
+            if git diff --cached --quiet; then
+              echo "$target is already in sync with $source_repo:main ($source_sha)"
+              return
+            fi
+
+            git commit -m "chore(sync): $target from $source_repo@$source_sha"
+            git push origin "HEAD:refs/heads/$target"
+            echo "Synchronized $target from $source_repo:main ($source_sha)"
+          }
+
+          if [[ "$REQUESTED_TARGET" == 'both' || "$REQUESTED_TARGET" == 'main' ]]; then
+            sync_branch main decryptu Decryptu/pokeldn
+          fi
+          if [[ "$REQUESTED_TARGET" == 'both' || "$REQUESTED_TARGET" == 'ew' ]]; then
+            sync_branch ew easyworld easyworld/pokeldn
+          fi
