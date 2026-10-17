@@ -9,7 +9,8 @@ MODULES = ('Crypto.Cipher.AES', 'trio', 'zstandard', 'serial', 'esptool', 'webso
            'gui.views.boards', 'gui.views.bank', 'gui.views.gts', 'gui.views.settings', 'unicorn')
 
 
-def run():
+def run(only=''):
+    """`only`: a pytest -k expression; runs just those simulated-board tests, verbose."""
     lines = []
     for name in MODULES:
         try:
@@ -45,10 +46,11 @@ def run():
         import bin
         for found in pkgutil.iter_modules(bin.__path__):   # the desktop's conftest puts bin/ on sys.path
             sys.modules.setdefault(found.name, importlib.import_module('bin.' + found.name))
+        os.environ['POKELDN_TEST_TIME_SCALE'] = '3'   # tests/test_esp32.py, the Let's Go queue
         here = os.path.dirname(android_test_esp32.__file__)
         # Three tests read desktop tools (tools/ldn) or another test module, which the app does not ship.
-        code = pytest.main(['-q', '-p', 'no:cacheprovider', '-k',
-                            'not reconciles and not first_contact and not sword_host_and_joiner_trade',
+        code = pytest.main(['-q', '-p', 'no:cacheprovider', '-rA', '--tb=short', '-k',
+                            only or 'not reconciles and not first_contact and not sword_host_and_joiner_trade',
                             os.path.join(here, 'android_test_esp32.py'),
                             os.path.join(here, 'android_test_host_end_to_end.py')])
         lines.append(('PASS' if code == 0 else 'FAIL') + ' simulated boards and host sessions (pytest exit %s)' % code)

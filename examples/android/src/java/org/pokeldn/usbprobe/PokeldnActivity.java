@@ -92,7 +92,8 @@ public class PokeldnActivity extends Activity {
             try {
                 while (!Python.isStarted()) Thread.sleep(100);
                 Thread.sleep(15000);   // the interface has set the environment up
-                for (String line : Python.getInstance().getModule("android_selftest").callAttr("run").toString().split("\n"))
+                for (String line : Python.getInstance().getModule("android_selftest").callAttr("run",
+                        getIntent().getStringExtra("only") == null ? "" : getIntent().getStringExtra("only")).toString().split("\n"))
                     Log.i(TAG, "selftest " + line);
             } catch (Exception error) { Log.e(TAG, "selftest", error); }
         }, "pokeldn-selftest").start();
