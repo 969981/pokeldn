@@ -252,16 +252,16 @@ class PluginsView:
             choices.append((s.radio, tr('plugins.its_plugin_is_off_dc8701', '{value0} (its plugin is off)', value0=s.radio)))
         if len(choices) == 1:
             return []
-        help_controls = [tr('plugins.the_games_page_shows_the_radio_in_use_before_you_start_87e986', 'The Games page shows the radio in use before you start.')]
+        help_controls = [t.text(tr('plugins.the_games_page_shows_the_radio_in_use_before_you_start_87e986', 'The Games page shows the radio in use before you start.'), 12, t.MUTED)]
         if any(key == "ldnrs" for key, label in choices):
             help_controls += [
-                tr('plugins.for_usb_wi_fi_on_windows_install_ldnrs_0_0_3_complete_i_a1a117', "For USB Wi-Fi on Windows, install ldnrs 0.0.3, complete its adapter wizard and keep its daemon running. Its setup replaces the adapter's Wi-Fi driver with WinUSB; restore the original driver in Device Manager to use that adapter for ordinary Wi-Fi again."),
+                t.text(tr('plugins.for_usb_wi_fi_on_windows_install_ldnrs_0_0_3_complete_i_a1a117', "For USB Wi-Fi on Windows, install ldnrs 0.0.3, complete its adapter wizard and keep its daemon running. Its setup replaces the adapter's Wi-Fi driver with WinUSB; restore the original driver in Device Manager to use that adapter for ordinary Wi-Fi again."), 12, t.MUTED),
                 t.link_button(tr('plugins.ldnrs_setup_and_download_ba2dbf', 'ldnrs setup and download'), lambda e: self.app.page.run_task(
                     self.app.open_url, "https://github.com/unlimitedcoder2/ldnrs/releases/tag/0.0.3"))]
         return [t.section(tr('plugins.radio_2a7dfe', 'Radio'), t.card(
             tr('plugins.what_carries_the_wireless_messages_dad79a', 'What carries the wireless messages'),
-            t.dropdown(choices, s.radio, on_select=lambda e: self._set_radio(e.control.value or "")),
-            *help_controls))]
+            ft.Column([ft.Row([t.dropdown(choices, s.radio, on_select=lambda e: self._set_radio(e.control.value or ""))]),
+                       *help_controls], spacing=8, tight=True)))]
 
     def _first_tool(self, state: plugins.Plugin):
         for game in state.games:
