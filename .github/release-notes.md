@@ -1,15 +1,13 @@
-# pokeldn 0.31.2
+# pokeldn 0.31.3
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- Android: on a phone whose Android System WebView is too old or lacks the graphics features the
-  interface needs, the app now says so and links to the WebView's Play Store page, instead of opening
-  on a blank screen. It shows the same screen when the interface has not appeared after a minute.
-  Some players report a screen with icons but no text; if that happens to you, update Android System
-  WebView and Google Chrome from the Play Store, and report your phone model and WebView version.
+- Android: the app no longer opens on a screen with icons but no text on phones with a larger
+  system font size, which is common on Samsung Galaxy phones. Android's font size made the
+  interface's text so large that nothing could be read.
 
 The radio firmware stays at 1.6.2 and the controller firmware at 1.3.0; no board update is needed.
 
