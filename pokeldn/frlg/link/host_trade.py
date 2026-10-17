@@ -749,9 +749,10 @@ class HostTradeEngine:
             self.trace.append(("child_key", "READY"))
             self._maybe_finish_entry()
         elif key == LINK_KEY_EXIT_ROOM and self.state in (H_RETURN_FIELD, H_CC_BATTLE_ENTRY,
-                                                          H_UROOM_BATTLE_LINK):
-            # After a colosseum battle the console waits for every player to reach EXITING_ROOM
-            # [KeyInterCB_WaitForPlayersToExit, overworld.c:2977]; unanswered, the link errors.
+                                                          H_UROOM_BATTLE_LINK, H_ENTRY_SEAT):
+            # The console waits for every player to reach EXITING_ROOM [KeyInterCB_WaitForPlayersToExit,
+            # overworld.c:2977], after a battle or when its player walks out before sitting down;
+            # unanswered, it stays on "Please wait" (docs/frlg_link.md, Leaving the room).
             self.trace.append(("child_exit_first",))
             self._begin_room_exit(child_already_exited=True)
         elif key == LINK_KEY_EXIT_ROOM and self.state == H_EXIT:
