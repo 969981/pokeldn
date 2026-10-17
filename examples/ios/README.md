@@ -13,7 +13,7 @@ interpreter: with a 1500-line session log redrawn four times a second, Flet's di
 thread 75% of the time and the run fell to 12.2; a phone keeps 300 lines and redraws once a second
 (`gui/views/widgets.py` Log). Each auto-scroll of that log also made Flet re-diff the whole page, which
 `theme.fade` now prevents (examples/android/README.md). With a 30 ms connection interval and no run tuning the same trade
-crawled at 4.4. The run takes Android's tuning (`ios_gui._tuned_runs`, the shared Trio
+crawled at 4.4. A Legends Z-A joiner trade from the same phone completed in 27 s. The run takes Android's tuning (`ios_gui._tuned_runs`, the shared Trio
 loop from `examples/android/src/python/android_host_loop.py`) less its CPU affinity. In the iOS Simulator the
 interface and the self-test run; the simulator has no Bluetooth, so no run reaches a board there.
 

@@ -518,8 +518,8 @@ shows and copies (`pokeldn/app/redact.py`):
 |---|---|---|
 | the home folder in a path (`/Users/NAME`, `/home/NAME`, `C:\Users\NAME`) | `~` | the rest of the path |
 | the iOS app container (`/var/mobile/Containers/Data/Application/UUID`) | `<app>` | |
-| the device half of a MAC address | `**:**:**` | the vendor half (Nintendo, Espressif) |
-| a quoted value after `ot_name`, `ht_name`, `OT`, `nickname`, `trainer`, `player` or `name` | `***` | `POKELDN` and `PKLDN`, the program's own trainer |
+| the device half of a MAC address, with or without colons | `**:**:**`, `******` | the vendor half (Nintendo, Espressif) |
+| a quoted value (`'…'`, `"…"`, `b'…'`) after `ot_name`, `ht_name`, `OT`, `nickname`, `trainer`, `player` or `name` | `***` | `POKELDN` and `PKLDN` in any case, the program's own names |
 | a value after `TID`, `SID`, `tid`, `sid`, `trainer_id` | `***` | |
 | a trainer name seen once, and the trainer name from Settings, wherever it appears again in the run, as a whole word | `***` | |
 
