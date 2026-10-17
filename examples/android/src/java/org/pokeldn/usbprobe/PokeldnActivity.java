@@ -43,6 +43,9 @@ public class PokeldnActivity extends Activity {
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
         settings.setMediaPlaybackRequiresUserGesture(false);
+        // WebView copies the system font size into text zoom; above 100% Flutter draws text so large that
+        // every screen is blank (examples/android/README.md, WebView).
+        settings.setTextZoom(100);
         web.setWebChromeClient(new WebChromeClient() {
             @Override public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> callback, FileChooserParams params) {
                 if (picking != null) picking.onReceiveValue(null);

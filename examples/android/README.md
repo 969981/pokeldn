@@ -35,6 +35,11 @@ Below 760 points wide the interface shows a bottom tab bar and one panel at a ti
 
 ### WebView
 
+Android WebView sets its text zoom to the system font size. With text zoom above 100%, Flutter's web
+engine draws every text so large that it is clipped away: the screens show icons and empty panels,
+and dialogs and the tab bar stretch to the full height (measured at font scale 1.3 and 2.0 on the
+emulator, and reported from Galaxy phones). `PokeldnActivity` sets text zoom to 100%.
+
 The interface needs Android System WebView 119 or later with WebGL. Flutter's web engine draws with
 skwasm only when WebAssembly GC (Chrome 119) and WebGL are present, and otherwise falls back to
 CanvasKit, which draws this interface's text but none of its images. Before loading the interface,
