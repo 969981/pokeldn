@@ -1,13 +1,15 @@
-# pokeldn 0.31.1
+# pokeldn 0.31.2
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- Windows: Microsoft Defender quarantined 0.31.0's `pokeldn.exe` as `Trojan:Win32/Bearfoos.A!ml`, a
-  false positive reported to Microsoft. The Windows app is now built with its own compiled launcher
-  and a valid file checksum, which antivirus programs are less likely to mistake for malware.
+- Android: on a phone whose Android System WebView is too old or lacks the graphics features the
+  interface needs, the app now says so and links to the WebView's Play Store page, instead of opening
+  on a blank screen. It shows the same screen when the interface has not appeared after a minute.
+  Some players report a screen with icons but no text; if that happens to you, update Android System
+  WebView and Google Chrome from the Play Store, and report your phone model and WebView version.
 
 The radio firmware stays at 1.6.2 and the controller firmware at 1.3.0; no board update is needed.
 
