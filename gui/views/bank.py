@@ -64,6 +64,7 @@ class BankView:
                              padding=ft.Padding(18, 8, 18, 18), expand=True),
             ], spacing=0, expand=True), width=t.SESSION_WIDTH)))
         self.control = self.panes.control
+        self.panes.show(1, update=False)   # a phone opens on the box itself
 
     def enter(self, **_) -> None:
         self.visible = True

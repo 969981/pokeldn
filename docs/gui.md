@@ -40,12 +40,11 @@ window-manager behavior remains unverified.
 
 ## Android setup requirements
 
-The [Android app](../examples/android/README.md) opens on one page with three steps: the radio
-board, the player's files, and the FireRed/LeafGreen trade. On the tested OnePlus CPH2621,
-enabling the phone's OTG connection setting powered and enumerated the connected ESP32C6 without
-replugging the cable. The board step follows the table below (`Setup.java`); it re-reads the USB
-state when a board is plugged or unplugged, when Android's USB prompt closes and when the player
-returns from Settings. A native-USB board (`303a:1001`) opens the app when plugged in.
+The [Android app](../examples/android/README.md) is this interface on a phone. Its Board page
+follows the table below; it reads the USB state again when a board is plugged or unplugged, when
+Android's USB prompt closes and when the player returns from Settings. A native-USB board
+(`303a:1001`) opens the app when plugged in. On the tested OnePlus CPH2621, enabling the phone's OTG
+connection setting powered and enumerated the connected ESP32C6 without replugging the cable.
 
 | detected state | required guidance |
 |---|---|
@@ -65,6 +64,18 @@ Settings guidance uses verified manufacturer-specific paths or searchable settin
 a Settings shortcut where Android supports it. The flow presents the relevant next action and
 keeps setup progress visible. Developer tooling such as ADB and wireless debugging remains
 separate from user setup.
+
+
+On Android a board behind a CP210x, CH34x or FTDI bridge (a classic ESP32) is named as one the
+phone cannot drive. "Open the folder" saves a zip of the folder where the player picks, and file
+choosers are Android's own.
+
+## Phones
+
+Below 760 points wide the app shows its pages through a bottom tab bar and each page's panels one
+at a time, picked on a switcher above them: Games, Options and Session on the Games page; choosing
+a tool brings its options forward and Start brings the session. Dialogs take the screen's width.
+The Control and Update pages are absent on Android.
 
 ## App language
 

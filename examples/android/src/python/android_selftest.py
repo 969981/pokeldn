@@ -36,6 +36,13 @@ def run():
     except Exception:
         lines.append('FAIL unicorn\n' + traceback.format_exc())
     try:
+        from pokeldn.app import catalog, command
+        missing = [tool.key for game in catalog.GAMES for tool in game.tools
+                   if '--keys' not in command.accepted(tool.script)]
+        lines.append(('FAIL' if missing else 'PASS') + ' every tool reads its launcher flags %s' % missing)
+    except Exception:
+        lines.append('FAIL launcher flags\n' + traceback.format_exc())
+    try:
         import os
         import tempfile
         import threading

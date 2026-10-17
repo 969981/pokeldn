@@ -1,66 +1,70 @@
-# Android USB prototype
+# Android app
 
-This developer example runs the existing FireRed/LeafGreen Python host on Android through
-Chaquopy and a native USB CDC stream. A OnePlus CPH2621 running Android 16 powered a XIAO
-ESP32C6 over USB-C, completed a smooth retail FireRed trade and saved a PKHeX-legal received
-Pokemon. The console left the room and wireless session cleanly.
+The Android app runs the desktop app's own interface on a phone, with an ESP32-S3, C3 or C6 radio
+board on the phone's USB port. Every page, game and tool is the code in `gui/` and `pokeldn/`;
+only the shell in this folder is Android's. A OnePlus CPH2621 running Android 16 completed a
+smooth retail FireRed trade with a XIAO ESP32C6 through the earlier diagnostic frontend
+(`MainActivity`, below); the full interface's USB path has not run against a board yet.
 
-The launcher opens `AppActivity`: guided board setup, `prod.keys` and `.pk3` import through
-Android's file picker, a FireRed/LeafGreen host trade and saving the received Pokemon
-([Android setup requirements](../../docs/gui.md#android-setup-requirements)). The diagnostic
-`MainActivity` stays reachable from ADB only. On-phone PKHeX, background services, firmware
-installation and other games are not in the app. The guided app's USB path has not run against a
-board yet; the trade worker beneath it is the measured one.
+## How it works
+
+| piece | what it does |
+|---|---|
+| `PokeldnActivity` | starts the embedded Python (Chaquopy), which serves `gui/main.py` as Flet's web app on 127.0.0.1:8550, and shows it in a full-screen WebView |
+| `src/python/android_gui.py` | sets the environment, installs the Android pieces below, applies the run tuning (Scheduling) and starts the interface |
+| `pokeldn/app/android.py` | the board as a pyserial port, `android://board`: `serial.Serial`, `serial_for_url` and the port list all reach `UsbStream.java`, so the Board page, the launchers and esptool run unchanged; Android's file pickers in place of Flet's |
+| `pokeldn/app/runner.py` `InProcess` | runs a launcher on the app's own interpreter, since Android starts no second Python; it holds stdout, argv, the environment and the working directory while it runs |
+| `Bridge.java` | USB state, the USB access prompt, Settings, the file pickers and the foreground service, called from Python |
+| `RunService.java` | a connected-device foreground service while a run holds the board |
+| `src/python/fastapi/` | the part of FastAPI that Flet's web server uses, on starlette: pydantic-core has no Android build |
+| `build_native.py` | PKHeX (`services/pkhex`) compiled ahead of time for linux-bionic-arm64, and an ARM-only Unicorn; both ship as native libraries |
+
+Below 760 points wide the interface shows a bottom tab bar and one panel at a time
+([Phones](../../docs/gui.md#phones)). The guided USB setup is the Board page on Android
+([Android setup requirements](../../docs/gui.md#android-setup-requirements)).
 
 ## Build
 
-Run from the repository root with JDK 21, Android SDK 36 / build tools 36.1.0, Python 3.13
-and Gradle 8.13 to 9.5 installed (AGP 8.13 fails on Gradle 9.6 and later). Set `ANDROID_HOME`
-when there is no `local.properties`. `testDebugUnitTest` runs the setup-state tests. The Gradle build pins AGP 8.13.0 and Chaquopy 17.0.0.
+Needs JDK 21, Android SDK 36 with build tools 36.1.0 and an NDK, Gradle 8.13 to 9.5 (AGP 8.13 fails
+on 9.6 and later), the .NET 10 SDK, CMake and the repository's `.venv` (Python 3.13). Unicorn's
+source comes from `scripts/build_unicorn.py`; run it once.
 
 ```sh
-python3.13 -m pip wheel --no-deps --wheel-dir examples/android/wheels python-netlink==0.0.15
-python3.13 examples/android/stage.py
-gradle -p examples/android --no-daemon --console=plain assembleDebug
-adb -s PHONE_IP:PORT install -r examples/android/build/outputs/apk/debug/PokeLDNPythonProbe-debug.apk
+./.venv/bin/python examples/android/build.py --install DEVICE
 ```
 
-`stage.py` copies tracked Python sources and package data into the ignored `staged/` directory.
-Keys, Pokemon records, captures, APKs, Gradle caches and signing keys remain local. Android wheels
-use PyCryptodome 3.21.0 and Zstandard 0.23.0; other trade dependencies retain the tested pins.
-`POKELDN_ANDROID_BUILD_PYTHON` selects the build interpreter when `python3.13` is not on PATH.
+`build.py` builds the local wheels into `wheels/` (sdists the Android build cannot compile, and
+msgpack without its C extension), the native helpers into `jniLibs/` when they are missing
+(`--native` rebuilds them), the staged sources into `staged/` (`stage.py`: tracked and untracked
+sources, the firmware images and Unicorn's binding), then the APK. `GRADLE` names a Gradle when the
+newest wrapper download is not the one to use. `--release` builds the release APK, signed with the
+local debug key; `POKELDN_ANDROID_KEYSTORE` selects an existing one, which an update needs to keep
+the app's private files.
 
-The debug build uses Android's local debug signing key. `assembleRelease` produces a release
-APK signed with that same key for local testing. `POKELDN_ANDROID_KEYSTORE` selects an existing
-compatible Android debug keystore when updating an earlier installation. Preserve the signing
-key to retain access to the existing app's private files during updates. These debug signatures
-are for development distribution.
+The APK carries no keys or Pokemon. The player picks `prod.keys` on the welcome screen or in
+Settings; Android's picker copies it into the app's private files.
 
-## Private inputs and trade
+## Self-test
 
-Start the installed diagnostic once and grant USB access. On phones with a separate USB host
-or OTG toggle, enable it in Settings. Use a data-capable cable and the C6's native USB port.
-The tested OnePlus enumerated the board immediately after enabling OTG connection.
+```sh
+adb shell am start -n org.pokeldn.usbprobe/.PokeldnActivity --ez selftest true
+adb logcat -s PokeLDN
+```
 
-Provision the user's own Switch keys and a PK3 while the debuggable APK is installed. The desktop
-Python environment needs the repository's PKHeX service available. This command validates the
-offer, copies the inputs directly to private app storage and enables the tested crypto option:
+About 15 s after start it logs one `selftest PASS` or `selftest FAIL` line per check: every module
+a run imports, PKHeX listing species, Unicorn running ARM code, each catalog tool reading its
+launcher's flags, a launcher run in-process (`bin/swsh_gift_host.py --dump`), and the foreground
+service starting and stopping. No board is needed; the arm64 emulator passes all 25.
+
+## The diagnostic frontend
+
+`MainActivity` is the first prototype: a FireRed host trade with inputs that `provision.py` copies
+over ADB. It is reachable from ADB only:
 
 ```sh
 python examples/android/provision.py --device PHONE_IP:PORT --keys /path/to/prod.keys --offer /path/to/offer.pk3
-adb -s PHONE_IP:PORT shell am start -f 0x20000000 -n org.pokeldn.usbprobe/.MainActivity --es mode trade
+adb shell am start -f 0x20000000 -n org.pokeldn.usbprobe/.MainActivity --es mode trade
 ```
-
-The app's own import replaces this step for players: it writes the same files, with a checksum
-check in place of the desktop PKHeX check. On the Switch, open the FireRed/LeafGreen wireless Trade Center and join POKELDN. The host uses
-channel 11 and six participant slots, matching the desktop launcher. The Activity's Stop trade
-button requests cooperative cleanup. The native USB bridge retains released DTR/RTS lines and
-the existing Python Radio's framing, checksums, request handling and flow control.
-
-The offer's SHA-256 must match its desktop validation manifest before hosting. Received records
-and diagnostic outputs go into separate timestamped private `files/trade/run-*` directories.
-The APK contains no user keys or Pokemon records. ADB is developer tooling for this example;
-the mobile GUI requires its own input import and USB setup flow.
 
 ## Scheduling and validation
 

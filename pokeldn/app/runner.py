@@ -54,9 +54,11 @@ def _execute(argv: list[str]) -> None:
             plugins.load()
         sys.argv = [path, *args]
         sys.path.insert(0, os.path.dirname(path))
-        if not os.path.isfile(path) and target.startswith("bin/"):
-            # Chaquopy keeps the app's sources in the APK, where runpy finds no file (examples/android).
-            runpy.run_module("bin." + os.path.splitext(os.path.basename(target))[0], run_name="__main__", alter_sys=True)
+        if os.environ.get("POKELDN_PLATFORM") == "android" and target.startswith("bin/"):
+            # Chaquopy ships the launchers compiled, with no source file runpy could run (examples/android).
+            module = "bin." + os.path.splitext(os.path.basename(target))[0]
+            sys.modules.pop(module, None)   # imported once to read its flags (introspect)
+            runpy.run_module(module, run_name="__main__", alter_sys=True)
             return
         runpy.run_path(path, run_name="__main__")
     else:

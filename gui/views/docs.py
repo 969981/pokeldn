@@ -116,6 +116,8 @@ class DocsView:
             self.render_nav()
             self.nav.update()
             return
+        if not folder:   # a phone brings the page forward; a folder's row only unfolds it
+            self.panes.show(1, update=False)
         self.show(file)
 
     async def _link(self, e) -> None:
