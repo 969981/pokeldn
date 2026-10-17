@@ -33,6 +33,18 @@ Below 760 points wide the interface shows a bottom tab bar and one panel at a ti
 ([Phones](../../docs/gui.md#phones)). The guided USB setup is the Board page on Android
 ([Android setup requirements](../../docs/gui.md#android-setup-requirements)).
 
+### WebView
+
+The interface needs Android System WebView 119 or later with WebGL. Flutter's web engine draws with
+skwasm only when WebAssembly GC (Chrome 119) and WebGL are present, and otherwise falls back to
+CanvasKit, which draws this interface's text but none of its images. Before loading the interface,
+`PokeldnActivity` probes both in a blank page, logs `WebView <package> <version>, WasmGC, WebGL` under
+the `PokeLDN` tag, and on a failure shows a native screen with a Play Store link to the WebView
+package and a "Continue anyway" button. If the page's loading spinner, which Flutter removes at its
+first frame, is still present after 60 s, the same screen offers the update or "Keep waiting".
+`adb shell am start -n org.pokeldn.usbprobe/.PokeldnActivity --ez oldwebview true` shows the screen
+on any phone.
+
 ## Build
 
 Needs JDK 21, Android SDK 36 with build tools 36.1.0 and an NDK, Gradle 8.13 to 9.5 (AGP 8.13 fails
