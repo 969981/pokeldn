@@ -10,8 +10,9 @@ android {
         applicationId 'org.pokeldn.usbprobe'
         minSdk 26
         targetSdk 36
-        versionCode 4
-        versionName '0.4-gui'
+        // The release workflow numbers each build: a higher versionCode installs as an update.
+        versionCode (System.getenv('POKELDN_ANDROID_VERSION_CODE') ?: '4') as int
+        versionName System.getenv('POKELDN_ANDROID_VERSION_NAME') ?: '0.4-gui'
         ndk { abiFilters 'arm64-v8a' }
     }
     signingConfigs {
@@ -19,12 +20,23 @@ android {
             def existingKey = System.getenv('POKELDN_ANDROID_KEYSTORE')
             if (existingKey) storeFile file(existingKey)
         }
+        // The release key (README, Releases); absent, a release build signs with the debug key.
+        release {
+            def key = System.getenv('POKELDN_ANDROID_RELEASE_KEYSTORE')
+            if (key) {
+                storeFile file(key)
+                storePassword System.getenv('POKELDN_ANDROID_RELEASE_PASSWORD')
+                keyAlias 'pokeldn'
+                keyPassword System.getenv('POKELDN_ANDROID_RELEASE_PASSWORD')
+            }
+        }
     }
     buildTypes {
         release {
             debuggable false
             minifyEnabled false
-            signingConfig signingConfigs.debug
+            signingConfig System.getenv('POKELDN_ANDROID_RELEASE_KEYSTORE')
+                ? signingConfigs.release : signingConfigs.debug
         }
     }
     sourceSets {

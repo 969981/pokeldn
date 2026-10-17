@@ -43,6 +43,15 @@ newest wrapper download is not the one to use. `--release` builds the release AP
 local debug key; `POKELDN_ANDROID_KEYSTORE` selects an existing one, which an update needs to keep
 the app's private files.
 
+### Releases
+
+A `v*` tag's release workflow builds `pokeldn-android-arm64.apk` with `--release`, numbered by the
+run so each installs as an update, and signs it with the release key in the `ANDROID_RELEASE_*`
+secrets when they are set (`POKELDN_ANDROID_RELEASE_KEYSTORE` and `POKELDN_ANDROID_RELEASE_PASSWORD`
+locally). `scripts/android_release_key.py` makes the key in `~/.config/pokeldn/` once and stores
+the secrets. An APK signed with another key does not install over it: a phone holding one
+uninstalls it first.
+
 The APK carries no keys or Pokemon. The player picks `prod.keys` on the welcome screen or in
 Settings; Android's picker copies it into the app's private files.
 
