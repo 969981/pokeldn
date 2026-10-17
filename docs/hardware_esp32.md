@@ -759,6 +759,18 @@ nothing (`queue_max=26`) and the console reached the room at under one frame a s
 accessory rules) it takes 32 ms, and a FireRed host trade completed over BLE from a Mac at a pace the
 player called much better, the console leaving cleanly after it.
 
+A FireRed joiner over BLE did not finish its RFU handshake; the console showed 2318-0013. With 27-byte
+link-layer packets the board heard about 217 frames a second and the host received 757 of 6522.
+Data length extension (251-byte packets) doubles the bench from 14.1 to 28.1 KB/s, and the next joiner
+run delivered 776 of 796 RX_ETH, yet the joiner still sent 5 T slots a second against the console's
+30 with its 24-frame window nearly full, and the board refused 581323 messages at the heap floor
+(`heap_min=30296`). The classic ESP32 is a Bluetooth 4.2 part with no 2M PHY.
+
+On a XIAO ESP32C6 (Bluetooth 5) the same build benches 33.6 KB/s with a 62 ms HELLO round trip, and a
+FireRed joiner trade completed over BLE from a Mac: the joiner kept pace with the console (18 T slots a
+second each), slower than over the cable by the player's account. The C6 BLE image fills the 1 MB app
+partition to within 13 KB.
+
 On macOS, bleak aborts (SIGABRT) in a process whose responsible app has no Bluetooth grant; a script
 started with `open -n -a Terminal FILE.command` runs under Terminal's.
 
