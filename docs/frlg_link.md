@@ -494,7 +494,8 @@ and stays in the room with no error.
 ## The trading board
 
 The board lists partners whose advertisement carries `tradeSpecies`, `tradeType` and `tradeLevel`
-[union_room.c:3400]: record byte 18 (`type << 2`), 19 (`gender | level << 1`) and 22:24 (little-endian
+[union_room.c:3400]: record byte 18 (`type << 2`), 19 (`gameClear | level << 1`, as the wrapper packs it:
+[The advertisement record](frlg_rom.md#the-advertisement-record)) and 22:24 (little-endian
 `tradeSpecies:10` of `RfuGameData` [include/link_rfu.h:107]). Species 277 (Treecko; low byte alone 21,
 Spearow) lists as "POKELDN / NORMAL / ARCKO / 26", which measures byte 23.
 

@@ -18,10 +18,10 @@ from pokeldn.app.paths import POKEMON, ROOT, SESSION
 HERE = os.path.join(ROOT, "services", "pkhex")
 EXE = "pokeldn-pkhex.exe" if sys.platform == "win32" else "pokeldn-pkhex"
 # The file each game's launchers take as an offer.
-EXTENSIONS = {"frlg": "pk3", "lgpe": "pb7", "bdsp": "pb8", "swsh": "pk8", "pla": "pa8", "sv": "pk9",
+EXTENSIONS = {"frlg": "pk3", "rse": "pk3", "lgpe": "pb7", "bdsp": "pb8", "swsh": "pk8", "pla": "pa8", "sv": "pk9",
               "za": "pa9"}
 ZA_OFFER_HEADER = bytes.fromhex("0101b90300bc815801")   # SelectPokemon, round 0 (docs/za.md)
-RECORD_SIZES = {"frlg": (80, 100), "lgpe": (232, 260), "bdsp": (328, 344),
+RECORD_SIZES = {"frlg": (80, 100), "rse": (80, 100), "lgpe": (232, 260), "bdsp": (328, 344),
                 "swsh": (328, 344), "pla": (360, 376), "sv": (328, 344), "za": (328, 344)}
 NATURES = ("Hardy", "Lonely", "Brave", "Adamant", "Naughty", "Bold", "Docile", "Relaxed", "Impish",
            "Lax", "Timid", "Hasty", "Serious", "Jolly", "Naive", "Modest", "Mild", "Quiet", "Bashful",

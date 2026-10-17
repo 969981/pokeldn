@@ -668,6 +668,13 @@ always carries the built one. The script needs Flutter, at the version
 deployment target from 11.0 to 12.0: Xcode 27 builds nothing older. The Linux client is Flet's light
 flavor, as Flet's own CI builds it.
 
+## Unreleased titles
+
+A title prepared ahead of its Switch release appears in the Games list, the Bank and the Docs page
+only when the app runs from a source checkout (`pokeldn/app/preview.py`). A packaged release is
+frozen and carries no `.git`, so it never shows one. `POKELDN_PREVIEW=1` shows them anywhere;
+`POKELDN_PREVIEW=0` hides them in a checkout. Its docs page sets `nav_exclude` and `search_exclude`.
+
 ## Run from source
 
 For source development, install Python 3.13 and the .NET 10 SDK:

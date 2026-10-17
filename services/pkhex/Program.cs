@@ -21,6 +21,8 @@ static partial class Program
         var games = new Dictionary<string, Game>
         {
             ["frlg"] = new([FR, LG, E, R, S], PersonalTable.FR, EntityContext.Gen3, () => new PK3(), DecryptedParty),
+            // Ruby, Sapphire and Emerald, ahead of a Switch release (docs/rse.md).
+            ["rse"] = new([E, R, S, FR, LG], PersonalTable.E, EntityContext.Gen3, () => new PK3(), DecryptedParty),
             ["lgpe"] = new([GP, GE], PersonalTable.GG, EntityContext.Gen7b, () => new PB7(), EncryptedParty),
             ["bdsp"] = new([BD, SP], PersonalTable.BDSP, EntityContext.Gen8b, () => new PB8(), EncryptedStored),
             ["swsh"] = new([SW, SH], PersonalTable.SWSH, EntityContext.Gen8, () => new PK8(), EncryptedParty),
@@ -633,7 +635,8 @@ static partial class Program
         // another game carries the bank's HOME tracker under the "made" setting [HomeTrackerUtil].
         (PKM? Pokemon, LegalityAnalysis? Legality, string Refusal) Moved(Game from, Game to, byte[] data, ulong tracker,
                                                                            ITrainerInfo owner)
-            => Converted(Parse(from, data), to, tracker, owner, from != to);
+            // Between two Gen 3 games (FireRed and Emerald) a Pokemon moves by trade, not through HOME.
+            => Converted(Parse(from, data), to, tracker, owner, from.Context != to.Context);
 
         (PKM? Pokemon, LegalityAnalysis? Legality, string Refusal) Converted(PKM source, Game to, ulong tracker,
                                                                                ITrainerInfo owner, bool transfer)

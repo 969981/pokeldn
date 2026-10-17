@@ -11,6 +11,7 @@ LANGUAGES = (("2", "English"), ("3", "French"), ("5", "German"), ("4", "Italian"
              ("1", "Japanese"), ("8", "Korean"))
 # Switch titles show the 32-bit trainer id as id % 10**6 and id // 10**6 (docs/gui.md, Your trainer).
 SWITCH_TID_LIMIT = 1_000_000
+GEN3 = ("frlg", "rse")      # games whose records keep a 16-bit TID and SID and a Gen III name
 
 
 @dataclass
@@ -55,14 +56,14 @@ class Settings:
 
     def ids(self, game: str) -> tuple[int, int]:
         """The 16-bit TID and SID a record of `game` stores."""
-        if game == "frlg":
+        if game in GEN3:
             return self.tid, self.sid
         whole = self.switch_sid * SWITCH_TID_LIMIT + self.switch_tid
         return whole & 0xFFFF, whole >> 16
 
     def name(self, game: str) -> str:
         """The trainer name `game` can hold: Japanese FRLG takes five Gen III characters."""
-        if game != "frlg":
+        if game not in GEN3:
             return self.ot
         from pokeldn.frlg.text import charmap
         limit = 5 if int(self.language) == 1 else 7
