@@ -1,0 +1,98 @@
+name: Auto release upstream snapshots
+
+# GITHUB_TOKEN pushes from the sync job do not trigger downstream push jobs.
+# workflow_run does trigger once Sync upstream branches has completed.
+# The push event below primes an initial build when this workflow is installed.
+on:
+  workflow_run:
+    workflows:
+      - Sync upstream branches
+    types:
+      - completed
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/auto-release.yml
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Branch(es) to build
+        required: true
+        type: choice
+        default: both
+        options:
+          - both
+          - main
+          - ew
+
+permissions:
+  contents: read
+
+concurrency:
+  group: auto-release-upstream-snapshots
+  cancel-in-progress: false
+
+jobs:
+  detect:
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-24.04
+    outputs:
+      main_sha: ${{ steps.check.outputs.main_sha }}
+      main_tag: ${{ steps.check.outputs.main_tag }}
+      main_changed: ${{ steps.check.outputs.main_changed }}
+      ew_sha: ${{ steps.check.outputs.ew_sha }}
+      ew_tag: ${{ steps.check.outputs.ew_tag }}
+      ew_changed: ${{ steps.check.outputs.ew_changed }}
+    steps:
+      - name: Compare both branches with published snapshot tags
+        id: check
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET: ${{ inputs.target || 'both' }}
+        run: |
+          set -euo pipefail
+          for branch in main ew; do
+            if [[ "$TARGET" != 'both' && "$TARGET" != "$branch" ]]; then
+              echo "${branch}_changed=false" >> "$GITHUB_OUTPUT"
+              continue
+            fi
+            sha="$(gh api "repos/$GITHUB_REPOSITORY/branches/$branch" --jq '.commit.sha')"
+            if [[ ! "$sha" =~ ^[0-9a-f]{40}$ ]]; then
+              echo "::error::Cannot resolve $branch to a commit SHA"
+              exit 1
+            fi
+            tag="snapshot-${branch}-${sha:0:12}"
+            echo "${branch}_sha=$sha" >> "$GITHUB_OUTPUT"
+            echo "${branch}_tag=$tag" >> "$GITHUB_OUTPUT"
+            if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              echo "${branch}_changed=false" >> "$GITHUB_OUTPUT"
+              echo "$branch already published as $tag; skip"
+            else
+              echo "${branch}_changed=true" >> "$GITHUB_OUTPUT"
+              echo "$branch needs a build: $sha -> $tag"
+            fi
+          done
+
+  build-main:
+    needs: detect
+    if: ${{ needs.detect.outputs.main_changed == 'true' }}
+    permissions:
+      contents: write
+    uses: ./.github/workflows/auto-build.yml
+    with:
+      source_ref: ${{ needs.detect.outputs.main_sha }}
+      source_branch: main
+      release_tag: ${{ needs.detect.outputs.main_tag }}
+
+  build-ew:
+    needs: detect
+    if: ${{ needs.detect.outputs.ew_changed == 'true' }}
+    permissions:
+      contents: write
+    uses: ./.github/workflows/auto-build.yml
+    with:
+      source_ref: ${{ needs.detect.outputs.ew_sha }}
+      source_branch: ew
+      release_tag: ${{ needs.detect.outputs.ew_tag }}
