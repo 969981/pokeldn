@@ -52,9 +52,15 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
 
-          # Keep the scheduler file on main; ew remains an exact upstream snapshot.
-          workflow_backup="$RUNNER_TEMP/sync-upstreams.yml"
-          cp .github/workflows/sync-upstreams.yml "$workflow_backup"
+          # Preserve local CI infrastructure across upstream snapshot updates.
+          # ew intentionally stays an exact source snapshot.
+          workflow_backup="$RUNNER_TEMP/pokeldn-ci"
+          mkdir -p "$workflow_backup"
+          for file in sync-upstreams.yml auto-build.yml auto-release.yml; do
+            if [[ -f ".github/workflows/$file" ]]; then
+              cp ".github/workflows/$file" "$workflow_backup/$file"
+            fi
+          done
 
           git remote add decryptu https://github.com/Decryptu/pokeldn.git
           git remote add easyworld https://github.com/easyworld/pokeldn.git
@@ -78,6 +84,7 @@ jobs:
             if [[ "$OVERWRITE_LOCAL" != 'true' ]]; then
               if [[ "$subject" == "chore(sync): configure dual upstream mirrors" ]] || \
                  [[ "$subject" == "chore(sync): $target from "* ]] || \
+                 [[ "$target" == 'main' && "$subject" == "chore(ci): "* ]] || \
                  [[ "$target" == 'ew' && "$subject" == 'Sync ew with easyworld/pokeldn main (7de491e)' ]]; then
                 :
               else
@@ -90,8 +97,11 @@ jobs:
             git restore --source="$source_ref" --staged --worktree -- :/
             if [[ "$target" == 'main' ]]; then
               mkdir -p .github/workflows
-              cp "$workflow_backup" .github/workflows/sync-upstreams.yml
-              git add -- .github/workflows/sync-upstreams.yml
+              for file in sync-upstreams.yml auto-build.yml auto-release.yml; do
+                if [[ -f "$workflow_backup/$file" ]]; then
+                  cp "$workflow_backup/$file" ".github/workflows/$file"
+                fi
+              done
             fi
             git add -A
 
