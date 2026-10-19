@@ -83,7 +83,7 @@ jobs:
             exit 0
           fi
           deleted="$(git diff --diff-filter=D --name-only "$original_base" HEAD -- docs/research/ || true)"
-          if [[ -n "$deleted" }}; then
+          if [[ -n "$deleted" ]]; then
             {
               echo "Integration would delete private research documents:"
               echo "$deleted"
@@ -91,7 +91,7 @@ jobs:
             echo "status=conflict" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          if [[ -n "$(git status --porcelain)" }}; then
+          if [[ -n "$(git status --porcelain)" ]]; then
             echo "Merge left an uncommitted working tree" > integration-report/conflicts.txt
             echo "status=conflict" >> "$GITHUB_OUTPUT"
             exit 0
@@ -166,12 +166,12 @@ jobs:
           set -euo pipefail
           git fetch --no-tags origin             +refs/heads/research:refs/remotes/origin/research             +refs/heads/$CANDIDATE_REF:refs/remotes/origin/research-candidate
           actual_base="$(git rev-parse refs/remotes/origin/research)"
-          [[ "$actual_base" == "$BASE_SHA" }} || {
+          [[ "$actual_base" == "$BASE_SHA" ]] || {
             echo "::error::research changed during CI; retry integration from the new HEAD."
             exit 1
           }
           actual_candidate="$(git rev-parse refs/remotes/origin/research-candidate)"
-          [[ "$actual_candidate" == "$CANDIDATE_SHA" }} || exit 1
+          [[ "$actual_candidate" == "$CANDIDATE_SHA" ]] || exit 1
           git merge-base --is-ancestor "$BASE_SHA" "$CANDIDATE_SHA"
           # Non-forced fast-forward only. Never overwrite manual research commits.
           git push origin "$CANDIDATE_SHA:refs/heads/research"
@@ -225,7 +225,7 @@ jobs:
             echo "- Tests: $TEST_RESULT"
             echo "- Promotion: $PROMOTE_RESULT"
             echo "- Packaging: $PACKAGE_RESULT"
-            if [[ -f integration-report/conflicts.txt }}; then
+            if [[ -f integration-report/conflicts.txt ]]; then
               echo
               echo "#### Conflicts"
               echo '~~~'
@@ -236,7 +236,7 @@ jobs:
             echo "No force push was performed. Resolve in a review branch, and rerun integration."
           } > issue.txt
           existing="$(gh issue list --repo "$REPO" --state open --search '"[research-sync] Automation needs attention" in:title' --json number --jq '.[0].number // empty')"
-          if [[ -n "$existing" }}; then
+          if [[ -n "$existing" ]]; then
             gh issue comment "$existing" --repo "$REPO" --body-file issue.txt
           else
             gh issue create --repo "$REPO" --title "$title" --body-file issue.txt
