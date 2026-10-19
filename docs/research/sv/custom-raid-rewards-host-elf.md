@@ -8,7 +8,7 @@ nav_order: 5
 
 - **日期**：2026-10-19
 - **研究分支**：`969981/pokeldn@research`；仅提交技术笔记，不修改游戏 ELF、网络协议或现有项目代码。
-- **结论**：PokéLDN 原版已有 `--raid-reward ITEM:QUANTITY`。它**替换整个种子默认奖励列表**，把每条自选奖励编码为 `(item, quantity, rare=0, subject=0)`，不要求晶耀护符。调整客户端分配资格的技术位置是**主持端生成 RaidPoint 的第四个 u32：subject**，并非修改 ELF。
+- **结论**：PokéLDN 原版已有 `--raid-reward ITEM:QUANTITY`。它**替换整个种子默认奖励列表**，支持二元组 `(item,quantity)` 自动采用 `subject=0`，也支持三元组 `(item,quantity,subject=5)` 按晶耀护符过滤；不同设置仍只改 RaidPoint 数据行，不需要游戏 ELF 补丁。修改资格的位置是**主持端 RaidPoint 奖励行的第四个 u32：subject**，并非修改 ELF。
 - **验证级别**：实际读取用户 Library 中的 `Violet4.0.0.elf`，校验 SHA、Build ID、15 条相关机器指令 **15/15 PASS**；仓库源码与现有自动化测试证明生成逻辑；**未在本轮运行真实 Switch 团体战、自动保存或互联网房间测试**。
 - **避免混淆**：ELF 已验证「传入 RaidPoint 的原生序列化」，`subject` 资格判定来自上游 4.0.0 Lua 实验及固定版本公开 Lua 反编译；二者不是同一层面的指令证据。
 
@@ -39,13 +39,13 @@ GameEventBattleResult.RaidResultAddItem
 
 **源码锚点（本轮实际读取）**：
 
-1. [`bin/sv_host.py`](https://github.com/969981/pokeldn/blob/research/bin/sv_host.py)：`raid_reward()` 原始 209–217 行、`--raid-reward` 参数约 389–391 行、`prepare_raid()` 原始 436–451 和 495 行。
+1. [`bin/sv_host.py`](https://github.com/969981/pokeldn/blob/research/bin/sv_host.py)：`raid_reward()` 原始 209–223 行、`--raid-reward` 参数约 395–397 行、`prepare_raid()` 原始 436–451 和 495 行。
 2. [`pokeldn/sv/raid.py`](https://github.com/969981/pokeldn/blob/research/pokeldn/sv/raid.py)：`POINT_REWARDS=0xE4`、`REWARD_ROWS=45`；`raid_point()` 原始 170–200 行；`bootstrap()` 203–211；`bootstrap_message()` 214–218；`RaidGroup.bootstrap()` 原始 284–290 行。
 3. [`pokeldn/sv/raid_encounter.py`](https://github.com/969981/pokeldn/blob/research/pokeldn/sv/raid_encounter.py)：`reward_rows()` 254–291 行。它生成**原版种子奖励**：固定表保留 subject，普通抽奖 subject=0，额外料理抽奖 subject=4，晶耀护符太晶碎块 subject=5。和自定义奖励路径不同。
-4. [`gui/views/rewards.py`](https://github.com/969981/pokeldn/blob/research/gui/views/rewards.py) 的 `RewardPicker`：能编辑道具/数量，预设包括训练、太晶碎块、秘传调味料、财宝、球；无现成的每行 subject 编辑。
-5. [`tests/test_gui_rewards.py`](https://github.com/969981/pokeldn/blob/research/tests/test_gui_rewards.py) 的 `test_a_bundle_survives_saving_and_reaches_the_scripted_console`：解析最终 bootstrap 的 45 行，**断言每条自定义奖励为 `(item_id, 999, 0, 0)`**，剩余行全零。该项是仓库已有测试代码；本轮检查了断言内容，**没有重新运行 pytest**。
+4. [`gui/views/rewards.py`](https://github.com/969981/pokeldn/blob/research/gui/views/rewards.py) 的 `RewardPicker`：能编辑道具/数量，预设包括训练、太晶碎块、秘传调味料、财宝、球；当前支持每行 subject 0/5 编辑。
+5. [`tests/test_gui_rewards.py`](https://github.com/969981/pokeldn/blob/research/tests/test_gui_rewards.py) 的 `test_a_bundle_survives_saving_and_reaches_the_scripted_console`：解析最终 bootstrap 的 45 行，**断言模板默认 subject=0 时自定义奖励为 `(item_id, 999, 0, 0)`；当前另有 subject=5 的单测**，剩余行全零。该项是仓库已有测试代码；本轮检查了断言内容，**没有重新运行 pytest**。
 
-### 1.1 原版如何自定义奖励
+### 1.1 当前分支如何自定义奖励
 
 命令行可重复传入：
 
@@ -53,14 +53,14 @@ GameEventBattleResult.RaidResultAddItem
 ./.venv/bin/python bin/sv_host.py \
   --raid-seed 000F34C3 \
   --raid-pokemon host.pk9 \
-  --raid-reward 492:500
+  --raid-reward 15:500
 ```
 
-`492:500` 是先机球（Quick Ball）×500 的演示；实际运行需有正常的主持端网络/宝可梦文件/设备准备。整数解析使用 `int(value, 0)`，可以给道具 ID/数量写十进制或 `0x` 前缀。当前 `raid_reward` 限制道具 ID 为 `1..65535`，数量为 `1..999`；`prepare_raid` 还要求道具 ID 在 `pokemon_service.SERVICE.names("sv", "bag")` 中，拒绝超过 **45 行**。**关键物品和不在可用 bag 列表中的道具不属于本功能接受的奖励。**
+`492:500` 是速度球（Fast Ball）×500 的演示；实际运行需有正常的主持端网络/宝可梦文件/设备准备。整数解析使用 `int(value, 0)`，可以给道具 ID/数量写十进制或 `0x` 前缀。当前 `raid_reward` 限制道具 ID 为 `1..65535`，数量为 `1..999`；`prepare_raid` 还要求道具 ID 在 `pokemon_service.SERVICE.names("sv", "bag")` 中，拒绝超过 **45 行**。**关键物品和不在可用 bag 列表中的道具不属于本功能接受的奖励。**
 
 - 未指定 `--raid-reward`：`RaidGroup` 得到 `None`，沿用随机种子/活动配置生成的零售奖励（含原生 subject 1、3、4、5）。
 - 指定一行或多行：`raid_point` 把全部自定义行重建成 `(item, quantity, 0, 0)`；**不是「额外追加」到固定掉落之后**。
-- GUI RewardPicker 按同一规则将自选行传给启动参数，因此目前**GUI 也不会设置护符门槛**。
+- GUI RewardPicker 当前已经可选择 All players（subject=0）或 Glimmering Charm only（subject=5），并正确传递到 CLI。
 - `999` 是现有 CLI/GUI 对**请求数量**的限制；它**不证明**某件物品的真实 `SlotMaxNum` 一定等于 999，也不能证明库存增加 999。
 
 ## 2. 0xAA0 bootstrap / RaidPoint 奖励字段的精确布局
@@ -129,7 +129,7 @@ EC 01 00 00 | F4 01 00 00 | 00 00 00 00 | 05 00 00 00
 
 | subject | 真实语义 | 证据/实现含义 |
 |---|---|---|
-| `0` | **所有玩家** | 原版自定义奖励默认选择；无需晶耀护符 |
+| `0` | **所有玩家** | 二元组自定义奖励默认选择；无需晶耀护符 |
 | `1` | 房主 | 依角色标志过滤 |
 | `2` | 加入方 | 依角色标志过滤 |
 | `3` | 一次性奖励满足资格时 | 容易漏掉：它确实存在；依外部 once-eligible 参数 |
@@ -142,48 +142,19 @@ Lua 证据：上游 [`docs/sv_raid.md`](https://github.com/Decryptu/pokeldn/blob
 
 **关键边界**：此 ELF 是原生 ARM64，不是 4.0.0 原始 RomFS Lua blob。公开 Lua 的历史基线约 3.0.1，上游拥有 4.0.0 的 Lua 测试证据，但本轮没有重新获得并字节匹配 4.0.0 Lua。切勿写成「4.0.0 ELF 中直接查到了 GetNumItem(2481) 汇编判断」。
 
-## 5. 想让自选奖励只发给护符玩家，该改哪里？
+## 5. 当前 research 已经正式支持 subject 5（2026-10-19 勘误）
 
-**无需修改游戏 ELF**。若将来决定开发可配置的 subject，唯一当前确定的写入源是 `raid.py: raid_point()`：
+**原本“subject 5 只是未来建议、CLI 仅支持二元组”的描述已经过时。** 当前 `bin/sv_host.py:raid_reward()` 正式接受 `ITEM:QUANTITY[:SUBJECT]`，限 `subject=0/5`；`raid_point` 接受 `(item,quantity)` 或 `(item,quantity,subject)`，将第四个 `u32` 写成所选 subject。GUI 的 RewardPicker 已有资格条件下拉框，测试覆盖 GUI→CLI→bootstrap 及第三字段正确保留。
 
-```python
-# research 分支目前真实存在的语句（仅摘录）
-if rewards is not None:
-    rows = tuple((item, quantity, 0, SUBJECT_ALL) for item, quantity in rewards)
-...
-for index, row in enumerate(rows):
-    struct.pack_into("<IIII", out, POINT_REWARDS + index * 16, *row)
+**具体用法与更精确的原生 x20/x23 运行时字段地址，见 [新的指针与修改技术文档](sv400-custom-reward-pointer-patch.md)。** 旧二元组仍自动填 `subject=0`；非空自定义奖励依然**替换**所有种子原奖励。游戏的 `subject=5` 过滤不是购买 DLC 检查，真正加入背包还要看胜利/容量/保存。
+
+```bash
+python bin/sv_host.py --raid-seed 000F34C3 --raid-pokemon host.pk9 \
+  --raid-reward 1:999:5 --raid-reward 796:999:5 --raid-reward 50:7:0
 ```
 
-要扩展为可选资格，建议在**主持端内部**统一表示为四元组 `(item, quantity, rare, subject)`，保持旧的二元组输入默认 `subject=0`；先限定新入口受支持的 `subject=0/5`，再决定是否向高级用户开放 1/2/3/4。扩展参数语法如 `ITEM:QUANTITY:SUBJECT` **只是设计建议，当前 CLI 并不支持**。该方案需要同步修改 `raid_reward()`/`prepare_raid()`、`RaidGroup`、`raid_point`、GUI RewardPicker 的校验、序列化和测试，不能只在 CLI 接受第三个整数而让 `raid_point` 仍以 `SUBJECT_ALL` 覆盖。
+**道具 ID 勘误**：Quick Ball（先机球）= `15`；Fast Ball（速度球）= `492`，不要把 `492` 当先机球。
 
-拟实施时应保留以下不变量：
-
-1. **二元组向后兼容**：旧命令 `--raid-reward ITEM:QUANTITY` 生成字节完全不变，`rare=0,subject=0`。
-2. **严守 45 行**、每行 16 字节、`0xA6C..0xA6F` 不能误写；验证物品是否允许进入 SV bag。
-3. **明确替换/保留**：空自定义列表走种子奖励；非空列表替换全部零售掉落。若计划新增“追加到种子奖励”，必须单独定义合并/优先顺序和总条目限制。
-4. **不可混合合并不同 subject**：历史 [BattleRewardData 的奖励聚合函数](raid-reward-to-bag-save-chain.md#12-代码中同道具合并的位置与边界) 的已知匹配条件没有 subject，必要时对同一 item/rare 但资格不同的多行做真机验证。
-5. **稳定性验证**：先用 1–5 个常规物品的小额奖励，分别做 `subject=0` 和 `subject=5` 的持有/未持有对照，不直接用截图中的大量 999 极端奖励做唯一测试。
-
-**示意性的主持端序列化测试（离线，不涉及联网或修改 ELF）**：
-
-```python
-import struct
-
-def encode_row(item_id: int, quantity: int, rare: int, subject: int) -> bytes:
-    assert 0 < item_id <= 0xFFFF
-    assert 1 <= quantity <= 999
-    assert subject in (0, 5)  # 假定高级接口第一期仅开放这两类
-    return struct.pack("<IIII", item_id, quantity, rare, subject)
-
-all_players = encode_row(492, 500, 0, 0)
-charm_only  = encode_row(492, 500, 0, 5)
-assert all_players[:12] == charm_only[:12]
-assert all_players[12:16] == bytes(4)
-assert charm_only[12:16] == b"\x05\x00\x00\x00"
-```
-
-不能把上述 `encode_row` 当成现在 PokéLDN 已经暴露的函数或新 CLI 参数；这是未来扩展的字节级验收样例。
 
 ## 6. 接收端结算、数量上限与保存的边界
 
