@@ -1,5 +1,5 @@
 ---
-title: 极巨团体战
+title: Max Raid Battles
 parent: Sword and Shield
 nav_order: 5
 ---

@@ -2219,3 +2219,19 @@ HELP.update({
     "our player readies this long after the guest's lobby opens": '加入方进入大厅后，主持方等待指定秒数再准备。',
     'put the console first in BattleStart and framework object 0, so it serves the battle and the board answers as a client (docs/swsh_raid.md)': '将实机放在 BattleStart 第一位和 framework object 0，使实机作为对战服务器，开发板作为客户端应答，详见 docs/swsh_raid.md。',
 })
+
+# Additional upstream Sword/Shield host/join options; CLI parsing remains in English.
+OPTION_HELP.update({
+    '--scans': '最多扫描多少轮符合 --scene 要求的连接交换或团体战会话。',
+    '--scene': '需要加入的 LDN 场景 ID；60001 为连接交换搜索，60006 为极巨团体战，any 表示接受任意剑盾场景。',
+    '--listen-first': '首次发送数据包之前的监听秒数，用于记录实机原始发送节奏。',
+    '--station-sweep': '依次扫描报文头部 0x05 字节的候选站点值。',
+    '--raid-join': '作为极巨团体战加入方，在快照交换后发送 PlayerInfo、BattleReady、SelectPokemon；配合 --scene 60006。',
+    '--raid-ready': '团体战大厅确认消息后等待多少秒再按下准备。',
+    '--raid-move': '团体战每回合使用己方宝可梦的第几个招式。',
+    '--raid-name': '团体战大厅展示的己方名称。',
+    '--raid-boss': '以指定 PK8 宝可梦作为首领，主持极巨团体战巢穴。',
+    '--raid-reward': '团体战奖励道具与数量，最多 15 条。',
+    '--raid-seed': '指定团体战 BattleSeed，默认随机。',
+    '--raid-console-serves': '由实机主持对战服务器，本程序作为加入方执行回应。',
+})
