@@ -15,15 +15,15 @@ nav_order: 5
 ## 1. 从 GUI/CLI 到游戏的完整数据路径
 
 ```text
-GUI Tera Raid (Host) → RewardPicker {item_id, quantity}
+GUI Tera Raid (Host) → RewardPicker {item_id, quantity, optional subject}
                          ↓ 命令构造
-bin/sv_host.py: --raid-reward ITEM:QUANTITY (可重复)
-  raid_reward() → (item, quantity)
+bin/sv_host.py: --raid-reward ITEM:QUANTITY[:SUBJECT] (可重复)
+  raid_reward() → (item, quantity[, subject])
   prepare_raid() → 验证数量、45 行上限、是否属于 SV bag
                          ↓
 RaidGroup(..., rewards=...)
   raid_point(raid, rewards=...)                 [pokeldn/sv/raid.py]
-    rewards 非 None → (item, quantity, 0, SUBJECT_ALL=0)
+    rewards 非 None → (item, quantity, rare=0, subject=0/5)
     pack_into("<IIII", RaidPoint, 0xE4 + i*0x10, ...)
                          ↓
 bootstrap() = 4×0x158 参与者 + 0x158 boss + 0x3E8 RaidPoint
@@ -56,10 +56,10 @@ GameEventBattleResult.RaidResultAddItem
   --raid-reward 15:500
 ```
 
-`492:500` 是速度球（Fast Ball）×500 的演示；实际运行需有正常的主持端网络/宝可梦文件/设备准备。整数解析使用 `int(value, 0)`，可以给道具 ID/数量写十进制或 `0x` 前缀。当前 `raid_reward` 限制道具 ID 为 `1..65535`，数量为 `1..999`；`prepare_raid` 还要求道具 ID 在 `pokemon_service.SERVICE.names("sv", "bag")` 中，拒绝超过 **45 行**。**关键物品和不在可用 bag 列表中的道具不属于本功能接受的奖励。**
+`15:500` 是先机球（Quick Ball）×500 的演示；实际运行需有正常的主持端网络/宝可梦文件/设备准备。整数解析使用 `int(value, 0)`，可以给道具 ID/数量写十进制或 `0x` 前缀。当前 `raid_reward` 限制道具 ID 为 `1..65535`，数量为 `1..999`；`prepare_raid` 还要求道具 ID 在 `pokemon_service.SERVICE.names("sv", "bag")` 中，拒绝超过 **45 行**。**关键物品和不在可用 bag 列表中的道具不属于本功能接受的奖励。**
 
 - 未指定 `--raid-reward`：`RaidGroup` 得到 `None`，沿用随机种子/活动配置生成的零售奖励（含原生 subject 1、3、4、5）。
-- 指定一行或多行：`raid_point` 把全部自定义行重建成 `(item, quantity, 0, 0)`；**不是「额外追加」到固定掉落之后**。
+- 指定一行或多行：`raid_point` 把每条自定义行重建成 `(item, quantity, 0, subject)`，缺省 subject=0；当前支持显式 5；**不是「额外追加」到固定掉落之后**。
 - GUI RewardPicker 当前已经可选择 All players（subject=0）或 Glimmering Charm only（subject=5），并正确传递到 CLI。
 - `999` 是现有 CLI/GUI 对**请求数量**的限制；它**不证明**某件物品的真实 `SlotMaxNum` 一定等于 999，也不能证明库存增加 999。
 
@@ -87,17 +87,17 @@ GameEventBattleResult.RaidResultAddItem
 
 绝对的明文 bootstrap 行地址为 `0x79C + 16*i`（`0 ≤ i < 45`）；**不能将这个偏移直接当作加密/LZ4 网络包偏移**。`raid_point` 实际使用 `struct.pack_into("<IIII", out, 0xE4+i*16, *row)`，而 `bootstrap_message` 才对整个 `0xAA0` 明文应用 LZ4。
 
-例如**第 0 行**设置 ID `492`、数量 `500`，`subject=0`：
+例如**第 0 行**设置 ID `15`（先机球）、数量 `500`，`subject=0`：
 
 ```text
-EC 01 00 00 | F4 01 00 00 | 00 00 00 00 | 00 00 00 00
- item=492     quantity=500     rare=0         subject=0
+0F 00 00 00 | F4 01 00 00 | 00 00 00 00 | 00 00 00 00
+ item=15      quantity=500     rare=0         subject=0
 ```
 
 若只把**同一行**最后一个 u32 改成 5，则变为：
 
 ```text
-EC 01 00 00 | F4 01 00 00 | 00 00 00 00 | 05 00 00 00
+0F 00 00 00 | F4 01 00 00 | 00 00 00 00 | 05 00 00 00
 ```
 
 **解释**：这是离线计算的结构示例，展示服务器/主持端如何编码数据。它不代表已在本轮实机验证修改后的 `subject=5` 发放/保存成功。
@@ -183,9 +183,9 @@ GameEventNetworkBattleRaid.raidBattleRewardData
 | 任务 | 本轮状态 | 后续验收 |
 |---|---|---|
 | 4.0.0 ELF 身份、15 条 bootstrap/serializing opcode | **本轮实跑：15/15 PASS** | 其他版本须另建 Build ID / RVA 表 |
-| GUI → CLI → 序列化为 `(item,999,0,0)` | **仓库源码及既有测试证据** | 本次未运行 pytest；可重跑 `tests/test_gui_rewards.py` |
+| GUI → CLI → 序列化为 `(item,999,0,subject)` | **仓库源码及 subject=0/5 的既有测试证据** | 本次未运行 pytest；可重跑 `tests/test_gui_rewards.py` |
 | 自选奖励 45 行、替换语义、bag 白名单、数量 1..999 | **源码明确** | 加入边界单测、重复 item 的例子 |
-| `subject=0`/`5` 静态编码差异 | **离线结构推导** | 将来实现可配置时写字节回归测试 |
+| `subject=0`/`5` 静态编码差异 | **当前源码已实现并有单测** | 继续核对多行组合、资格和真实客户端 |
 | 实机有/无晶耀护符对照 | **未运行** | 持同一奖励包的小额物品试验 |
 | `StartSaveProcess` → 完成回调、断电重启后数据 | **P0 未闭合** | 不要把排队/调用访问器等同成功刷盘 |
 | 每种道具 `SlotMaxNum`，含大师球、金色王冠、经验糖果 | **P0 未核实具体数值** | 从实物表/游戏资源取字段并交叉验证 |
