@@ -136,6 +136,10 @@ nav_order: 1
 | 任意护符状态，团战力不匹配 | 4 | 过滤 | 区分餐力条件 |
 | 团战力匹配 Lv.1/2/3 | 4 | 保留前 1/2/3 行 | 上游 Lua 测试已验证 |
 
+## 2026-10-19 Lua 交叉验证进展
+
+已从独立公开仓库 [SV-Script-RE](https://github.com/Martmists-GH/SV-Script-RE) 找到游戏 3.0.1 时代的 `main.battle.BattleRewardData` 的实际反编译 `F316609DEA110601D`，并跨文件追到 `main.management.bag.Bag.GetNumItem(2481)` 及 `FindItemById`：结果数量大于零时才允许 `subjectType=5` 行。参见 [完整研究笔记](battle-reward-lua-cross-version.md)。**这不是 4.0.0 的原始 RomFS 文件，不是商业改版直接证据**。
+
 ## 6. 结论与后续建议
 
 **已证实（源码 / 上游验证）**：公开 `raid_point` 自选奖励默认为 `subject=0`；正常种子构造 `subject=5` 护符碎块；客户端 4.0.0 Lua 过滤函数按照是否拥有 ID 2481 保留 `subject=5` 行；原版已实现本地 LDN 自定义奖励。

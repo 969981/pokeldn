@@ -132,6 +132,8 @@ print(f"{len(checks)}/{len(checks)} opcode assertions passed")
 
 **本次实跑结果：15/15 exact opcode assertions PASS**。这是验证原始二进制指令的静态断言，不是游戏功能端到端测试。
 
+> **2026-10-19 追加**：已在第三方公开的旧版 Lua 反编译中找到类 `main.battle.BattleRewardData`、方法 `F316609DEA110601D`，以及 `Bag.GetNumItem(2481)` 的真实调用；详见 [Lua 交叉研究](battle-reward-lua-cross-version.md)。但本轮仍没有 4.0.0 RomFS 的原始 Lua blob，因此不把旧版反编译误称作原版 4.0.0 的字节码实测。
+
 ## 6. 后续分析优先级
 
 1. **P0：Lua 资源**：找 `be21e65463b9a98f` 模块（RomFS / Lua blob）以及 ID 2481 / `subject=5` 条件的真实指令级证据，做有护符/无护符输入差分。
