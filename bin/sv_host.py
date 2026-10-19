@@ -207,14 +207,20 @@ def build_reliable_body(protocol, flags, sequence_id, data, lowest_pending=None,
 
 
 def raid_reward(text):
-    """ITEM:QUANTITY, a reward row of `--raid-reward`."""
+    """ITEM:QUANTITY[:SUBJECT] (0 everyone, 5 Glimmering Charm); older rows remain pairs."""
+    parts = text.split(":")
+    if len(parts) not in (2, 3):
+        raise argparse.ArgumentTypeError(f"a reward is ITEM:QUANTITY[:SUBJECT], not {text!r}")
     try:
-        item, quantity = (int(v, 0) for v in text.split(":"))
+        values = tuple(int(v, 0) for v in parts)
     except ValueError:
-        raise argparse.ArgumentTypeError(f"a reward is ITEM:QUANTITY, not {text!r}") from None
+        raise argparse.ArgumentTypeError(f"a reward is ITEM:QUANTITY[:SUBJECT], not {text!r}") from None
+    item, quantity = values[:2]
     if not 1 <= item <= 0xFFFF or not 1 <= quantity <= 999:
-        raise argparse.ArgumentTypeError(f"a reward is an item id and a quantity 1 to 999, not {text!r}")
-    return item, quantity
+        raise argparse.ArgumentTypeError(f"a reward needs an item id and a quantity 1 to 999, not {text!r}")
+    if len(values) == 3 and values[2] not in (raid.SUBJECT_ALL, raid.SUBJECT_CHARM):
+        raise argparse.ArgumentTypeError(f"a reward subject must be 0 or 5, not {text!r}")
+    return values
 
 
 def parse_send_payload(hx):
@@ -387,8 +393,8 @@ def build_parser():
                     help="the party record our player brings to the raid, legal per PKHeX; with "
                          "--raid-seed")
     ap.add_argument("--raid-reward", action="append", type=raid_reward, default=[],
-                    metavar="ITEM:QUANTITY",
-                    help=f"a reward row in place of the seed's, in order; up to {raid.REWARD_ROWS}")
+                    metavar="ITEM:QUANTITY[:SUBJECT]",
+                    help=f"replace the seed's rewards (up to {raid.REWARD_ROWS}); subject 0 for all, 5 for Glimmering Charm")
     ap.add_argument("--raid-version", choices=raid_encounter.VERSIONS, default="violet")
     ap.add_argument("--raid-map", choices=raid_encounter.MAPS, default="paldea")
     ap.add_argument("--raid-progress", choices=raid_encounter.PROGRESS, default="4star",
@@ -446,7 +452,7 @@ def prepare_raid(ap, args):
         ap.error("--raid-catch-normal needs --raid-event; a standard raid's boss is caught normally")
     if args.raid_reward:
         bag = {entry["id"] for entry in pokemon_service.SERVICE.names("sv", "bag")}
-        unknown = sorted({item for item, _ in args.raid_reward} - bag)
+        unknown = sorted({row[0] for row in args.raid_reward} - bag)
         if unknown:
             ap.error(f"items {unknown} cannot go in a Scarlet/Violet bag")
     path = pokemon_service.prepare_file("sv", args.raid_pokemon, fresh=args.fresh_pid)
@@ -501,7 +507,8 @@ def prepare_raid(ap, args):
           f"level {found.boss['level']}, Tera type {found.tera_type}"
           f"{', shiny' if found.is_shiny else ''}{catch}")
     print(f"[sv] raid rewards{'' if args.raid_reward else ' of the seed'}: "
-          + ", ".join(f"{item} x{quantity}" for item, quantity in rewards))
+          + ", ".join(f"{row[0]} x{row[1]}" + (" (Glimmering Charm)" if len(row) == 3 and row[2] == 5 else "")
+                      for row in rewards))
     pool = raid_partners.pool(stage)
     seated = ", ".join(f"{pool[i].trainer} ({pool[i].name})"
                        for i in raid_partners.draw(partner_seed, stage, free)) or "none"
