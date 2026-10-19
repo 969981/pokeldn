@@ -145,9 +145,23 @@ jobs:
       - run: dotnet build -c Release services/pkhex -warnaserror
       - run: python -m pytest tests/ -q -W error -n auto --dist worksteal
 
-  promote:
+  # Run the FULL existing ESP32, desktop, Android and iOS build against the
+  # candidate first. If a platform fails, research is never advanced.
+  prebuild:
     needs: [prepare, test]
     if: ${{ needs.prepare.outputs.status == 'ready' && needs.test.result == 'success' }}
+    permissions:
+      contents: read
+    uses: ./.github/workflows/auto-build.yml
+    with:
+      source_ref: ${{ needs.prepare.outputs.candidate_sha }}
+      source_branch: research
+      release_tag: snapshot-research-${{ needs.prepare.outputs.candidate_sha }}
+      publish: false
+
+  promote:
+    needs: [prepare, test, prebuild]
+    if: ${{ needs.prebuild.result == 'success' }}
     runs-on: ubuntu-24.04
     outputs:
       source_sha: ${{ steps.promote.outputs.source_sha }}
@@ -178,20 +192,49 @@ jobs:
           echo "source_sha=$CANDIDATE_SHA" >> "$GITHUB_OUTPUT"
           git push origin ":refs/heads/$CANDIDATE_REF" || true
 
-  package:
-    needs: promote
+  # All packaged assets are uploaded to this caller run by the reusable
+  # builder, so publication does not require compiling the project twice.
+  publish:
+    needs: [prepare, promote]
     if: ${{ needs.promote.result == 'success' }}
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
-    uses: ./.github/workflows/auto-build.yml
-    with:
-      source_ref: ${{ needs.promote.outputs.source_sha }}
-      source_branch: research
-      release_tag: snapshot-research-${{ needs.promote.outputs.source_sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.promote.outputs.source_sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          path: assets
+          merge-multiple: true
+      - name: Publish tested research prerelease
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: snapshot-research-${{ needs.promote.outputs.source_sha }}
+          target_commitish: ${{ needs.promote.outputs.source_sha }}
+          name: pokeldn research - snapshot-research-${{ needs.promote.outputs.source_sha }}
+          body: |
+            Tested integration of upstream main and EW localization.
+            Immutable research commit: ${{ needs.promote.outputs.source_sha }}
+            Original mirror: ${{ needs.prepare.outputs.main_sha }}
+            Chinese mirror: ${{ needs.prepare.outputs.ew_sha }}
+
+            This candidate passed Python/.NET regression tests on Linux,
+            Windows and macOS and built firmware, desktop, Android and iOS
+            outputs before the research branch was fast-forwarded.
+
+            Unofficial prerelease. Verify SHA256SUMS before installation.
+            Unsigned iOS builds require separate signing.
+          files: assets/*
+          prerelease: true
+          make_latest: false
+          fail_on_unmatched_files: true
 
   report-failure:
-    needs: [prepare, test, promote, package]
-    if: ${{ always() && (needs.prepare.outputs.status == 'conflict' || needs.test.result == 'failure' || needs.promote.result == 'failure' || needs.package.result == 'failure') }}
+    needs: [prepare, test, prebuild, promote, publish]
+    if: ${{ always() && (needs.prepare.outputs.status == 'conflict' || needs.test.result == 'failure' || needs.promote.result == 'failure' || needs.prebuild.result == 'failure' || needs.publish.result == 'failure') }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/download-artifact@v4
@@ -206,7 +249,8 @@ jobs:
           STAGE: ${{ needs.prepare.outputs.status }}
           TEST_RESULT: ${{ needs.test.result }}
           PROMOTE_RESULT: ${{ needs.promote.result }}
-          PACKAGE_RESULT: ${{ needs.package.result }}
+          PREBUILD_RESULT: ${{ needs.prebuild.result }}
+          PUBLISH_RESULT: ${{ needs.publish.result }}
           MAIN_SHA: ${{ needs.prepare.outputs.main_sha }}
           EW_SHA: ${{ needs.prepare.outputs.ew_sha }}
           CANDIDATE_REF: ${{ needs.prepare.outputs.candidate_ref }}
@@ -224,7 +268,8 @@ jobs:
             echo "- Prepare: $STAGE"
             echo "- Tests: $TEST_RESULT"
             echo "- Promotion: $PROMOTE_RESULT"
-            echo "- Packaging: $PACKAGE_RESULT"
+            echo "- Candidate packaging: $PREBUILD_RESULT"
+            echo "- Release upload: $PUBLISH_RESULT"
             if [[ -f integration-report/conflicts.txt ]]; then
               echo
               echo "#### Conflicts"

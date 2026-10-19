@@ -1,6 +1,7 @@
-name: Build upstream snapshot
+name: Build pinned source snapshot
 
-# Build a pinned main/ew source snapshot with upstream's packaging steps.
+# Reusable builder for main, ew and research. publish=false leaves artifacts
+# inside the same caller workflow run for gated promotion and publication.
 on:
   workflow_call:
     inputs:
@@ -9,13 +10,18 @@ on:
         required: true
         type: string
       source_branch:
-        description: Branch name (main or ew)
+        description: Branch name (main, ew or research)
         required: true
         type: string
       release_tag:
         description: Unique prerelease tag
         required: true
         type: string
+      publish:
+        description: Publish the prerelease (false keeps artifacts for approval)
+        required: false
+        default: true
+        type: boolean
 
 permissions:
   contents: read
@@ -338,6 +344,7 @@ jobs:
 
   release:
     needs: checksums
+    if: ${{ inputs.publish }}
     runs-on: ubuntu-24.04
     permissions:
       contents: write
