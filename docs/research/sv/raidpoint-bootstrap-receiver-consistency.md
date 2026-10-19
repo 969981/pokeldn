@@ -224,3 +224,62 @@ assert a["raw"] == b["raw"], "S1/S2 reward bytes mismatch"
 - [固定提交的公开 BattleRewardData Lua](https://github.com/Martmists-GH/SV-Script-RE/blob/1f843bd2517c707fbb47491dad58856eaa2c2cc7/decompiled/C07C34FC3B976E5A7.lua)
 
 本方案不覆盖 Nintendo 官方互联网联机的服务端验证、未授权的第三方账号或存档操作。所有 ELF 指令地址只与上面绑定的《紫》4.0.0 Build ID 对应；更换版本需重新定位函数，不能套用地址差值。
+
+
+## 11. P0-A 只读追踪实现（2026-10-19）
+
+**代码状态：已提交，自动化测试源码已加入；本次尚未取得 research 工作流的实际运行结果。** 这是 *P0-A 主持端* 的实现记录，**不是 P0-B 接收端实机测试已经完成**。
+
+### 11.1 文件与接入位置
+
+- [`pokeldn/sv/raid_reward_trace.py`](../../../pokeldn/sv/raid_reward_trace.py)：独立纯标准库记录器；从真正的 0x3E8/0xAA0 明文计算 45 行共 720 B 的 SHA-256 和稀疏索引列表，默认关闭；开启时逐会话生成随机 `run_id`，日志写入失败不阻断主持。
+- [`pokeldn/sv/raid.py`](../../../pokeldn/sv/raid.py)：`bootstrap(..., on_point=...)` 在**最后一次** `raid_point()` 生成后、拼接为 Bootstrap 前采 S1；`RaidGroup.bootstrap()` 创建 S1 一次并缓存；`RaidHost._next()` 对每位接收站点准备原本的 `0x2F` 压缩包时采 S2_host，再调用现有 `payload_of` 做本地 LZ4 回读，记录 `S2_WIRE_LOOPBACK`。
+- [`scripts/research/sv_reward_trace_check.py`](../../../scripts/research/sv_reward_trace_check.py)：校验 JSONL 的行结构、SHA-256、主机阶段，以及**单独导入**的接收端原始/过滤后列表。缺少 S2_receiver/S3 时报告 `PENDING_RECEIVER`。
+- [`tests/test_sv_reward_trace.py`](../../../tests/test_sv_reward_trace.py)：独立快照、subject=0/5、重复行、45 行边界、损坏消息、非法 SHA/接收差异与 S3 资格模型。
+- [`tests/test_sv_raid.py`](../../../tests/test_sv_raid.py)：追加脚本化 LDN 房间主持集成测试，验证真实生成的 `0x2F` 明文与 S1/S2 日志相同，**不冒充零售客户端过滤证据**。
+
+### 11.2 使用命令（先在隔离本地 LDN 环境进行）
+
+Linux/macOS：
+
+```bash
+export POKELDN_SV_REWARD_TRACE="$PWD/raid-rewards.jsonl"
+# 正常执行项目原有 bin/sv_host.py 及其已有必要参数（不改变用户配置）
+python scripts/research/sv_reward_trace_check.py raid-rewards.jsonl --json
+python -m pytest tests/test_sv_reward_trace.py -q
+python -m pytest tests/test_sv_raid.py -q -k scripted_raid_host_opt_in_trace
+unset POKELDN_SV_REWARD_TRACE
+```
+
+Windows PowerShell：
+
+```powershell
+$env:POKELDN_SV_REWARD_TRACE = (Join-Path (Get-Location) "raid-rewards.jsonl")
+# 正常启动 PokéLDN 的 SV Tera Raid (Host)
+python scripts/research/sv_reward_trace_check.py raid-rewards.jsonl --json
+Remove-Item Env:POKELDN_SV_REWARD_TRACE
+```
+
+**注意**：环境变量为**非空本地路径**时才写日志；没有环境变量则不创建文件。建议使用仓库目录以外的私有路径、不要提交 JSONL。记录器没有写出完整 Pia 网络帧、密钥、训练家或 Nintendo 账号；仅输出奖励的 ID、数量、rare、subject、行号与 SHA-256。多局追加到同一文件时靠 `run_id` 分组。每场固定一个 S1，S2_host 与 S2_WIRE_LOOPBACK 按站点记录。
+
+`S2_WIRE_LOOPBACK` 的“wire”仅表示**在主持进程中对真正构造的、尚未发射的 `0x2F` 压缩消息回读**，不是无线收发抓包，也不是接收端收到数据的证明。
+
+### 11.3 接收端记录输入约定（尚需运行时捕获器）
+
+`--receiver path/to/receiver.jsonl` 允许导入第三方采集的接收端 JSONL，必须具备同一个 `run_id`、正确 `station_index` 及标记 `capture_origin="receiver_runtime"`：
+
+- `S2_RECEIVER_PRE_FILTER`：提供 `data_len`（1000 或 2720）、`row_count`、`row_entries`（稀疏的 `[index,item,quantity,rare,subject]`）及与全部 45 行重建字节对应的 `rows_sha256`；其内容须在实际客户端反序列化之后、Lua 过滤之前采集。
+- `S3_FILTERED`：提供真实 `actual_rows`（**不带行号**的 `[item,quantity,rare,subject]` 列表）、`eligibility` 字典，包含布尔值 `is_host`、`once_eligible`、`has_glimmering_charm`、`matching_raid_power` 和整数 `raid_power_level`（0..3）。不得用一个推算出的结果同时充当观测值 `actual_rows` 和期望值。
+
+命令：
+
+```bash
+python scripts/research/sv_reward_trace_check.py raid-rewards.jsonl \
+  --receiver /path/to/receiver.jsonl --json
+```
+
+校验器只有主持记录时输出 `PENDING_RECEIVER`；出现错误输出 `COPY_MISMATCH`、`TRANSPORT_OR_PARSE_MISMATCH` 或 `FILTER_MISMATCH` 等；接收端 JSONL 全部匹配时也只输出 **`REPORTED_RECEIVER_MATCH_UNVERIFIED`**，表示输入数据在逻辑上自洽，**并不能密码学认证文件来自真实游戏运行**。最终 `END_TO_END_PASS` 仍需人工核对实机采集来源及 session 关联证据。
+
+### 11.4 当前剩余瓶颈
+
+P0-A：主持端代码已提交，CI/协议回归结果待确认。P0-B：仍需从真实《紫》4.0.0 本地接收端（或可证明功能等价的受控运行环境）取得两个独立时点的数据，建立 `raidBattleRewardData → self[3]` 的动态观测点。P0-C：实际运行 T00/T01/T02/T06 才能判定何处发生第一次数据分歧。没有 S3 实机记录时不得把“最佳 Hook 放置位置”当成已证明事实。
