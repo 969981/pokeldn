@@ -59,6 +59,7 @@ POINT_REWARDS = 0x0E4             # rows of item, quantity, rare, subject
 POINT_SUMMARY = 0x3B8
 REWARD_ROWS = (POINT_SUMMARY - POINT_REWARDS) // 16           # 45
 SUBJECT_ALL = 0                   # the table's SubjectType: 0 everyone, 1 host, 2 guests, 3 once
+SUBJECT_CHARM = raid_encounter.SUBJECT_CHARM  # 5: receiving player holds Glimmering Charm
 POINT_PARTNERS = 0x3D8            # the partner seed, u64, then the host's unlock stage, u32
 POINT_TIME = 0x30                 # the record's raidTimeData; zero leaves the console's own limits
 # The crystal word: the save's raid content, 0 standard, 1 black (retail), 2 an event, 3 a seven-star
@@ -171,9 +172,23 @@ def raid_point(raid, rewards=None, name=POINT_NAME, partner_seed=0, stage=None):
     """-> the 0x3e8-byte RaidPoint: identity, stars, crystal and catch level, the boss's HP
     coefficient and its 37-word action profile, the reward rows, the summary, the partner seed and
     the unlock stage that pick the NPC partners (the raid's own by default). The seed's rows keep
-    retail's subjects and bonus rows; chosen `rewards` go to every player. Unknown words stay zero."""
+    retail's subjects and bonus rows; chosen two-field `rewards` go to every player, while three-field
+    `(item, quantity, subject)` rows can restrict a reward to Glimmering Charm holders (subject 5).
+    Unknown words stay zero."""
     if rewards is not None:
-        rows = tuple((item, quantity, 0, SUBJECT_ALL) for item, quantity in rewards)
+        rows = []
+        for reward in rewards:
+            if len(reward) == 2:
+                item, quantity = reward
+                subject = SUBJECT_ALL
+            elif len(reward) == 3:
+                item, quantity, subject = reward
+            else:
+                raise ValueError("a chosen reward needs item, quantity, and optional subject")
+            if subject not in (SUBJECT_ALL, SUBJECT_CHARM):
+                raise ValueError(f"a chosen reward subject must be 0 or 5, not {subject!r}")
+            rows.append((item, quantity, 0, subject))
+        rows = tuple(rows)
     else:
         rows = raid.rows or tuple((item, quantity, 0, SUBJECT_ALL) for item, quantity in raid.rewards)
     if len(rows) > REWARD_ROWS:
