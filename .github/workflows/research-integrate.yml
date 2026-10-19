@@ -9,6 +9,11 @@ on:
   schedule:
     - cron: '37 * * * *'
   workflow_dispatch:
+  # Prime the first integration as soon as the workflow itself is installed.
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/research-integrate.yml
 
 permissions:
   contents: write
