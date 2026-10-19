@@ -81,6 +81,64 @@ end
 
 所以**既能找到写数据访问器，也能找到加载重建入口**；但 `cACA3F5A6` 的底层保存缓冲格式、加密/校验和与 fs commit 尚未独立确认。
 
+## 1.5 【新】直接用《紫》4.0.0 ELF 连接 Lua hash 与原生提交 API
+
+以上 1.1–1.4 仍只是公开 Lua 的控制流分析。本轮进一步使用**用户 Library 实际 `Violet4.0.0.elf`**，以 SHA-256 `d17403eaa9d844db82f647fd2f1518806b10c0518d53602fc0ac1766298fdba0`、Build ID `709bfd66115298640155fcc4979dba151c7cc79a` 固定分析版本。AArch64 是 `ET_DYN` PIE，以下为**静态 RVA**，不是 ASLR 后绝对运行地址。
+
+### 1.5.1 符号注册表反向定位（已从二进制亲自核验）
+
+ELF .rodata 的 RVA/文件偏移分别从 `0x3440000`、`0x3440568` 开始，故此节内 `RVA = file_offset - 0x568`。脚本哈希 `fAA5A90DA` 和 `f6F7C8191` 的字符串确实存在于游戏二进制，且在原生注册表中出现了真实函数地址：
+
+| Lua hash | 名称字符串文件偏移 / RVA | 注册表名称指针文件偏移 | 注册的 ARM64 包装函数 RVA | 作用 |
+|---|---|---|---|---|
+| `fAA5A90DA` | `0x3AE2449` / `0x3AE1EE1` | `0x35186A8` | **`0x16D16D0`**（函数指针位于文件 `0x35186C0`） | Lua 调原生启动保存 |
+| `f6F7C8191` | `0x3B70A5E` / `0x3B704F6` | `0x35186D8` | **`0x147F530`**（函数指针位于文件 `0x35186F0`） | Lua 轮询保存完成条件 |
+
+额外定位到 `c639BAEBC` 的字符串文件偏移 `0x3B8B027`（RVA `0x3B8AABF`），与公开 Lua 的 `c639BAEBC.fAA5A90DA`／`f6F7C8191` 类方法调用相互吻合；但**仅凭该类字符串不能证明所有 Native 对象创建/生命周期细节**。
+
+### 1.5.2 原生函数与真实 `nn::fs::Commit` 调用（已定位）
+
+```text
+Lua SaveProcess.mainCoroutineFunc
+    ├─ c639BAEBC.fAA5A90DA(mode)
+    │    └─ 0x16D16D0 native Lua wrapper
+    │         └─ 0x16D1750 → ... → 0x16D17D4 → native job start
+    └─ c639BAEBC.f6F7C8191()
+         └─ 0x147F530 native Lua wrapper
+              └─ 0x147F5F4
+                   ├─ 0x147F644: nn::os::LockMutex
+                   ├─ 0x147F668: 读取 job+0x24A 的完成状态字节
+                   ├─ 0x147F6A4: 0x147F718 读取结束任务的结果类别
+                   │    └─ 0x147F780 从受互斥锁保护的 job+0x3D8 取状态整数
+                   ├─ 0x147F6A8: cmp w0,#2
+                   │    └─ 如果 ==2，0x147F6B8 调用 0x147F7BC
+                   │         └─ 0x147F7FC → 0x147F96C
+                   │              └─ 0x147F9A0: bl nn::fs::Commit@plt
+                   │                   0x147F9C0: str w21,[x20,#0x8]  // 保存 Commit 返回结果码
+                   └─ 0x147F6C4: 0x147F828 清理任务；
+                        0x147F6C8: 返回 true
+```
+
+这是**明确的任天堂文件系统 `Commit` API 调用**，不再是 Lua 中“似乎会保存”的推断。ELF `.plt` 的 `nn::fs::Commit` 为 `0x343F980`；在 `0x147F9A0` 可见 opcode `947EFFF8`（`bl 0x343F980`）。
+
+关键语义：
+- 保存轮询检查的是异步任务是否进入**终止/可清理状态**；
+- **只有状态值为 2 的分支**会经 `0x147F7BC` 到 `nn::fs::Commit`，其他结束路径也能走到 `0x147F6C8` 返回布尔真，因此 **`f6F7C8191() == true` 不等于“已经 Commit”**；
+- 即使调用了 `Commit`，仍需**检查原生返回 Result**：`0x147F9BC` 把 `Commit` 返回码放进 `x21`，`0x147F9C0` 写入状态对象 `+0x8`。这说明有可追踪的成功/失败结果存储位点；
+- 目前不知道 `0x147F780` 返回的状态 `2` 在完整枚举里叫什么，不能未经证明直接叫作 “success”，也不能断言 `Commit` 的每次返回都是零；
+- `nn::fs::Commit` 的具体落盘耐久性、加密格式/校验、OS 事务完成及错误报告消费仍需更下层验证。
+
+同一 ELF 动态导入中还存在 `nn::fs::WriteFile`（PLT RVA `0x343D970`）、`FlushFile`（`0x343D950`），但不能仅因为这些导入存在就假设它们位于**相同**的存档任务路径；还需从 job 工厂 `0x16D1E50` 等继续追到实际数据序列化及写入调用。
+
+### 1.5.3 复现断言与证据文件
+
+新增只读校验脚本 [`scripts/research/sv_save_elf_verify.py`](../../../scripts/research/sv_save_elf_verify.py)，在本次真实 ELF 上执行了**4 个 qword 注册表指针 + 10 条 AArch64 opcode 的原样断言，14/14 通过，SHA-256 通过**；它验证 ELF 绑定及分支指令，不替代完整的动态保存测试：
+
+```bash
+python scripts/research/sv_save_elf_verify.py /path/to/Violet4.0.0.elf
+```
+
+
 ## 2. `SlotMaxNum` 不是单独的通用常量
 
 [ItemDataManager.GetSlotMaxNum](https://github.com/Martmists-GH/SV-Script-RE/blob/1f843bd2517c707fbb47491dad58856eaa2c2cc7/decompiled/C6BC8418E8E071EE6.lua#L471-L479) 会根据 ID 从道具数据表中读取字段 `SlotMaxNum`。对应真实的 RomFS 路径是：
