@@ -1,6 +1,7 @@
 """Scarlet / Violet Tera Raids (docs/sv_raid.md): the seed against PKHeX and the game's own tables,
 the bootstrap against retail bytes, and both launchers against a scripted console."""
 import hashlib
+import json
 import os
 import struct
 import sys
@@ -1208,3 +1209,28 @@ def test_charm_and_all_player_rewards_reach_the_host_bootstrap(monkeypatch, tmp_
     plain = raid.payload_of(first[10]["data"] + first[11]["data"])
     point = plain[raid.RAIDPOINT:]
     assert struct.unpack_from("<4I", point, raid.POINT_REWARDS) == (15, 500, 0, 5)
+
+def test_scripted_raid_host_opt_in_trace_matches_actual_bootstrap(monkeypatch, tmp_path):
+    """Host protocol integration: S1 source vs S2 packed message, without a real receiver."""
+    path = tmp_path / "raid-reward-trace.jsonl"
+    monkeypatch.setenv("POKELDN_SV_REWARD_TRACE", str(path))
+    console, _ = run_raid_host(
+        monkeypatch, tmp_path, rewards=[(15, 2, 0), (50, 3, 5)],
+        bag=[{"id": 15, "name": "Quick Ball"}, {"id": 50, "name": "Rare Candy"}],
+    )
+    rows = lobby_rows(console)
+    actual_plain = raid.payload_of(rows[10]["data"] + rows[11]["data"])
+    logged = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+    assert [x["event"] for x in logged] == [
+        "S1_SOURCE", "S2_HOST_BOOTSTRAP", "S2_WIRE_LOOPBACK"]
+    assert logged[0]["data_len"] == raid.POINT_SIZE
+    assert logged[1]["data_len"] == logged[2]["data_len"] == raid.BOOTSTRAP_SIZE
+    assert all(x["rows_sha256"] == hashlib.sha256(
+        actual_plain[raid.RAIDPOINT + raid.POINT_REWARDS:
+                     raid.RAIDPOINT + raid.POINT_REWARDS + 45 * 16]
+    ).hexdigest() for x in logged)
+    assert logged[1]["stage_result"] == "MATCH_S1"
+    assert logged[2]["stage_result"] == "MATCH_S2_HOST"
+    # The scripted console did NOT execute retail BattleRewardData filtering.
+    assert not any(e["event"] == "S3_FILTERED" for e in logged)
+
