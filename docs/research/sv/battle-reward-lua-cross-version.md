@@ -75,6 +75,49 @@ end
 
 可以得到**可检验假说**：商业主持方把部分或全部自定义奖励行标记为 `subjectType=5`，使没有 2481 的玩家收不到这些行。它解释了为何商家强调护符，但**不是商业协议实现的证明**。公开 `pokeldn/sv/raid.py` 的自选 `rewards` 使用 `subjectType=0`，因此官方开源参数本身没有这个资格门槛。
 
+## 3.1 追加：奖励 Lua 原始调用链的中文逻辑拆解
+
+已固定公开脚本版本为 [SV-Script-RE commit 1f843bd](https://github.com/Martmists-GH/SV-Script-RE/tree/1f843bd2517c707fbb47491dad58856eaa2c2cc7)，并追踪 `BattleRewardData` 的调用方以及团体战结算入包。用户确认奖励 Lua 行为与 4.0.0 完全一致；**本次没有原始 4.0.0 RomFS 字节供逐字 hash 对比**。
+
+**源码入口**：
+- [`GameEventNetworkBattleRaid` 1512–1549 行](https://github.com/Martmists-GH/SV-Script-RE/blob/1f843bd2517c707fbb47491dad58856eaa2c2cc7/decompiled/C849FF496D0E93636.lua#L1512-L1549)：传入 `raidBattleRewardData`，封装为 `[92]`，随后调用奖励过滤函数；
+- [`BattleRewardData.F316609DEA110601D` 183–321 行](https://github.com/Martmists-GH/SV-Script-RE/blob/1f843bd2517c707fbb47491dad58856eaa2c2cc7/decompiled/C07C34FC3B976E5A7.lua#L183-L321)：实际资格过滤代码，先通过 `Bag.GetNumItem(2481)>0` 得到护符布尔值，再按 `subjectType` 逐行筛选，过滤后的奖励行放回 `self[3]`；
+- [`Bag.FindItemById` 2771–2790 行](https://github.com/Martmists-GH/SV-Script-RE/blob/1f843bd2517c707fbb47491dad58856eaa2c2cc7/decompiled/C14A8D35D72F56FE9.lua#L2771-L2790)：按 `itemID` 找背包数组位置；[GetNumItem 2820–2835 行](https://github.com/Martmists-GH/SV-Script-RE/blob/1f843bd2517c707fbb47491dad58856eaa2c2cc7/decompiled/C14A8D35D72F56FE9.lua#L2820-L2835) 返回 `num` 或缺失时 `-1`；
+- [`GameEventBattleResult.RaidResultAddItem` 1625–1697 行](https://github.com/Martmists-GH/SV-Script-RE/blob/1f843bd2517c707fbb47491dad58856eaa2c2cc7/decompiled/C889F6553EDFCD011.lua#L1625-L1697)：获胜后逐行执行 `Bag.AddItem`；有 `SlotMaxNum` 容量调整；
+- [`SaveLoadManager.RequestAutoSave`](https://github.com/Martmists-GH/SV-Script-RE/blob/1f843bd2517c707fbb47491dad58856eaa2c2cc7/decompiled/C073521D193106184.lua#L92-L105)：团体战结算分支申请自动保存。
+
+下面代码是**对公开 Lua 反编译逻辑的等价语义重写**，用可读英文变量代替哈希、临时变量；不是完整零售 Lua bytecode：
+
+```lua
+-- Phase 1: receiving-side eligibility
+local hasCharm = bag:GetNumItem(2481) > 0
+local eligible = {}
+local powerRow = 0
+for _, r in ipairs(raidRewards) do
+    local ok = (r.subjectType == 0)
+        or (r.subjectType == 1 and isHost)
+        or (r.subjectType == 2 and not isHost)
+        or (r.subjectType == 3 and onceEligible)
+        or (r.subjectType == 4 and powerRow < matchingRaidPowerLv)
+        or (r.subjectType == 5 and hasCharm)
+    if r.subjectType == 4 then powerRow = powerRow + 1 end
+    if ok then eligible[#eligible+1] = r end
+end
+
+-- Phase 2: victory settlement; independent of display/eligibility
+for _, r in ipairs(eligible) do
+    local n = r.ItemNum
+    if bag:WouldExceedExistingSlotLimit(r.ItemNo, n) then
+        n = bag:RemainingCapacity(r.ItemNo)
+    end
+    if n > 0 then bag:AddItem(r.ItemNo, n) end
+end
+saveLoadManager:RequestAutoSave(0)  -- this is a request, not confirmed completion
+```
+
+**注意准确性**：`WouldExceedExistingSlotLimit` 和 `RemainingCapacity` 是对未命名的 `F2001F41E6B757BB1`/`F6C18EEC27ED4BA1E` 的解释性命名，原始接口不是这些名称；还需要核对奖励分支条件 `type=2` / `result[1]=1`。完整代码分析、首次获得与已有道具不同的限制处理、2137 特例和存档阶段证据，见 [《太晶坑奖励入包与自动保存调用链》](raid-reward-to-bag-save-chain.md)。
+
+
 ## 4. 本轮材料搜寻结果与下一步
 
 本轮查了用户 Library 的 ELF 文件、Lua 扩展名和 RomFS 相关文档，也检索了 `be21e65463b9a98f`；已有 `Violet4.0.0.elf` 和历史分析文档，但**未定位到 4.0.0 的原始 RomFS Lua 资源文件**。Library 中的 `dir.txt` 出现的本地硬盘路径只是目录清单，不能视为其提及文件已实际上传到 Library。

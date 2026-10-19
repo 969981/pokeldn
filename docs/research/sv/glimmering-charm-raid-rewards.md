@@ -140,6 +140,10 @@ nav_order: 1
 
 已从独立公开仓库 [SV-Script-RE](https://github.com/Martmists-GH/SV-Script-RE) 找到游戏 3.0.1 时代的 `main.battle.BattleRewardData` 的实际反编译 `F316609DEA110601D`，并跨文件追到 `main.management.bag.Bag.GetNumItem(2481)` 及 `FindItemById`：结果数量大于零时才允许 `subjectType=5` 行。参见 [完整研究笔记](battle-reward-lua-cross-version.md)。**这不是 4.0.0 的原始 RomFS 文件，不是商业改版直接证据**。
 
+## 2026-10-19 奖励入包实证链补充
+
+目前可引用固定版本公开 Lua 代码中的确定调用：团体战 `GameEventNetworkBattleRaid` 对奖励进行 `subjectType` 过滤；战斗结果 `GameEventBattleResult` 在胜利分支执行 `RaidResultAddItem`，逐行根据 `SlotMaxNum` 确定实际 `ItemNum`，再使用 `Bag.AddItem`；同一结算路径调用 `SaveLoadManager.RequestAutoSave(0)`。详见 [带代码和行号的完整调用链研究](raid-reward-to-bag-save-chain.md)。**入包已能从静态源码证明，但保存完成、官方互联网验证仍未闭合**。
+
 ## 6. 结论与后续建议
 
 **已证实（源码 / 上游验证）**：公开 `raid_point` 自选奖励默认为 `subject=0`；正常种子构造 `subject=5` 护符碎块；客户端 4.0.0 Lua 过滤函数按照是否拥有 ID 2481 保留 `subject=5` 行；原版已实现本地 LDN 自定义奖励。
