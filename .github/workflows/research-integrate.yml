@@ -35,6 +35,7 @@ jobs:
       base_sha: ${{ steps.merge.outputs.base_sha }}
       main_sha: ${{ steps.merge.outputs.main_sha }}
       ew_sha: ${{ steps.merge.outputs.ew_sha }}
+      fingerprint: ${{ steps.merge.outputs.fingerprint }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -43,6 +44,9 @@ jobs:
       - id: merge
         name: Merge both snapshot branches into an isolated candidate
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
@@ -54,6 +58,21 @@ jobs:
           echo "base_sha=$original_base" >> "$GITHUB_OUTPUT"
           echo "main_sha=$main_sha" >> "$GITHUB_OUTPUT"
           echo "ew_sha=$ew_sha" >> "$GITHUB_OUTPUT"
+          fingerprint="research=$original_base;main=$main_sha;ew=$ew_sha"
+          echo "fingerprint=$fingerprint" >> "$GITHUB_OUTPUT"
+          # Same failed inputs should not relaunch a large build every 5 min.
+          # A source or research SHA change invalidates the fingerprint; manual
+          # workflow_dispatch bypasses the pause for intentional retries.
+          if [[ "$EVENT_NAME" != "workflow_dispatch" ]]; then
+            failed_body="$(gh issue list --repo "$GITHUB_REPOSITORY" --state open \
+              --search '"[research-sync] Automation needs attention" in:title' \
+              --json body --jq '.[].body' 2>/dev/null || true)"
+            if grep -Fq -- "- Fingerprint: $fingerprint" <<< "$failed_body"; then
+              echo "status=blocked" >> "$GITHUB_OUTPUT"
+              echo "Identical inputs were already reported as failed. Rerun manually after fixing them." >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+          fi
           if git merge-base --is-ancestor "$main_sha" "$original_base" &&
              git merge-base --is-ancestor "$ew_sha" "$original_base"; then
             echo "status=nochange" >> "$GITHUB_OUTPUT"
@@ -258,6 +277,7 @@ jobs:
           PUBLISH_RESULT: ${{ needs.publish.result }}
           MAIN_SHA: ${{ needs.prepare.outputs.main_sha }}
           EW_SHA: ${{ needs.prepare.outputs.ew_sha }}
+          FINGERPRINT: ${{ needs.prepare.outputs.fingerprint }}
           CANDIDATE_REF: ${{ needs.prepare.outputs.candidate_ref }}
         shell: bash
         run: |
@@ -269,6 +289,7 @@ jobs:
             echo "- Workflow run: https://github.com/$REPO/actions/runs/$GITHUB_RUN_ID"
             echo "- Main mirror: $MAIN_SHA"
             echo "- EW mirror: $EW_SHA"
+            echo "- Fingerprint: $FINGERPRINT"
             echo "- Candidate ref: $CANDIDATE_REF"
             echo "- Prepare: $STAGE"
             echo "- Tests: $TEST_RESULT"
@@ -287,7 +308,8 @@ jobs:
           } > issue.txt
           existing="$(gh issue list --repo "$REPO" --state open --search '"[research-sync] Automation needs attention" in:title' --json number --jq '.[0].number // empty')"
           if [[ -n "$existing" ]]; then
-            gh issue comment "$existing" --repo "$REPO" --body-file issue.txt
+            gh issue edit "$existing" --repo "$REPO" --body-file issue.txt
+            gh issue comment "$existing" --repo "$REPO" --body "New failure report: https://github.com/$REPO/actions/runs/$GITHUB_RUN_ID"
           else
             gh issue create --repo "$REPO" --title "$title" --body-file issue.txt
           fi
