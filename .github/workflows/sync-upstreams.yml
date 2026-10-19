@@ -4,9 +4,10 @@ name: Sync upstream branches
 # ew follows easyworld/pokeldn:main
 # This workflow lives on the default branch (main), because only default-branch
 # workflows receive GitHub Actions scheduled events.
+# Poll both upstream main branches every five minutes; scheduled runs may be delayed.
 on:
   schedule:
-    - cron: '17 */6 * * *'
+    - cron: '*/5 * * * *'
   workflow_dispatch:
     inputs:
       target:
