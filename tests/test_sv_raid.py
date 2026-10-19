@@ -1153,3 +1153,56 @@ def test_a_console_fights_the_battle_we_serve(monkeypatch, tmp_path, capsys):
     assert not [r for r in console.seen if r["protocol"] == 0x98 and r["data"][0] == 7]   # no handover
     out = capsys.readouterr().out
     assert "serving the raid battle with scripted" in out and "the served battle is over" in out
+
+
+@pytest.mark.parametrize("subject, expected", [(0, 0), (5, 5)])
+def test_custom_reward_subject_is_encoded_without_touching_other_row_fields(subject, expected):
+    """The fourth u32 of each 16-byte row is the only difference between subjects 0/5."""
+    found = raid_encounter.generate(0xFDAE7B7D)
+    point = raid.raid_point(found, [(15, 500, subject), (50, 7)])
+    assert struct.unpack_from("<4I", point, raid.POINT_REWARDS) == (15, 500, 0, expected)
+    assert struct.unpack_from("<4I", point, raid.POINT_REWARDS + 16) == (50, 7, 0, 0)
+    assert point[raid.POINT_REWARDS + 32:raid.POINT_SUMMARY] == bytes(
+        raid.POINT_SUMMARY - raid.POINT_REWARDS - 32
+    )
+    if subject == 0:
+        legacy = raid.raid_point(found, [(15, 500), (50, 7)])
+        assert point == legacy
+
+
+def test_custom_reward_subject_rejects_unsupported_values_and_preserves_45_row_limit():
+    found = raid_encounter.generate(0xFDAE7B7D)
+    for bad in (1, 2, 3, 4, 6, -1):
+        with pytest.raises(ValueError, match="subject must be 0 or 5"):
+            raid.raid_point(found, [(15, 1, bad)])
+    with pytest.raises(ValueError, match="at most 45"):
+        raid.raid_point(found, [(15, 1, 5)] * 46)
+
+
+@pytest.mark.parametrize("text, expected", [
+    ("15:500", (15, 500)),
+    ("15:500:0", (15, 500, 0)),
+    ("15:500:5", (15, 500, 5)),
+    ("0xf:0x1f4:0x5", (15, 500, 5)),
+])
+def test_sv_host_reward_parser_preserves_old_rows_and_accepts_charm_subject(text, expected):
+    assert sv_host.raid_reward(text) == expected
+
+
+@pytest.mark.parametrize("text", ["15:500:1", "15:500:4", "15:500:6", "15:0:5",
+                                 "15:1000:5", "15:500:garbage", "15:500:5:0", "15"])
+def test_sv_host_reward_parser_rejects_invalid_subject_and_quantity(text):
+    import argparse
+    with pytest.raises(argparse.ArgumentTypeError):
+        sv_host.raid_reward(text)
+
+
+def test_charm_and_all_player_rewards_reach_the_host_bootstrap(monkeypatch, tmp_path):
+    """Integration: three-field row survives CLI -> group -> 0x2f LZ4 payload."""
+    console, _ = run_raid_host(monkeypatch, tmp_path, rewards=[(15, 500, 5)], bag=[
+        {"id": 15, "name": "Quick Ball"},
+    ])
+    first = lobby_rows(console)
+    plain = raid.payload_of(first[10]["data"] + first[11]["data"])
+    point = plain[raid.RAIDPOINT:]
+    assert struct.unpack_from("<4I", point, raid.POINT_REWARDS) == (15, 500, 0, 5)
