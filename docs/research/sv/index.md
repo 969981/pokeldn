@@ -25,6 +25,7 @@ Pia 6、交换消息、太晶团体战、战斗服务器和奖励。
 - [4.0.0 保存协程/回调与截图道具上限](sv400-autosave-and-item-slotmax.md)：追到 SaveProcess 原生启动与完成轮询，给出实际道具 ID、PKHeX 999 交叉参照和原始 RomFS SlotMaxNum 解析工具。
 
 - [太晶坑奖励保存协程与 SlotMaxNum 物品表研究](saveprocess-slotmax-followup.md)：追踪 StartSaveProcess → SaveProcess 轮询与 Native 回调、提供不依赖游戏文件的 FlatBuffers 解析器和待验证清单。
+- [本地 LDN 奖励三点数据一致性验证计划](raidpoint-bootstrap-receiver-consistency.md)：P0 验证源 RaidPoint → Bootstrap → 接收端奖励筛选列表；包括独立采样点、日志格式、0/5 与原生 subject 实验矩阵、失败归因及 Hook 放置决策标准。
 
 以下内容包含独立完成的 ELF 静态验证，以及尚未在实机闭环的假说。新研究应按照 [研究记录模板](../template.md) 记录版本、提交及结论状态。
 
