@@ -677,7 +677,9 @@ def run_raid_host(monkeypatch, tmp_path, rewards=(), extra=(), ready_after=2.4, 
                         lambda game, kind: bag if bag is not None else [{"id": 15, "name": "Quick Ball"}])
     tool = next(t for game in GAMES for t in game.tools if t.key == "sv-raid-host")
     args = build(tool, {"--raid-pokemon": {"file": str(ours)}, "--raid-seed": "000F34C3",
-                        "--raid-reward": [{"item_id": str(i), "quantity": str(q)} for i, q in rewards]},
+                        "--raid-reward": [{"item_id": str(row[0]), "quantity": str(row[1]),
+                                           **({"subject": str(row[2])} if len(row) == 3 else {})}
+                                          for row in rewards]},
                  {}, Settings())
     assert sv_host.main(args + ["--keys", str(tmp_path / "prod.keys"), "--seconds", str(seconds),
                                 *extra]) == 0
