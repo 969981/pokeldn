@@ -168,6 +168,42 @@ SaveLoadManager.RequestAutoSave(0)
 - 重启之后异常奖励是否保留，重新进入互联网模式会不会发生额外验证；
 - 商业联网坑如何创建房间、如何传输、其自定义奖励是否都是 `subject=5`。
 
+## 3.1 深入：BagSaveAccessor 和异步自动保存调度
+
+上一节只闭合到 `Bag.AddItem`；继续搜索调用方与被调方后，在固定 Lua 仓库中额外找到两个直接证据。
+
+### (A) AddItem 调用了存档访问器的“数量更新”
+
+[Bag.AddItem 2970–3064 行](https://github.com/Martmists-GH/SV-Script-RE/blob/1f843bd2517c707fbb47491dad58856eaa2c2cc7/decompiled/C14A8D35D72F56FE9.lua#L2970-L3064)：
+
+- 新道具不存在时，在 `self[6]` 新建带 `itemID/category/num/isGet` 的背包记录，同时调用 `C985427E5D92698CE.SAD746AAE7AECB419(itemId, count, category)`（新记录相关的访问器路径）；
+- 已有记录时，在数量增加、`SlotMaxNum` 截断后调用 `C985427E5D92698CE.SAB9A64F8881E7F45(itemId, finalCount)`。
+- [`C985427E5D92698CE` 源码](https://github.com/Martmists-GH/SV-Script-RE/blob/1f843bd2517c707fbb47491dad58856eaa2c2cc7/decompiled/C985427E5D92698CE.lua#L1-L49) 的可读类名是 **`main.savedata.accessor.BagSaveAccessor`**；`SAB9...` 内部调用 `cACA3F5A6.f6A1EF75F(itemId)` 取得记录/包装对象，再调用 `fFE5328FE(finalCount)`，最后调用 `cACA3F5A6.f445BD6CD(itemId, obj)`。
+
+所以这里不再只是“运行时 Bag 自身的 self[6] 改了”：**已有道具的最终数量会进一步被交给 BagSaveAccessor**。但 `cACA3F5A6` 的真实存档数据地址、对象生命周期、二进制序列化、写盘结果仍需 Native 调用或实机验证；“访问器被调用”不等于磁盘事务已经完成。
+
+### (B) 自动保存请求的消费方法也找到了
+
+[内部管理器 `CAE5B15F66F86E1FD.RequestAutoSave` 310–388 行](https://github.com/Martmists-GH/SV-Script-RE/blob/1f843bd2517c707fbb47491dad58856eaa2c2cc7/decompiled/CAE5B15F66F86E1FD.lua#L310-L388) 记录请求类型到 `self[4]`，并依据其当前状态和环境条件处理后续标志。
+
+[`CAE5B15F66F86E1FD.RunAutoSaveRequest` 395–432 行](https://github.com/Martmists-GH/SV-Script-RE/blob/1f843bd2517c707fbb47491dad58856eaa2c2cc7/decompiled/CAE5B15F66F86E1FD.lua#L395-L432) 若发现 `self[4] != nil`，继续检查环境，再调用 **`self.FDD225426F9C67B37(...)`**（源码标注为 `StartSaveProcess`）；随后清空当前请求。
+
+这说明**奖励入包后确实存在自动保存的排队 → 消费 → 尝试启动保存动作**，且不是 `RequestAutoSave(0)` 直接等价于“已经写盘成功”。需要继续查 `StartSaveProcess` 真实返回值及其下层异步结果、存档序列化块/校验与完成回调。
+
+```text
+Bag.AddItem(item, finalCount)
+  ├─ runtime bag self[6][i].num = finalCount
+  └─ BagSaveAccessor.SAB9A64F8881E7F45(item, finalCount)
+       └─ cACA3F5A6 ... accessor setter (目标持久化缓冲仍待核实)
+
+GameEventBattleResult → RequestAutoSave(0)
+  └─ CAE5... .RequestAutoSave: self[4] = requestType
+       └─ RunAutoSaveRequest: pending != nil
+            └─ StartSaveProcess(...)
+                 └─ file transaction / completed callback (待追)
+```
+
+
 ## 4. 与 PokéLDN 的对照、研究结论
 
 | 环节 | 已有静态证据 | 当前结论 |
