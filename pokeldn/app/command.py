@@ -106,8 +106,9 @@ def _args(field: Field, value, tool: Tool) -> list[str]:
                  if field.events and GIFT_EVENT in accepted(tool.script) else [])
         return out + gifts + ([field.count, str(len(files))] if field.count else [])
     if field.kind == "rewards":
-        return [part for row in (value or ())
-                for part in (flags[0], f"{row.get('item_id', '')}:{row.get('quantity', '')}")]
+        return [part for row in (value or ()) for part in
+                (flags[0], f"{row.get('item_id', '')}:{row.get('quantity', '')}" +
+                 (":5" if str(row.get('subject', '0')) == '5' else ""))]
     if field.kind == "raidevent":     # the event's folder in the app's gallery
         return [flags[0], events_gallery.event_path(value)] if value else []
     if field.kind == "raidpartners":  # {"progress": a stage or "", "picks": trainers in slot order}
@@ -204,7 +205,7 @@ def prepare(tool: Tool, values: dict) -> None:
 def code_error(field: Field, value) -> str:
     """A console code is eight digits, or empty where the field allows none; a Let's Go link code must
     name three picker Pokemon. Either partial one would host under another code. A raid seed is eight
-    hex digits; a raid reward row names an item and a quantity from 1 to 999; a raid event is in the
+    hex digits; a raid reward row names an item, quantity 1 to 999 and optional subject 0/5; a raid event is in the
     app's event gallery."""
     if field.kind == "raidseed":
         return "" if re.fullmatch(r"[0-9A-Fa-f]{8}", str(value or "")) else "Enter eight hexadecimal digits."
@@ -234,10 +235,12 @@ def code_error(field: Field, value) -> str:
         for n, row in enumerate(rows, 1):
             item = str(row.get("item_id", ""))
             quantity = str(row.get("quantity", ""))
-            if not item.isascii() or not item.isdigit() or not int(item):
+            if not item.isascii() or not item.isdigit() or not 1 <= int(item) <= 0xFFFF:
                 return f"Choose an item for reward {n}."
             if not quantity.isascii() or not quantity.isdigit() or not 1 <= int(quantity) <= 999:
                 return f"Reward {n} needs a quantity from 1 to 999."
+            if str(row.get("subject", "0")) not in ("0", "5"):
+                return f"Reward {n} subject must be 0 (everyone) or 5 (Glimmering Charm)."
         return ""
     if field.kind == "code":
         value = str(value or "")
