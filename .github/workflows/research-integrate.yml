@@ -1,0 +1,293 @@
+name: Integrate research upstreams
+
+# The mirror workflow runs every five minutes and this workflow runs immediately
+# after it finishes. The hourly run recovers missed/late workflow_run events.
+on:
+  workflow_run:
+    workflows: [Sync upstream branches]
+    types: [completed]
+  schedule:
+    - cron: '37 * * * *'
+  workflow_dispatch:
+  # Prime the first integration as soon as the workflow itself is installed.
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/research-integrate.yml
+
+permissions:
+  contents: write
+  issues: write
+  actions: read
+
+concurrency:
+  group: research-upstream-integration
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-24.04
+    outputs:
+      status: ${{ steps.merge.outputs.status }}
+      candidate_ref: ${{ steps.merge.outputs.candidate_ref }}
+      candidate_sha: ${{ steps.merge.outputs.candidate_sha }}
+      base_sha: ${{ steps.merge.outputs.base_sha }}
+      main_sha: ${{ steps.merge.outputs.main_sha }}
+      ew_sha: ${{ steps.merge.outputs.ew_sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+      - id: merge
+        name: Merge both snapshot branches into an isolated candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git fetch --no-tags origin             +refs/heads/main:refs/remotes/origin/main             +refs/heads/ew:refs/remotes/origin/ew             +refs/heads/research:refs/remotes/origin/research
+          original_base="$(git rev-parse refs/remotes/origin/research)"
+          main_sha="$(git rev-parse refs/remotes/origin/main)"
+          ew_sha="$(git rev-parse refs/remotes/origin/ew)"
+          echo "base_sha=$original_base" >> "$GITHUB_OUTPUT"
+          echo "main_sha=$main_sha" >> "$GITHUB_OUTPUT"
+          echo "ew_sha=$ew_sha" >> "$GITHUB_OUTPUT"
+          if git merge-base --is-ancestor "$main_sha" "$original_base" &&
+             git merge-base --is-ancestor "$ew_sha" "$original_base"; then
+            echo "status=nochange" >> "$GITHUB_OUTPUT"
+            echo "Both upstream mirror commits are already integrated." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          candidate="automation/research-candidate-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          git switch -c "$candidate" "$original_base"
+          mkdir -p integration-report
+          conflict() {
+            local stage="$1"
+            {
+              echo "Integration blocked while merging $stage"
+              echo "research=$original_base"
+              echo "main=$main_sha"
+              echo "ew=$ew_sha"
+              echo "Conflicted files:"
+              git diff --name-only --diff-filter=U
+              echo "Working-tree status:"
+              git status --short
+            } > integration-report/conflicts.txt
+            git diff --cc > integration-report/merge.diff || true
+            cat integration-report/conflicts.txt >> "$GITHUB_STEP_SUMMARY"
+            echo "status=conflict" >> "$GITHUB_OUTPUT"
+          }
+          if ! git merge --no-ff --no-edit -m "chore(research): integrate main $main_sha" "$main_sha"; then
+            conflict main
+            exit 0
+          fi
+          if ! git merge --no-ff --no-edit -m "chore(research): integrate ew $ew_sha" "$ew_sha"; then
+            conflict ew
+            exit 0
+          fi
+          deleted="$(git diff --diff-filter=D --name-only "$original_base" HEAD -- docs/research/ || true)"
+          if [[ -n "$deleted" ]]; then
+            {
+              echo "Integration would delete private research documents:"
+              echo "$deleted"
+            } > integration-report/conflicts.txt
+            echo "status=conflict" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [[ -n "$(git status --porcelain)" ]]; then
+            echo "Merge left an uncommitted working tree" > integration-report/conflicts.txt
+            echo "status=conflict" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          candidate_sha="$(git rev-parse HEAD)"
+          # Pushing an automation-scoped candidate does not alter research.
+          git push origin "HEAD:refs/heads/$candidate"
+          echo "status=ready" >> "$GITHUB_OUTPUT"
+          echo "candidate_ref=$candidate" >> "$GITHUB_OUTPUT"
+          echo "candidate_sha=$candidate_sha" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Research candidate prepared"
+            echo "- research base: $original_base"
+            echo "- original mirror: $main_sha"
+            echo "- Chinese mirror: $ew_sha"
+            echo "- candidate: $candidate_sha"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: ${{ steps.merge.outputs.status == 'conflict' }}
+        with:
+          name: research-merge-conflicts
+          path: integration-report/
+          retention-days: 30
+
+  test:
+    needs: prepare
+    if: ${{ needs.prepare.outputs.status == 'ready' }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-14, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.candidate_sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: |
+            requirements*.txt
+            gui/requirements.txt
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - run: python -m pip install -r requirements.txt pytest==9.1.1 pytest-xdist==3.8.0 esptool==5.4.0 "flet[desktop]==1.0.2"
+      - run: dotnet build -c Release services/pkhex -warnaserror
+      - run: python -m pytest tests/ -q -W error -n auto --dist worksteal
+
+  # Run the FULL existing ESP32, desktop, Android and iOS build against the
+  # candidate first. If a platform fails, research is never advanced.
+  prebuild:
+    needs: [prepare, test]
+    if: ${{ needs.prepare.outputs.status == 'ready' && needs.test.result == 'success' }}
+    permissions:
+      contents: write
+    uses: ./.github/workflows/auto-build.yml
+    with:
+      source_ref: ${{ needs.prepare.outputs.candidate_sha }}
+      source_branch: research
+      release_tag: snapshot-research-${{ needs.prepare.outputs.candidate_sha }}
+      publish: false
+
+  promote:
+    needs: [prepare, test, prebuild]
+    if: ${{ needs.prebuild.result == 'success' }}
+    runs-on: ubuntu-24.04
+    outputs:
+      source_sha: ${{ steps.promote.outputs.source_sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+      - id: promote
+        shell: bash
+        env:
+          BASE_SHA: ${{ needs.prepare.outputs.base_sha }}
+          CANDIDATE_SHA: ${{ needs.prepare.outputs.candidate_sha }}
+          CANDIDATE_REF: ${{ needs.prepare.outputs.candidate_ref }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin             +refs/heads/research:refs/remotes/origin/research             +refs/heads/$CANDIDATE_REF:refs/remotes/origin/research-candidate
+          actual_base="$(git rev-parse refs/remotes/origin/research)"
+          [[ "$actual_base" == "$BASE_SHA" ]] || {
+            echo "::error::research changed during CI; retry integration from the new HEAD."
+            exit 1
+          }
+          actual_candidate="$(git rev-parse refs/remotes/origin/research-candidate)"
+          [[ "$actual_candidate" == "$CANDIDATE_SHA" ]] || exit 1
+          git merge-base --is-ancestor "$BASE_SHA" "$CANDIDATE_SHA"
+          # Non-forced fast-forward only. Never overwrite manual research commits.
+          git push origin "$CANDIDATE_SHA:refs/heads/research"
+          echo "source_sha=$CANDIDATE_SHA" >> "$GITHUB_OUTPUT"
+          git push origin ":refs/heads/$CANDIDATE_REF" || true
+
+  # All packaged assets are uploaded to this caller run by the reusable
+  # builder, so publication does not require compiling the project twice.
+  publish:
+    needs: [prepare, promote]
+    if: ${{ needs.promote.result == 'success' }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.promote.outputs.source_sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          path: assets
+          merge-multiple: true
+      - name: Publish tested research prerelease
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: snapshot-research-${{ needs.promote.outputs.source_sha }}
+          target_commitish: ${{ needs.promote.outputs.source_sha }}
+          name: pokeldn research - snapshot-research-${{ needs.promote.outputs.source_sha }}
+          body: |
+            Tested integration of upstream main and EW localization.
+            Immutable research commit: ${{ needs.promote.outputs.source_sha }}
+            Original mirror: ${{ needs.prepare.outputs.main_sha }}
+            Chinese mirror: ${{ needs.prepare.outputs.ew_sha }}
+
+            This candidate passed Python/.NET regression tests on Linux,
+            Windows and macOS and built firmware, desktop, Android and iOS
+            outputs before the research branch was fast-forwarded.
+
+            Unofficial prerelease. Verify SHA256SUMS before installation.
+            Unsigned iOS builds require separate signing.
+          files: assets/*
+          prerelease: true
+          make_latest: false
+          fail_on_unmatched_files: true
+
+  report-failure:
+    needs: [prepare, test, prebuild, promote, publish]
+    if: ${{ always() && (needs.prepare.outputs.status == 'conflict' || needs.test.result == 'failure' || needs.promote.result == 'failure' || needs.prebuild.result == 'failure' || needs.publish.result == 'failure') }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        if: ${{ needs.prepare.outputs.status == 'conflict' }}
+        with:
+          name: research-merge-conflicts
+          path: integration-report/
+      - name: Create or update an actionable issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          STAGE: ${{ needs.prepare.outputs.status }}
+          TEST_RESULT: ${{ needs.test.result }}
+          PROMOTE_RESULT: ${{ needs.promote.result }}
+          PREBUILD_RESULT: ${{ needs.prebuild.result }}
+          PUBLISH_RESULT: ${{ needs.publish.result }}
+          MAIN_SHA: ${{ needs.prepare.outputs.main_sha }}
+          EW_SHA: ${{ needs.prepare.outputs.ew_sha }}
+          CANDIDATE_REF: ${{ needs.prepare.outputs.candidate_ref }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          title="[research-sync] Automation needs attention"
+          {
+            echo "Research integration needs review."
+            echo
+            echo "- Workflow run: https://github.com/$REPO/actions/runs/$GITHUB_RUN_ID"
+            echo "- Main mirror: $MAIN_SHA"
+            echo "- EW mirror: $EW_SHA"
+            echo "- Candidate ref: $CANDIDATE_REF"
+            echo "- Prepare: $STAGE"
+            echo "- Tests: $TEST_RESULT"
+            echo "- Promotion: $PROMOTE_RESULT"
+            echo "- Candidate packaging: $PREBUILD_RESULT"
+            echo "- Release upload: $PUBLISH_RESULT"
+            if [[ -f integration-report/conflicts.txt ]]; then
+              echo
+              echo "#### Conflicts"
+              echo '~~~'
+              cat integration-report/conflicts.txt
+              echo '~~~'
+            fi
+            echo
+            echo "No force push was performed. Resolve in a review branch, and rerun integration."
+          } > issue.txt
+          existing="$(gh issue list --repo "$REPO" --state open --search '"[research-sync] Automation needs attention" in:title' --json number --jq '.[0].number // empty')"
+          if [[ -n "$existing" ]]; then
+            gh issue comment "$existing" --repo "$REPO" --body-file issue.txt
+          else
+            gh issue create --repo "$REPO" --title "$title" --body-file issue.txt
+          fi
