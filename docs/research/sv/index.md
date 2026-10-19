@@ -17,6 +17,8 @@ Pia 6、交换消息、太晶团体战、战斗服务器和奖励。
 
 - [晶耀护符、太晶坑奖励资格与 999 道具案例](glimmering-charm-raid-rewards.md)：结合 PokéLDN 奖励结构、4.0.0 上游 ELF/Lua 逆向记录、联网模式证据分级和待验证实验。
 
-当前仅建立索引，暂无验证完成的个人实验。研究结论应按照 [研究记录模板](../template.md) 新增独立 Markdown 文件，明确源码 commit、复现步骤及结论状态。
+- [《紫》4.0.0 ELF：RaidPoint/bootstrap 原生机器码复核](violet400-elf-raid-bootstrap-audit.md)：核对用户 Library ELF 的 Build ID、SHA-256、15 条原始指令与逆向证据边界。
+
+以下内容包含独立完成的 ELF 静态验证，以及尚未在实机闭环的假说。新研究应按照 [研究记录模板](../template.md) 记录版本、提交及结论状态。
 
 [返回研究总索引](../index.md)

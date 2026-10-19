@@ -144,6 +144,11 @@ nav_order: 1
 
 **待验证**：商家具体传输技术、是否原生 NSO 模式、其 `subject` 字段和奖励对象、所有 ×999 奖励是否存档持久化、游戏最新版本的 ELF 路径。后续如获得合法可研究的目标版本 ELF / 脱敏样本，按第 5 节更新证据，而不是直接将推断升级为已证实。
 
+
+## 2026-10-19 后续 ELF 实证补充
+
+已从 Library 取得真正的《紫》4.0.0 `Violet4.0.0.elf` 并独立验证 AArch64 指令、Build ID、SHA-256；`main+0xE327FC` 的 `0xAA0` bootstrap、`+0x6B8` RaidPoint、`0x3C8` 后段复制，以及 `0x1BAE790` getter 链均有本轮真实 ELF 机器码证据，15/15 opcode 断言通过。详见 [《紫》4.0.0 ELF 原生指令审计](violet400-elf-raid-bootstrap-audit.md)。**Lua subject=5 过滤、官方互联网房间与商业奖励存档仍未由这次 ELF 分析独立验证。** 本文页首“没有取得 ELF”描述的是第一次撰稿的材料状态，现已由此补充更新。
+
 ## 参考资料
 
 - [上游 SV Raid 原版逆向](../../sv_raid.md)；[汉化版](../../zh-Hans/sv_raid.md)
