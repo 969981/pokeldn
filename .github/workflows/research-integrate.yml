@@ -156,7 +156,7 @@ jobs:
     needs: [prepare, test]
     if: ${{ needs.prepare.outputs.status == 'ready' && needs.test.result == 'success' }}
     permissions:
-      contents: read
+      contents: write
     uses: ./.github/workflows/auto-build.yml
     with:
       source_ref: ${{ needs.prepare.outputs.candidate_sha }}
