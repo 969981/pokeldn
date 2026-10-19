@@ -136,3 +136,30 @@ def test_the_activity_only_swallows_the_unmounted_control_race(monkeypatch):
     activity.update = broken
     with pytest.raises(RuntimeError, match="unexpected update failure"):
         asyncio.run(activity._animate())
+
+
+def test_reward_picker_subject_selection_persists_and_reaches_raidpoint(picker):
+    """GUI per-row subject switch must survive restore and be serialized to fourth u32."""
+    picker._add(None)
+    assert picker.subjects[0].value == "0"
+    picker._set(0, "item_id", "15")
+    picker._set(0, "quantity", "5")
+    picker.subjects[0].value = "5"
+    picker.subjects[0].on_select(SimpleNamespace(control=picker.subjects[0]))
+    assert picker.value[0]["subject"] == "5"
+    assert picker.templates.value == "custom"
+    saved = [dict(row) for row in picker.saved[-1]]
+    restored = rewards.RewardPicker(None, "sv", saved, lambda rows: None)
+    assert restored.subjects[0].value == "5" and restored.templates.value == "custom"
+    tool, values = launch(restored.value)
+    assert not problems(tool, values)
+    cli = build(tool, values, {}, Settings())
+    assert "15:5:5" in cli
+    parsed = sv_host.build_parser().parse_args(cli)
+    assert parsed.raid_reward == [(15, 5, 5)]
+    found = raid_encounter.generate(parsed.raid_seed)
+    point = raid.raid_point(found, parsed.raid_reward)
+    assert struct.unpack_from("<4I", point, raid.POINT_REWARDS) == (15, 5, 0, 5)
+    restored.subjects[0].value = "0"
+    restored.subjects[0].on_select(SimpleNamespace(control=restored.subjects[0]))
+    assert "15:5" in build(tool, launch(restored.value)[1], {}, Settings())
