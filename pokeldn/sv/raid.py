@@ -9,7 +9,7 @@ import threading
 
 from pokeldn import gen9
 from pokeldn.ldn import channel_table as tables, reliable5
-from pokeldn.sv import lz4, raid_encounter, raid_partners, streams, trade
+from pokeldn.sv import lz4, raid_encounter, raid_partners, raid_reward_trace, streams, trade
 
 KEY_LOBBY = 0x3380
 KEY_BATTLE = 0x3480
@@ -215,15 +215,17 @@ def raid_point(raid, rewards=None, name=POINT_NAME, partner_seed=0, stage=None):
     return bytes(out)
 
 
-def bootstrap(raid, participants, rewards=None, name=POINT_NAME, partner_seed=0, stage=None):
+def bootstrap(raid, participants, rewards=None, name=POINT_NAME, partner_seed=0, stage=None, *, on_point=None):
     """-> the 0xaa0 plaintext: up to four party records (None an empty slot), the boss, the
     RaidPoint."""
     if len(participants) > PARTICIPANTS:
         raise ValueError(f"a raid has at most {PARTICIPANTS} participants")
     records = [empty_participant() if p is None else gen9.encrypt(gen9.load(p)) for p in participants]
     records += [empty_participant()] * (PARTICIPANTS - len(records))
-    return (b"".join(records) + boss_record(raid)
-            + raid_point(raid, rewards, name, partner_seed, stage))
+    point = raid_point(raid, rewards, name, partner_seed, stage)
+    if on_point is not None:
+        on_point(point)  # Final source bytes, before insertion into the Bootstrap.
+    return b"".join(records) + boss_record(raid) + point
 
 
 def bootstrap_message(plain, counter=FIRST_COUNTER + 10):
@@ -252,6 +254,8 @@ class RaidGroup:
         self.partners = partner_seed, stage
         # A list or a stage that does not fit raises before the radio.
         raid_point(raid, self.rewards, partner_seed=partner_seed, stage=stage)
+        # Opt-in, read-only trace; each group gets a fresh run_id.
+        self.reward_trace = raid_reward_trace.HostRewardTrace.from_environment()
         self.players = players
         self.members = {}                       # station index -> RaidHost
         self.opened_at = None
@@ -301,7 +305,9 @@ class RaidGroup:
         if self.plain is None:
             slots = [self.pokemon] + [self.members[i].guest if i in self.members else None
                                       for i in range(1, CONSOLES + 1)]
-            self.plain = bootstrap(self.raid, slots, self.rewards, POINT_NAME, *self.partners)
+            observer = self.reward_trace.capture_source if self.reward_trace is not None else None
+            self.plain = bootstrap(self.raid, slots, self.rewards, POINT_NAME, *self.partners,
+                                   on_point=observer)
         return self.plain
 
     def prepare_battle(self):
@@ -549,7 +555,10 @@ class RaidHost:
             if (self.guest is None or not self._passed("session_ack", now=now)
                     or not all("guest_start" in m.seen for m in self.group.present())):
                 return None
-            self.whole = bootstrap_message(self.group.bootstrap(), self._count())
+            plain = self.group.bootstrap()
+            self.whole = bootstrap_message(plain, self._count())
+            if self.group.reward_trace is not None:
+                self.group.reward_trace.capture_host(plain, self.whole, self.index, payload_of)
             self.group.prepare_battle()
             cut = min(BOOTSTRAP_FRAGMENT, len(self.whole) - 1)
             return "boot1", FRAGMENT_START, self.whole[:cut], None
