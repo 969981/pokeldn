@@ -80,7 +80,7 @@ jobs:
             echo "The research branch is not reset. Previous successful prereleases remain available."
           } > issue.txt
           existing="$(gh issue list --repo "$REPO" --state open --search '"[research-build] Build failed" in:title' --json number --jq '.[0].number // empty')"
-          if [[ -n "$existing" }}; then
+          if [[ -n "$existing" ]]; then
             gh issue comment "$existing" --repo "$REPO" --body-file issue.txt
           else
             gh issue create --repo "$REPO" --title "$title" --body-file issue.txt
