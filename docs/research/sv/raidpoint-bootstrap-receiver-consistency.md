@@ -77,7 +77,7 @@ bin/sv_host.py::prepare_raid
 
 源码位置：[`pokeldn/sv/raid.py`](https://github.com/969981/pokeldn/blob/research/pokeldn/sv/raid.py) `POINT_REWARDS` / `raid_point()` / `RaidGroup.bootstrap()`；[`bin/sv_host.py`](https://github.com/969981/pokeldn/blob/research/bin/sv_host.py) `raid_reward()`、`prepare_raid()`。
 
-**采样要求**：在 `RaidGroup.bootstrap()` 构造返回后记录 `self.plain[0x6B8:0xAA0]`，作为**实际发送配置的 S1**。如果还需区分“较早生成的源对象”，可以额外记录 `raid_point()` 返回的 0x3E8 字节，但必须注明是否只是 `__init__` 预检查产物，不能把预检查对象冒充最终发包对象。
+**采样要求**：将`最终一次` `bootstrap()` 内调用 `raid_point()` 所返回的完整 `0x3E8` 字节在拼接前直接作为 S1 记录；不能通过事后从 `self.plain` 切片来构造 S1，否则 `S1 == S2` 只是同一缓冲区与自身比较，失去独立性。`RaidGroup.__init__()` 中的 `raid_point()` 调用只用于预检查，必须区分它与最终发包版本。S2_host 则在 `RaidHost._next` 实际组包时从 `self.group.bootstrap()` 的 `0xAA0` 明文截取（如果 `self.plain` 已缓存，记录缓存生成时序和来源）。推荐再在压缩/分片链之后，用自己的**本地记录消息重组及解压回读**做 S2_wire_loopback，避免“同一数据对象重复切片”造成的假阳性。
 
 最低记录字段：`seed`、`version`、`map`、`content`、`progress`、`source_kind`（seed/custom/event）、`configured_rows`、`parsed_rows_count`、完整 720 B 的 SHA-256、非空行 `(index,item,quantity,rare,subject)`、四字节保留区的十六进制、RaidPoint 身份与 `run_id`。自定义为空与 `None`（使用种子掉落）必须分开表达。
 
@@ -101,7 +101,7 @@ def reward_snapshot(plain, offset):
     return {"sha256": hashlib.sha256(reward_bytes).hexdigest(),
             "rows": rows, "raw": reward_bytes}
 
-# s1: RaidPoint 0x3E8；s2: Bootstrap 0xAA0（两者均为未经压缩的完整数据）
+# s1: raid_point() 本次最终产物；s2: 独立实际组包/解压快照（非从同一对象回切）
 assert len(s1) == 0x3E8
 assert len(s2) == 0xAA0
 assert s1 == s2[0x6B8:0xAA0]
@@ -116,7 +116,7 @@ assert a["raw"] == b["raw"], "S1/S2 reward bytes mismatch"
 
 接收端须在本地授权、隔离测试中取得消息 `0x2F` **真正解压/反序列化后**的 RaidPoint（或等价的已解析结构），记录同一 45 行及 SHA-256，作为 `S2_receiver`。优先对照上游 [battle bootstrap](../../sv_raid.md#the-battle-bootstrap) 描述的接收器；具体接收端运行时 Native/Lua 对象转换仍需从可用 4.0.0 资源或调试日志下钻，不可杜撰 Hook RVA。
 
-- `S1.raw == S2_host.raw`、`S2_host.raw == S2_receiver.raw` 才分别说明生成→发送、发送→接收的奖励字节一致。
+- `S1.raw == S2_host.raw` 仅说明源对象与实际组包快照一致；如补充 `S2_wire_loopback` 才能证明本地实际封装的消息解压回读不丢字段；`S2_wire_loopback.raw == S2_receiver.raw` 才能进一步证明接收端采用同一奖励字节。
 - 如果只能看到发送端 `S2_host`，记录 `RECEIVER_UNOBSERVED`，**不得**将其标记为 `END_TO_END_PASS`。
 - 记录 `kind`、解压长度、分片重组状态、异常/超时；不要把未解压的通信密文字节与明文偏移直接对比。
 - 保持 `0x3B4..0x3B7` 和 Boss/摘要信息不变，可帮助区分写错偏移与接收端拒绝整个点。
