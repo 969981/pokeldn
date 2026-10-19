@@ -35,4 +35,4 @@ has_children: true
 - 不提交个人 `prod.keys`、登录凭据、未脱敏网络数据、商业 ROM 或机密资源。
 - 原项目文档仅作为依据；若发现错误，在个人研究笔记中记录证据，再考虑单独向上游提交改进。
 
-参见 [研究记录模板](template.md) 和 [首次集成基线](BASELINE.md)。
+参见 [研究记录模板](template.md) 和 [首次集成基线](BASELINE.md)。 另见 [自动同步与构建流程](AUTOMATION.md)。
