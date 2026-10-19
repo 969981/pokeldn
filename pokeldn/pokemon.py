@@ -86,7 +86,8 @@ class _Library:
 
 
 class Service:
-    def __init__(self):
+    def __init__(self, display_language: str = "en"):
+        self.display_language = display_language
         self.lock = threading.Lock()
         self.proc = None
         self.species_cache: dict[str, list[dict]] = {}
@@ -94,6 +95,8 @@ class Service:
         self.home_tracker = os.environ.get("POKELDN_HOME_TRACKER") or "empty"
 
     def _ask(self, request: dict) -> dict:
+        if self.display_language != "en":
+            request = {**request, "display_language": self.display_language}
         request = {**request, "home_tracker": self.home_tracker}
         with self.lock:
             for attempt in range(2):

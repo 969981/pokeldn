@@ -68,4 +68,3 @@ void pro_state(const uint8_t *r, uint8_t timer, uint8_t *p)
     pack_stick(p + 8, axis(r[5], false), axis(r[6], true));
     p[11] = 0x80;
 }
-

@@ -35,11 +35,16 @@ def _read_the_app() -> None:
         _thread.interrupt_main()
 
 
+def utf8_output() -> None:
+    """Use the same UTF-8 output for CLI commands and managed runs, including pipes."""
+    for stream in (sys.stdout, sys.stderr):
+        if stream and hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", line_buffering=True)
+
+
 def child(argv: list[str]) -> None:
     """Runs in the child: an entry point script or a module, as `python -u` would."""
-    for stream in (sys.stdout, sys.stderr):
-        if stream:
-            stream.reconfigure(encoding="utf-8", line_buffering=True)
+    utf8_output()
     if sys.stdin and (os.environ.get("POKELDN_MANAGED_RUN") or os.environ.get("POKELDN_POPUPS")):
         threading.Thread(target=_read_the_app, daemon=True).start()
     _execute(argv)

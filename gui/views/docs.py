@@ -1,7 +1,9 @@
+from gui.localization import translate
 import asyncio
 import os
 import re
 from dataclasses import dataclass, field
+from urllib.parse import unquote
 
 import flet as ft
 
@@ -14,6 +16,27 @@ from pokeldn.app.i18n import t as tr
 DOCS = os.path.join(ROOT, "docs")
 GUIDE = os.path.join(ROOT, "gui", "guide.md")
 SITE = "https://decryptu.github.io/pokeldn/"
+
+
+def document_path(file: str) -> str:
+    """The app reads Chinese document bodies while retaining the original navigation keys."""
+    if file == "guide":
+        return GUIDE
+    localized = os.path.join(DOCS, "zh-Hans", file)
+    return localized if os.path.isfile(localized) else os.path.join(DOCS, file)
+
+
+def document_text(file: str) -> tuple[str, str | None]:
+    """Read the displayed text and its original headings, which keep existing fragment links valid."""
+    path = document_path(file)
+    with open(path, encoding="utf-8") as f:
+        _, body = split_front_matter(f.read())
+    original = GUIDE if file == "guide" else os.path.join(DOCS, file)
+    reference = None
+    if path != original:
+        with open(original, encoding="utf-8") as f:
+            _, reference = split_front_matter(f.read())
+    return body, reference
 
 
 @dataclass
@@ -70,9 +93,9 @@ def index(tree: list[Page], guide_title: str) -> list[Section]:
     found = []
 
     def add(file, title):
-        with open(GUIDE if file == "guide" else os.path.join(DOCS, file), encoding="utf-8") as f:
-            _, body = split_front_matter(f.read())
-        for key, heading, source in heading_sections(body):
+        body, reference = document_text(file)
+        title = translate(title)
+        for key, heading, source in heading_sections(body, reference=reference):
             text = plain(HEADING_LINE.sub("", source, count=1) if key else source)
             if text or heading:
                 found.append(Section(file, title, plain(heading) or title, key, text))
@@ -87,6 +110,10 @@ def index(tree: list[Page], guide_title: str) -> list[Section]:
 
 
 HEADING_LINE = re.compile(r"^ {0,3}#{1,6}[^\n]*\n?")
+
+
+def searchable(query: str) -> bool:
+    return len(query.strip()) >= 2 or bool(re.search(r"[\u3400-\u9fff]", query))
 
 
 def search(sections: list[Section], query: str, limit: int = 60) -> list[Section]:
@@ -107,10 +134,11 @@ def snippet(text: str, words: list[str], width: int = 150) -> list[tuple[str, bo
     hits = [lower.find(w) for w in words if w in lower]
     start = max(0, min(hits) - width // 3) if hits else 0
     window = text[start:start + width]
+    word_boundaries = not re.search(r"[\u3400-\u9fff]", window)
     if start:
-        window = "..." + window.split(" ", 1)[-1]
+        window = "..." + (window.split(" ", 1)[-1] if word_boundaries else window)
     if start + width < len(text):
-        window = window.rsplit(" ", 1)[0] + "..."
+        window = (window.rsplit(" ", 1)[0] if word_boundaries else window) + "..."
     pattern = re.compile("|".join(re.escape(w) for w in sorted(words, key=len, reverse=True)), re.I)
     runs, cursor = [], 0
     for match in pattern.finditer(window) if words else ():
@@ -153,10 +181,8 @@ class DocsView:
 
     def show(self, file: str, update: bool = True) -> None:
         self.file = file
-        path = GUIDE if file == "guide" else os.path.join(DOCS, file)
-        with open(path, encoding="utf-8") as f:
-            _, body = split_front_matter(f.read())
-        self.markdown.set_value(body)
+        body, reference = document_text(file)
+        self.markdown.set_value(body, reference=reference)
         for root in self.tree:
             if file == root.file or any(file == c.file or any(file == g.file for g in c.children)
                                         for c in root.children):
@@ -166,7 +192,7 @@ class DocsView:
             self.control.update()
 
     def render_nav(self) -> None:
-        if len(self.query.strip()) >= 2:
+        if searchable(self.query):
             self.nav.controls = self.result_rows()
             return
         rows = [self.row(tr('docs.start_here_2adc96', 'Start here'), "guide", 0)]
@@ -175,7 +201,7 @@ class DocsView:
 
         def walk(items, depth):
             for p in items:
-                rows.append(self.row(p.title, p.file, depth, bool(p.children)))
+                rows.append(self.row(translate(p.title), p.file, depth, bool(p.children)))
                 if p.children and p.file in self.open_parents:
                     walk(p.children, depth + 1)
         walk(self.tree, 0)
@@ -218,7 +244,7 @@ class DocsView:
         self.nav.update()
 
     def _submit(self, e) -> None:
-        found = self.results() if len(self.query.strip()) >= 2 else []
+        found = self.results() if searchable(self.query) else []
         if found:
             self._open(found[0].file, found[0].anchor)
 
@@ -228,6 +254,7 @@ class DocsView:
         self.app.page.run_task(self._scroll, anchor)
 
     async def _scroll(self, anchor: str) -> None:
+        anchor = unquote(anchor)
         if not anchor:
             await self.scroll.scroll_to(offset=0)
             return

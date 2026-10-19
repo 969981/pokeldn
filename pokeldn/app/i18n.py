@@ -7,6 +7,7 @@ from pathlib import Path
 
 _strings: dict[str, str] = {}
 _selected = ""
+BUILTIN_CHINESE = "zh-Hans"
 
 
 def read_pack(meta: dict, read) -> dict[str, str]:
@@ -35,9 +36,12 @@ def read_pack(meta: dict, read) -> dict[str, str]:
 def select(plugin_id: str = "") -> None:
     """Select an enabled language plugin by id; an absent or broken pack selects English."""
     global _strings, _selected
-    from pokeldn import plugins
     _selected = plugin_id
     _strings = {}
+    if plugin_id == BUILTIN_CHINESE:
+        _strings = tomllib.loads((Path(__file__).parent / "data/strings.zh-Hans.toml").read_text(encoding="utf-8"))
+        return
+    from pokeldn import plugins
     if plugin_id:
         on = plugins.enabled()
         candidate = next((p for p in plugins.discover() if p.id == plugin_id and p.locale and not p.error
@@ -63,3 +67,7 @@ def t(key: str, default: str, **fmt) -> str:
         return value.format(**fmt)
     except (ValueError, KeyError, IndexError, AttributeError, TypeError):
         return default.format(**fmt)
+
+
+# This fork starts in Chinese; an explicit English selection still uses upstream defaults.
+select(BUILTIN_CHINESE)

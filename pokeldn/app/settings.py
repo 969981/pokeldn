@@ -7,8 +7,8 @@ from pathlib import Path
 from pokeldn.app.paths import DATA, RECEIVED
 
 PATH = DATA / "settings.json"
-LANGUAGES = (("2", "English"), ("3", "French"), ("5", "German"), ("4", "Italian"), ("7", "Spanish"),
-             ("1", "Japanese"), ("8", "Korean"))
+LANGUAGES = (("2", '英语'), ("3", '法语'), ("5", '德语'), ("4", '意大利语'), ("7", '西班牙语'),
+             ("1", '日语'), ("8", '韩语'))
 # Switch titles show the 32-bit trainer id as id % 10**6 and id // 10**6 (docs/gui.md, Your trainer).
 SWITCH_TID_LIMIT = 1_000_000
 GEN3 = ("frlg", "rse")      # games whose records keep a 16-bit TID and SID and a Gen III name
@@ -21,7 +21,7 @@ class Settings:
     radio_port: str = ""
     radio: str = ""         # external radio scheme (pokeldn.ldn.radios); empty: the board
     plugins: list = field(default_factory=list)   # plugin ids turned on
-    app_language: str = ""   # language-pack plugin id; empty selects English
+    app_language: str = "zh-Hans"   # built-in Chinese, or a plugin id; empty selects English
     baud: int = 921600
     capture: bool = True
     private_logs: bool = True   # mask names, trainer IDs, MACs and the home folder in the logs shown (redact.py)
@@ -95,6 +95,15 @@ def load() -> Settings:
     known = Settings.__dataclass_fields__
     if data.get("ot") == "PkCamp":   # the default before POKELDN
         data["ot"] = Settings.ot
+    # Before API 1.5, this fork used the translated label as the positional offer's key.
+    # Keep the saved offer when upgrading to upstream's language-independent identity.
+    tools = data.get("tool_values", {})
+    for key in ("frlg-trade-host", "frlg-trade-join"):
+        entry = tools.get(key) if isinstance(tools, dict) else None
+        values = entry.get("values") if isinstance(entry, dict) else None
+        if isinstance(values, dict) and "#用于交换的宝可梦" in values:
+            values.setdefault("#Pokemon to offer", values.pop("#用于交换的宝可梦"))
+
     from pokeldn.app import ios
     if ios.active():
         data = {k: ios.rebase(v) for k, v in data.items()}

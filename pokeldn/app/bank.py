@@ -239,10 +239,10 @@ def remove(entry_id: str, folder=None) -> None:
 
 # The offer queues
 
-def destinations(entry: Entry, trainer: dict) -> dict[str, dict]:
+def destinations(entry: Entry, trainer: dict, *, service=None) -> dict[str, dict]:
     """Each game -> {ok, reason, home_tracker}, using the same conversion rules as offer."""
     from pokeldn.pokemon import SERVICE
-    return SERVICE.destinations(entry.game, data(entry), entry.tracker, trainer)
+    return (service or SERVICE).destinations(entry.game, data(entry), entry.tracker, trainer)
 
 
 def offer(entry: Entry, game: str, trainer: dict) -> dict:

@@ -1,5 +1,9 @@
 """The GTS: banked Pokemon listed against a wanted species on public relays, other players' listings,
 and offers on them [pokeldn.app.gts, docs/online.md, The GTS]."""
+
+from gui.localization import game_terms
+from gui.localization import summary_text
+from gui.localization import SERVICE, translate
 from pokeldn.app.i18n import t as tr
 import re
 import threading
@@ -37,7 +41,7 @@ def resume(app) -> None:
 
 
 def level_of(entry: bank.Entry) -> int:
-    found = re.search(r"level (\d+)", entry.summary)
+    found = re.search(r"(?:level |等级 )(\d+)", entry.summary)
     return int(found.group(1)) if found else 0
 
 
@@ -105,7 +109,7 @@ class GtsView:
         names: dict[int, str] = {}
         for game in NAMES:
             try:
-                names.update((s["id"], s["name"]) for s in pokemon.SERVICE.species(game))
+                names.update((s["id"], s["name"]) for s in SERVICE.species(game))
             except (OSError, pokemon.BuilderError):
                 continue
 
@@ -178,7 +182,7 @@ class GtsView:
             t.pixel_icon("arrows-horizontal", size=12, color=t.FAINT),
             Sprite(self.app, listing.wants.species, size=MINI).control,
         ], spacing=4, tight=True), padding=4, border_radius=14,
-            tooltip=tr('gts.level_for_4ade2a', '{value0} level {value1} for {value2}', value0=shown.get('species'), value1=shown.get('level'), value2=listing.wants.text()),
+            tooltip=tr('gts.level_for_4ade2a', '{value0} level {value1} for {value2}', value0=shown.get('species'), value1=shown.get('level'), value2=wanted_text(listing.wants)),
             border=ft.Border.all(2, t.BLUE if active else ft.Colors.TRANSPARENT),
             on_click=lambda e, k=(listing.key, listing.d): self._select(k))
 
@@ -219,12 +223,18 @@ class GtsView:
             return
         self.detail.controls = [self._about(listing.pokemon, listing.game),
                                 t.section(tr('gts.asks_for_f07bf1', 'Asks for'), ft.Row([Sprite(self.app, listing.wants.species, size=MINI).control,
-                                                              t.text(listing.wants.text(), 13)], spacing=10)),
+                                                              t.text(wanted_text(listing.wants), 13)], spacing=10)),
                                 t.text(tr('gts.from_open_until_d81849', 'From {value0}, open until {value1}', value0=listing.trainer or tr('gts.a_trainer_bda66d', 'a trainer'), value1=_when(listing.expires)),
                                        12, t.FAINT),
                                 t.section(tr('gts.your_pokemon_that_answer_it_2c53fc', 'Your Pokemon that answer it'), self._answers(listing))]
 
     def _about(self, shown: dict, game: str) -> ft.Control:
+        terms = game_terms(game)
+        shown = dict(shown)
+        for key in ("species", "nature", "ability", "ball", "held_item"):
+            value = shown.get(key, "")
+            shown[key] = terms.get(value, translate(value))
+        shown["moves"] = [terms.get(move, translate(move)) for move in shown.get("moves", ())]
         facts = [shown.get("nature"), shown.get("ability"), shown.get("ball")]
         if shown.get("held_item"):
             facts.append(tr('gts.holding_b3a475', 'holding {value0}', value0=shown['held_item']))
@@ -234,7 +244,7 @@ class GtsView:
                 t.text(tr('gts.level_dcff87', '{value0} · level {value1}', value0=shown.get('species'), value1=shown.get('level')) + (tr('gts.shiny_3e4562', ' · shiny') if shown.get("shiny") else ""),
                        15, weight=ft.FontWeight.W_600),
                 t.text(" · ".join(str(f) for f in facts if f), 12, t.MUTED),
-                t.text(", ".join(shown.get("moves") or []), 12, t.MUTED),
+                t.text("、".join(shown.get("moves") or []), 12, t.MUTED),
                 ft.Row([game_icon(game), t.text(tr('gts.in_ot_abad3b', 'In {value0}, OT {value1}', value0=NAMES.get(game, game), value1=shown.get('ot')), 12, t.SOFT)],
                        spacing=6),
             ], spacing=4, expand=True),
@@ -245,7 +255,7 @@ class GtsView:
                 and not listing.wants.refusal(e.species_id, level_of(e))
                 and not bank.queued(self.app.settings, e.id)]
         if not held:
-            return t.text(tr('gts.your_bank_holds_no_legal_that_is_not_queued_for_a_trade_66b4ef', 'Your bank holds no legal {value0} that is not queued for a trade.', value0=listing.wants.text()),
+            return t.text(tr('gts.your_bank_holds_no_legal_that_is_not_queued_for_a_trade_66b4ef', 'Your bank holds no legal {value0} that is not queued for a trade.', value0=wanted_text(listing.wants)),
                           12, t.FAINT)
         return ft.Column([ft.Row([
             Sprite(self.app, e.species_id, e.shiny, size=MINI).control,
@@ -261,7 +271,7 @@ class GtsView:
         controls = [self._about(state["info"], state["game"]), t.badge(label, color, icon)]
         if state["role"] == "listing":
             wants = gts.Wants(**state["wants"])
-            controls.append(t.text(tr('gts.asks_for_open_until_offer_answered_7137e1', 'Asks for {value0}. Open until {value1}; {value2} offer{value3} answered.', value0=wants.text(), value1=_when(state['expires']), value2=len(state['answers']), value3='s' * (len(state['answers']) != 1)),
+            controls.append(t.text(tr('gts.asks_for_open_until_offer_answered_7137e1', 'Asks for {value0}. Open until {value1}; {value2} offer{value3} answered.', value0=wanted_text(wants), value1=_when(state['expires']), value2=len(state['answers']), value3='s' * (len(state['answers']) != 1)),
                                    12, t.MUTED))
             if state["status"] == "traded":
                 controls.append(t.text(tr('gts.traded_with_what_came_back_is_in_the_bank_d8f8bc', 'Traded with {value0}; what came back is in the bank.', value0=state['partner'] or tr('gts.a_trainer_bda66d', 'a trainer')),
@@ -373,3 +383,10 @@ class GtsView:
             self.note.update()
         except RuntimeError:
             pass
+
+
+def wanted_text(wants: gts.Wants) -> str:
+    name = translate(wants.name)
+    if (wants.min_level, wants.max_level) == (1, 100):
+        return name
+    return f"{name}，等级 {wants.min_level} 到 {wants.max_level}"

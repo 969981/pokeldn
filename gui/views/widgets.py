@@ -106,16 +106,24 @@ HEADING = re.compile(r"(?m)^ {0,3}#{1,6}[ \t]+(.+?)[ \t#]*$")
 
 
 def anchor(heading: str) -> str:
-    """The id kramdown gives a heading on the docs site: letters first, ASCII words joined by hyphens."""
+    """Keep kramdown's English IDs; localized headings without a reference also support CJK IDs."""
     text = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", heading)
+    if re.search(r"[\u3400-\u9fff]", text):
+        return re.sub(r"[^\w -]", "", text.lower()).strip().replace(" ", "-")
     text = re.sub(r"^[^a-zA-Z]+", "", text)
     return re.sub(r"[^a-z0-9 -]", "", text.lower()).replace(" ", "-")
 
 
-def heading_sections(source: str):
+def heading_sections(source: str, *, reference: str | None = None):
     """(anchor, heading, markdown) per heading, outside fenced examples, with the text before the first
-    heading under ('', ''). Repeated anchors take kramdown's -1, -2 suffixes."""
+    heading under ('', ''). Repeated anchors take kramdown's -1, -2 suffixes. A translated document
+    with the same heading structure can keep the original document's fragment IDs."""
+    reference_keys = [key for key, title, _ in heading_sections(reference) if title] if reference else []
+    count = sum(len(list(HEADING.finditer(block))) for block, code in fenced_blocks(source) if code is None)
+    if len(reference_keys) != count:
+        reference_keys = []
     seen: dict[str, int] = {}
+    number = 0
     current, heading, parts = "", "", []
     for block, code in fenced_blocks(source):
         cursor = 0
@@ -124,6 +132,9 @@ def heading_sections(source: str):
             yield current, heading, "".join(parts)
             heading, base = match[1], anchor(match[1])
             current = f"{base}-{seen[base]}" if base in seen else base
+            if reference_keys:
+                current = reference_keys[number]
+            number += 1
             seen[base] = seen.get(base, 0) + 1
             parts, cursor = [], match.start()
         parts.append(block[cursor:])
@@ -135,10 +146,10 @@ class MarkdownDocument:
         self.app, self.on_link = app, on_link
         self.control = ft.Column(spacing=14, horizontal_alignment=ft.CrossAxisAlignment.STRETCH)
 
-    def set_value(self, value: str) -> None:
+    def set_value(self, value: str, *, reference: str | None = None) -> None:
         """Each heading starts its own control keyed by its anchor, so a link or a search result scrolls to it."""
         controls = []
-        for key, _, section in heading_sections(value):
+        for key, _, section in heading_sections(value, reference=reference):
             first = True
             for source, code in fenced_blocks(section):
                 if not source.strip():

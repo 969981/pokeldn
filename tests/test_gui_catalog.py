@@ -10,6 +10,22 @@ from pokeldn.app.settings import Settings
 TOOLS = [tool for game in GAMES for tool in game.tools if not tool.unavailable]
 
 
+@pytest.mark.parametrize("game", GAMES, ids=lambda game: game.key)
+def test_online_trade_follows_local_trades_with_localized_names(game):
+    keys = [tool.key for tool in game.tools]
+    online = next(n for n, key in enumerate(keys) if key.endswith("-online"))
+    local = [n for n, key in enumerate(keys)
+             if key.endswith(("-host", "-join")) and "-raid-" not in key and "-gift-" not in key]
+    assert online == max(local) + 1
+
+
+def test_translated_interface_keeps_auto_adapter_arguments():
+    for key in ("frlg-trade-host", "frlg-trade-join"):
+        tool = next(t for t in TOOLS if t.key == key)
+        args = build(tool, {}, {}, Settings())
+        assert args[args.index("--phy") + 1] == "auto"
+
+
 def _check(tool, values):
     parser = parser_of(tool.script)
     args = build(tool, values, {}, Settings())
@@ -243,7 +259,7 @@ def test_the_other_switch_games_simulate_their_mystery_gifts_through_their_trade
     made for the receiving player as Scarlet/Violet's (docs/gift_simulated.md)."""
     tools = next(g for g in GAMES if g.key == game).tools
     gift, host = next(t for t in tools if t.key == f"{game}-gift-host"), tools[0]
-    assert host.key == f"{game}-host" and tools[-1] is gift and gift.name == "Mystery Gift - Simulated"
+    assert host.key == f"{game}-host" and tools[-1] is gift and gift.name == "神秘礼物 - 模拟"
     assert (gift.script, gift.fixed, gift.doc) == (host.script, host.fixed, "gift_simulated.md")
     field, receiver = gift.fields[:2]
     assert (field.key, field.events, field.required, field.queue) == (offer, True, True, 6)

@@ -292,4 +292,3 @@ because Z-A's layout is Scarlet's. See [Legends Z-A](za.md).
 - `POKELDN_ESP32_TRACE=FILE` records the board's serial traffic and counters; `--capture FILE` on
   every entry point writes the protocol trace as JSONL.
 - [Host implementation](frlg_host.md): component boundaries, protocol flow, timing, shutdown.
-

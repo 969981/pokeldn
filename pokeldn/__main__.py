@@ -8,6 +8,7 @@ from pokeldn.pokemon import BuilderError
 
 
 def main(argv=None):
+    runner.utf8_output()
     games = plugins.games()
     tools = {tool.key: tool for game in games for tool in game.tools}
     parser = argparse.ArgumentParser(description=__doc__)

@@ -1,3 +1,5 @@
+import subprocess
+import sys
 from dataclasses import fields
 import base64
 import os
@@ -42,8 +44,29 @@ COMPACT_WIDTH = 760
 compact = False
 
 
-def app_theme() -> ft.Theme:
+def system_font_family() -> str | None:
+    """Prefer a complete Simplified Chinese family over per-glyph system fallback."""
+    if sys.platform == "win32":
+        return "Microsoft YaHei UI"
+    if sys.platform == "darwin":
+        return "PingFang SC"
+    if sys.platform.startswith("linux"):
+        try:
+            result = subprocess.run(["fc-list", "--format=%{family}\n"], capture_output=True,
+                                    text=True, encoding="utf-8", timeout=2, check=True)
+        except (OSError, subprocess.SubprocessError, UnicodeError):
+            return None
+        installed = {family.strip() for line in result.stdout.splitlines() for family in line.split(",")}
+        for family in ("Noto Sans CJK SC", "Noto Sans SC", "Source Han Sans SC",
+                       "WenQuanYi Micro Hei", "WenQuanYi Zen Hei"):
+            if family in installed:
+                return family
+    return None
+
+
+def app_theme(*, system_fonts: bool = True) -> ft.Theme:
     return ft.Theme(
+        font_family=system_font_family() if system_fonts else None,
         text_theme=ft.TextTheme(**{f.name: ft.TextStyle(font_family_fallback=[CJK_FONT])
                                    for f in fields(ft.TextTheme)}),
         color_scheme_seed=BLUE,

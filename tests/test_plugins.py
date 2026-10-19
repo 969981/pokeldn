@@ -89,9 +89,9 @@ def test_a_folder_plugin_tool_runs_through_the_cli_child_path(tmp_path):
     (tmp_path / "data").mkdir()
     (tmp_path / "data" / "settings.json").write_text(json.dumps({"keys": "~/Switch keys/prod.keys"}))
     run = lambda *a: subprocess.run([sys.executable, "-m", "pokeldn", *a], cwd=tmp_path, env=env,  # noqa: E731
-                                    capture_output=True, text=True, timeout=60)
+                                    capture_output=True, text=True, encoding="utf-8", timeout=60)
     listed = run("--list")
-    assert "example-echo" in listed.stdout and "FireRed & LeafGreen: Echo" in listed.stdout
+    assert "example-echo" in listed.stdout and "火红／叶绿: Echo" in listed.stdout
     assert "echo                 Echo, API 1.0: loaded" in run("--plugins").stdout
     done = run("example-echo", "--", "--extra", "1")
     assert done.returncode == 0, done.stderr
@@ -216,7 +216,7 @@ def test_every_example_packs_into_an_installable_package(tmp_path, example):
 def test_the_hello_example_greets_through_the_cli(tmp_path):
     env = dict(os.environ, POKELDN_PLUGINS=str(HELLO), POKELDN_DATA=str(tmp_path / "data"), PYTHONPATH=str(ROOT))
     run = subprocess.run([sys.executable, "-m", "pokeldn", "hello-greet", "--", "--greeting", "Bonjour"],
-                         cwd=tmp_path, env=env, capture_output=True, text=True, timeout=60)
+                         cwd=tmp_path, env=env, capture_output=True, text=True, encoding="utf-8", timeout=60)
     assert "Bonjour, POKELDN! This line comes from a plugin." in run.stdout, run.stdout + run.stderr
 
 
@@ -326,10 +326,10 @@ def test_the_install_screen_installs_nothing_until_the_risks_are_accepted(isolat
             for c in (child if isinstance(child, list) else [child] if child is not None else []):
                 yield from walk(c)
     controls = list(walk(shown[0]))
-    action = "Reinstall" if before else "Install"
+    action = "重新安装" if before else "安装"
     install = next(c for c in controls if isinstance(c, ft.Button) and c.content == action)
     ticks = [c for c in controls if isinstance(c, ft.Container) and c.on_click and any(
-        isinstance(x, ft.Text) and x.value.startswith(("I understand", "I know this file")) for x in walk(c))]
+        isinstance(x, ft.Text) and x.value.startswith(("我理解", "我知道")) for x in walk(c))]
     assert len(ticks) == (2 if before else 1)
     for tick in ticks:
         assert install.disabled
@@ -434,7 +434,7 @@ def test_the_guardrails_stop_a_plugin_deleting_or_overwriting_the_players_files(
     env = dict(os.environ, POKELDN_PLUGINS=str(folder), POKELDN_DATA=str(tmp_path / "data"), PYTHONPATH=str(ROOT),
                VICTIM=str(victim), TMPDIR=str(tmp_path / "tmp"), TEMP=str(tmp_path / "tmp"), TMP=str(tmp_path / "tmp"))
     loaded = subprocess.run([sys.executable, "-m", "pokeldn", "--plugins"], cwd=tmp_path, env=env,
-                            capture_output=True, text=True, timeout=60)
+                            capture_output=True, text=True, encoding="utf-8", timeout=60)
     verdicts = dict(line.split() for line in loaded.stdout.splitlines() if line.endswith(("ALLOWED", "STOPPED")))
     stopped = ("rmtree", "remove", "unlink", "overwrite", "append", "move-away", "move-over", "rm", "shell",
                "system", "sudo")
@@ -442,7 +442,7 @@ def test_the_guardrails_stop_a_plugin_deleting_or_overwriting_the_players_files(
                         **dict.fromkeys(("new-file", "own-data", "own-folder", "python"), "ALLOWED")}, loaded.stdout
     assert "vandal               Vandal, API 1.0: loaded" in loaded.stdout
     script = subprocess.run([sys.executable, "-m", "pokeldn", "vandal-wipe"], cwd=tmp_path, env=env,
-                            capture_output=True, text=True, timeout=60)
+                            capture_output=True, text=True, encoding="utf-8", timeout=60)
     assert "script STOPPED pokeldn's plugin guardrails stopped the deletion of" in script.stdout, script.stdout + script.stderr
     assert (victim / "a.txt").read_text() == "precious"
 
@@ -720,7 +720,7 @@ def test_the_browse_tab_installs_a_listed_plugin_through_the_risk_screen(isolate
             child = getattr(control, name, None)
             for c in (child if isinstance(child, list) else [child] if child is not None else []):
                 yield from walk(c)
-    install = next(c for c in walk(page.column) if isinstance(c, ft.Button) and c.content == "Install")
+    install = next(c for c in walk(page.column) if isinstance(c, ft.Button) and c.content == "安装")
     install.on_click(None)
     for _ in range(100):
         if shown:
@@ -729,12 +729,12 @@ def test_the_browse_tab_installs_a_listed_plugin_through_the_risk_screen(isolate
     assert asked[0].sha256 == digest and asked[0].source == listed.url
     controls = list(walk(shown[0]))
     tick = next(c for c in controls if isinstance(c, ft.Container) and c.on_click and any(
-        isinstance(x, ft.Text) and x.value.startswith("I understand") for x in walk(c)))
+        isinstance(x, ft.Text) and x.value.startswith("我理解") for x in walk(c)))
     tick.on_click(None)
-    next(c for c in controls if isinstance(c, ft.Button) and c.content == "Install").on_click(None)
+    next(c for c in controls if isinstance(c, ft.Button) and c.content == "安装").on_click(None)
     assert plugin_store.origin(plugin_store.installed("test-kit")) == listed.url
     page.render()
-    assert not any(isinstance(c, ft.Button) and c.content == "Install" for c in walk(page.column))
+    assert not any(isinstance(c, ft.Button) and c.content == "安装" for c in walk(page.column))
 
 
 SAVER = '''

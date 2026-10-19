@@ -11,9 +11,9 @@ from pokeldn.app.paths import SESSION
 GAMES = {"frlg-gift": "frlg", "rse-gift": "rse", "swsh-gift": "swsh"}
 MODULES = {"frlg": "pokeldn.frlg.gift.builder", "rse": "pokeldn.rse.gift_builder",
            "swsh": "pokeldn.swsh.gift_builder"}
-MODES = (("preset", "Use a preset", "gift"), ("event", "Official events", "book-open"),
-         ("build", "Build your own", "sliders-horizontal"), ("file", "Open a file", "folder"),
-         ("save", "Your save", "save"))
+MODES = (("preset", '使用预设', "gift"), ("event", '官方活动', "book-open"),
+         ("build", '自行制作', "sliders-horizontal"), ("file", '打开文件', "folder"),
+         ("save", "我的存档", "save"))
 # The save mode backs the console's save up into the library or restores one from it [docs/frlg_gift.md].
 SAVE_GAMES = ("frlg",)
 SAVE_ACTIONS = ("backup", "restore")
