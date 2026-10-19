@@ -204,6 +204,8 @@ GameEventBattleResult → RequestAutoSave(0)
 ```
 
 
+> **2026-10-19 P0 补充**：已进一步定位 `StartSaveProcess` → `SaveProcess.mainCoroutineFunc` → `c639BAEBC.fAA5A90DA(mode)` → `c639BAEBC.f6F7C8191()` 退出轮询，以及 SaveLoadManager 初始化阶段的回调。另已核对截图道具的真实 ID、PKHeX 999 口袋上限，准备了从 `world/data/item/itemdata/itemdata_array.bin` 读取原始 `SlotMaxNum` 的只读脚本。**没有原始 itemdata_array.bin 时不能把 PKHeX 999 标成原始游戏表的实测值**。详见 [P0 新文档](sv400-autosave-and-item-slotmax.md)。
+
 ## 4. 与 PokéLDN 的对照、研究结论
 
 | 环节 | 已有静态证据 | 当前结论 |
