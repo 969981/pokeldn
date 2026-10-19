@@ -275,3 +275,25 @@ def test_the_other_switch_games_simulate_their_mystery_gifts_through_their_trade
     assert "--for-receiver" not in off
     assert "--gift-event" not in build(host, {offer: {"file": "/tmp/mon.bin"}}, {}, Settings(), stamp="fixed")
     assert missing_offer(gift, {}) == "Choose the Mystery Gift Pokemon first."
+
+
+def test_reward_subject_defaults_and_opt_in_flow_through_cli():
+    """Older saved rows keep two fields; a Charm-gated row explicitly gets :5."""
+    from pokeldn.app.command import code_error
+    tool = next(t for game in GAMES for t in game.tools if t.key == "sv-raid-host")
+    field = next(f for f in tool.fields if f.kind == "rewards")
+    rows = [{"item_id": "15", "quantity": "2"},
+            {"item_id": "50", "quantity": "10", "subject": "5"},
+            {"item_id": "15", "quantity": "1", "subject": "0"}]
+    assert code_error(field, rows) == ""
+    args = build(tool, {"--raid-pokemon": {"file": "/tmp/host.pk9"},
+                        "--raid-seed": "000F34C3", "--raid-reward": rows}, {}, Settings())
+    assert [args[i + 1] for i, part in enumerate(args[:-1]) if part == "--raid-reward"] == [
+        "15:2", "50:10:5", "15:1",
+    ]
+    assert parser_of(tool.script).parse_args(args).raid_reward == [
+        (15, 2), (50, 10, 5), (15, 1),
+    ]
+    for bad in ("4", "6", "", "-1", "charm"):
+        wrong = [{**rows[0], "subject": bad}]
+        assert "subject must be 0" in code_error(field, wrong)
