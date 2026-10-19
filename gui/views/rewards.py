@@ -22,7 +22,8 @@ def quantity_error(value: str) -> str | None:
 
 class RewardPicker:
     """A raid's reward rows in order, each an item from the game's bag list and a quantity. The value
-    is [{"item_id", "quantity"}]; an empty list keeps the raid's own rewards."""
+    is [{"item_id", "quantity", optional "subject"}]; 0 (or missing) is everyone,
+    5 requires the receiving player's Glimmering Charm. Empty keeps the raid's own rewards."""
 
     def __init__(self, app, game: str, value, on_change):
         self.app, self.game, self.on_change = app, game, on_change
@@ -53,6 +54,8 @@ class RewardPicker:
         if not items:
             return "seed"
         quantities = {str(row.get("quantity", "")) for row in self.value}
+        if any(str(row.get("subject", "0")) != "0" for row in self.value):
+            return "custom"
         if len(quantities) != 1 or quantity_error(next(iter(quantities))):
             return "custom"
         return next((key for key, expected in TEMPLATE_ITEMS.items()
@@ -120,6 +123,7 @@ class RewardPicker:
     def _render(self, update: bool = True) -> None:
         rows = []
         self.quantities = []
+        self.subjects = []
         for index, row in enumerate(self.value):
             item = NamePicker(self.app, self.game, "bag", str(row.get("item_id", "")),
                               lambda value, n=index: self._set(n, "item_id", value),
@@ -130,12 +134,19 @@ class RewardPicker:
                                on_change=lambda event, n=index: self._quantity(event, n))
             t.mark_invalid(quantity, bool(quantity_error(quantity.value)))
             self.quantities.append(quantity)
+            subject = t.dropdown([
+                ("0", tr('rewards.subject_all_players_9c47d2', 'All players')),
+                ("5", tr('rewards.subject_glimmering_charm_9c47d3', 'Glimmering Charm only')),
+            ], str(row.get("subject", "0")),
+                on_select=lambda event, n=index: self._set(n, "subject", event.control.value))
+            self.subjects.append(subject)
             rows.append(ft.Row([
                 ft.Container(t.text(str(index + 1), 11, t.BLUE, weight=ft.FontWeight.W_700), width=24, height=24,
                              margin=ft.Margin(0, 25, 0, 0), alignment=ft.Alignment.CENTER, border_radius=12,
                              bgcolor=ft.Colors.with_opacity(0.12, t.BLUE)),
                 t.labeled_control(tr('rewards.item_652bcc', 'Item'), item, expand=True),
                 t.labeled_control(tr('rewards.quantity_822bab', 'Quantity'), quantity),
+                t.labeled_control(tr('rewards.subject_eligibility_9c47d4', 'Eligibility'), subject),
                 ft.Container(t.icon_button("close", lambda _e, n=index: self._remove(n), tr('rewards.remove_reward_242188', 'Remove reward')),
                              margin=ft.Margin(0, 20, 0, 0)),
             ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.START))
