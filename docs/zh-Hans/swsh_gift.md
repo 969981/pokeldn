@@ -147,8 +147,7 @@ nav_order: 4
 `+0x60`，常量 id `+0x68`，变量 id `+0x70`，服务变量 id `+0x74` 和 natquad
 `+0x78`..`+0x7b`，在复制的窗口之外。常量id `0x1249a221d8580000` 在礼物场景中被拒绝，在交换场景中被接受。
 
-最大`session+0x1F0`仅由`0x006b9900`（`str w1, [x0, #0x1f0]`）写入，通过未调用的thunk `0x006b5c00`和包装器`0x0110e5e0`达到，其两个调用者`0x00bd9b30`和
-`0x01031c74`（`SetMax(GetCount())`）是raid-den和rental-multi匹配路径。在一场正在运行的游戏中实时阅读，礼物屏幕上的 0 为 0，2 为链接交换，4 为 Max Raid，这三个游戏中都配备了相同的过滤器。 raid 主机通告 `NodeCountMax` 4；礼品屏幕上广告的 Pia 最大值为 2，而最大值为 0。
+最大`session+0x1F0`仅由`0x006b9900`（`str w1, [x0, #0x1f0]`）写入，通过未调用的 thunk `0x006b5c00` 和包装器 `0x0110e5e0` 达到。它们的调用者（`SetMax(GetCount())`）分别是极巨大冒险匹配逻辑（`0x00bd9b30`，属于 `ChikaMatchingState*` 状态机的 `0x00bd1978..0x00bda158` 范围），以及极巨团体战巢穴大厅逻辑（`0x01031c74`，位于 `View_NestHole`、`StateGuestReady`、`StateHostReady` 对应的 `0x0102aba4..0x010370cc` 范围）。在一场正在运行的游戏中实时阅读，礼物屏幕上的 0 为 0，2 为链接交换，4 为 Max Raid，这三个游戏中都配备了相同的过滤器。 raid 主机通告 `NodeCountMax` 4；礼品屏幕上广告的 Pia 最大值为 2，而最大值为 0。
 
 `game_session+0x3F8` 在礼物屏幕上为 1，在接受会话上为 0。 `+0x365`、`+0x33D` 和广告 `+0xF9` 在突袭后保留其突袭值，因此它们是模式残留。 `manager` 礼品屏幕和交换主机之间的字节相同。
 ### 运输检查

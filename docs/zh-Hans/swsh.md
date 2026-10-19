@@ -18,6 +18,7 @@ has_children: true
 | [同步框架](swsh_protocol.md) |消息 ID、内容、持有者、路由、队列 |
 | [交易](swsh_trade.md) |交换屏幕、盒子状态机、确认梯 |
 | [神秘礼物](swsh_gift.md) |神秘礼物菜单的本地无线分支|
+| [极巨团体战](swsh_raid.md) |巢穴大厅、广告数据、主持团体战、加入方对战和离开会话 |
 
 ## 来源
 

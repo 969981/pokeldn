@@ -2150,3 +2150,6 @@ LABELS.update({'First Challenge Pichu': '首次挑战奖励：皮丘', 'First GT
 
 # Unreleased third-generation titles keep their protocol and file identifiers.
 LABELS.update({'Ruby, Sapphire and Emerald': '红宝石、蓝宝石与绿宝石', 'Ruby, Sapphire & Emerald': '红宝石／蓝宝石／绿宝石', 'Ruby': '红宝石', 'Sapphire': '蓝宝石', 'Emerald': '绿宝石', 'Official Emerald gifts': '绿宝石官方礼物', 'More gifts': '更多礼物', 'After the card is saved, talk to the delivery man on 2F of any Pokemon Center.': '卡片保存后，与任意宝可梦中心二楼的配送员对话。', 'Aurora Ticket': '极光船票', 'Mystic Ticket': '神秘船票', 'Old Sea Map': '古航海图', 'Eon Ticket': '无限船票', 'Altering Cave rumor': '变化洞窟传闻', 'The ferry to Birth Island, where Deoxys waits.': '可搭乘渡轮前往诞生之岛，代欧奇希斯在那里等待。', 'The ferry to Navel Rock, where Lugia and Ho-Oh wait.': '可搭乘渡轮前往肚脐岩，洛奇亚与凤王在那里等待。', 'The ferry to Faraway Island, where Mew waits.': '可搭乘渡轮前往遥远的小岛，梦幻在那里等待。', 'Rare Pokemon appear in the Altering Cave on Route 103.': '103 号道路的变化洞窟会出现稀有宝可梦。', 'The ferry to Southern Island, where Latias or Latios waits.': '可搭乘渡轮前往南方孤岛，拉帝亚斯或拉帝欧斯在那里等待。', 'One Master Ball.': '赠送 1 个大师球。', 'Five Rare Candies.': '赠送 5 个神奇糖果。', 'Rare Candy x5': '神奇糖果 ×5', 'Surfing Pichu egg': '会冲浪的皮丘的蛋', 'A Pichu egg that hatches knowing Surf.': '赠送一枚皮丘的蛋，孵化后会使用冲浪。'})
+
+# Research integration: new Sword/Shield Max Raid GUI navigation from upstream.
+LABELS.update({'Max Raid Battles': '极巨团体战'})

@@ -2210,3 +2210,12 @@ OPTION_HELP.update({'--gift-event': '每次提供的宝可梦所对应的神秘�
 HELP.update({'0 male, 1 female: the gender in that record, whose look follows it': '0 为男，1 为女：记录中的性别，角色外观随之调整。'})
 
 HELP.update({'0 male, 1 female: the gender in our data exchange record; its look follows': '0 为男，1 为女：数据交换记录中的性别，角色外观随之调整。'})
+
+# Research integration: upstream Sword/Shield Max Raid command options.
+HELP.update({
+    'host a Max Raid den lobby with this boss instead of a Link Trade (docs/swsh_raid.md)': '使用指定首领 PK8 主持极巨团体战巢穴大厅，而不是连接交换，详见 docs/swsh_raid.md。',
+    'a reward row, item id and count; up to 15': '团体战奖励条目，格式为道具 ID 和数量，最多 15 项。',
+    'the BattleSeed value; random by default': '团体战 BattleSeed 数值，默认随机生成。',
+    "our player readies this long after the guest's lobby opens": '加入方进入大厅后，主持方等待指定秒数再准备。',
+    'put the console first in BattleStart and framework object 0, so it serves the battle and the board answers as a client (docs/swsh_raid.md)': '将实机放在 BattleStart 第一位和 framework object 0，使实机作为对战服务器，开发板作为客户端应答，详见 docs/swsh_raid.md。',
+})
