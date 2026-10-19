@@ -41,4 +41,4 @@ nav_exclude: true
 
 ## 参考资料
 
-关联 [原版文档](../../architecture.md)、[中文文档](../../zh-Hans/architecture.md) 及相关源码。
+关联 [原版文档](../architecture.md)、[中文文档](../zh-Hans/architecture.md) 及相关源码。
