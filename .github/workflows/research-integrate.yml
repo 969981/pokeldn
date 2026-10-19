@@ -120,6 +120,25 @@ jobs:
             echo "status=conflict" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+
+          # A changed mirror commit SHA is not proof of changed product code.
+          # Our own main-branch CI management commits frequently update only
+          # .github/workflows/, which must NOT create a new research release.
+          # The next genuine source change will carry pending workflow updates.
+          if git diff --quiet "$original_base" HEAD -- . ':(exclude).github/workflows/**'; then
+            echo "status=nochange" >> "$GITHUB_OUTPUT"
+            {
+              echo "### Research integration skipped — no product content changed"
+              echo "- research base: $original_base"
+              echo "- original mirror: $main_sha"
+              echo "- Chinese mirror: $ew_sha"
+              echo "- Only CI workflow metadata changed, or the merged content tree is otherwise equivalent."
+              echo "- No candidate push, tests, build, research promotion or Release."
+              echo "- Compare: git diff --name-status $original_base HEAD -- .github/workflows/"
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
           candidate_sha="$(git rev-parse HEAD)"
           # Pushing an automation-scoped candidate does not alter research.
           git push origin "HEAD:refs/heads/$candidate"
