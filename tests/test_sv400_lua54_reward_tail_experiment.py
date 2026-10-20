@@ -8,6 +8,7 @@ import ctypes.util
 import importlib.util
 from pathlib import Path
 import sys
+import struct
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -147,7 +148,7 @@ def test_compiled_chunk_repacked_and_executes_added_reward():
 
 def test_nonreturn_pc_rejected():
     chunk = compile_lua(SYNTHETIC)
-    with pytest.raises(ValueError, match="expected RETURN1"):
+    with pytest.raises(ValueError, match="expected single-result RETURN"):
         mod.graft_tail(chunk, "root/0", 0, helper())
 
 
@@ -202,3 +203,25 @@ def test_full_45_slots_stays_unchanged():
     amended, _ = mod.graft_tail(chunk, "root/0", pc, helper())
     assert execute_lua(chunk)[0] == 45
     assert execute_lua(amended)[0] == 45
+
+def test_generic_return_b2_with_close_flag_still_runs_single_append():
+    original = bytearray(compile_lua(SYNTHETIC))
+    proto, pc = last_return(original)
+    old = mod.word(original, proto, pc)
+    replacement = mod.code_abc(mod.OP_RETURN, (old >> 7) & 255, 2, 0, 1)
+    struct.pack_into("<I", original, proto.code_start + pc * 4, replacement)
+    assert execute_lua(bytes(original)) == (0, None)
+    patched, report = mod.graft_tail(bytes(original), "root/0", pc, helper())
+    assert report["original_return_opcode"] == 70
+    assert report["original_instructions_other_than_redirect_identical"]
+    assert execute_lua(patched) == (1, 492)
+
+
+def test_generic_return_without_single_result_is_refused():
+    original = bytearray(compile_lua(SYNTHETIC))
+    proto, pc = last_return(original)
+    old = mod.word(original, proto, pc)
+    replacement = mod.code_abc(mod.OP_RETURN, (old >> 7) & 255, 1, 0, 1)
+    struct.pack_into("<I", original, proto.code_start + pc * 4, replacement)
+    with pytest.raises(ValueError, match="expected single-result RETURN"):
+        mod.graft_tail(bytes(original), "root/0", pc, helper())
