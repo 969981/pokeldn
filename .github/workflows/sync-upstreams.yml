@@ -113,7 +113,10 @@ jobs:
             fi
 
             source_sha="$(git rev-parse "$source_ref")"
-            git restore --source="$source_ref" --staged --worktree -- :/
+            # Keep all existing workflow files: the Actions GITHUB_TOKEN has
+            # contents:write but cannot change workflows without workflows permission.
+            # Excluding them also keeps project-specific CI definitions stable.
+            git restore --source="$source_ref" --staged --worktree -- :/ ':(exclude).github/workflows/**'
             if [[ "$target" == 'main' ]]; then
               mkdir -p .github/workflows
               for file in sync-upstreams.yml auto-build.yml auto-release.yml research-integrate.yml research-build.yml; do
