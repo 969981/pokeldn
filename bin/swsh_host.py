@@ -25,9 +25,9 @@ from pokeldn import pokemon as pokemon_service
 from pokeldn.host_support import write_file
 from pokeldn import config, gen8
 from pokeldn.host_support import resolve_keys, needs_root
-from pokeldn.ldn import host4, left_after_trade, mesh_protocol as mesh, reliable4
+from pokeldn.ldn import host4, left_after_trade, mesh_protocol as mesh
 from pokeldn.ldn.ldn_mitm_host import IpHostTransport
-from pokeldn.ldn.transport import HostTransport, board_radio, find_ap_phy
+from pokeldn.ldn.transport import HostTransport, find_ap_phy
 from pokeldn.swsh import beacon, host_trade, lair, lair_host, league_card, pokemon as swsh_pokemon, raid, raid_event, raid_host, trade_payload
 from pokeldn.ldn.pia5 import password_crc
 from pokeldn.swsh.session import COMM_ID, PASSPHRASE, session_keys
@@ -336,6 +336,19 @@ def raid_rewards(args, app_data, event_rewards):
     return rewards
 
 
+def show_lobby(app_data, boss_pk8, legendary, code):
+    """A hosted Max Raid's boss or a Dynamax Adventure's legendary on the board's screen."""
+    names = raid_event.tables()["species_names"]
+    if boss_pk8 is not None:
+        plain = gen8.decrypt(bytes(boss_pk8))
+        boss = gen8.read(plain)
+        screen.lobby("Max Raid", boss["species"], names.get(str(boss["species"]), ""), RAID_PARTICIPANTS - 1,
+                     stars=(app_data[raid.ADVERT_RANK] >> 4) + 1, code=code, form=boss["form"],
+                     gigantamax=bool(plain[raid.PK8_GIGANTAMAX] & 0x10))
+    elif legendary is not None:
+        screen.lobby("Adventure", legendary, names.get(str(legendary), ""), RAID_PARTICIPANTS - 1, code=code)
+
+
 def main(argv=None):
     args = build_parser().parse_args(argv)
     if args.online and args.offer_file:
@@ -573,6 +586,7 @@ def main(argv=None):
                           max_stations=RAID_PARTICIPANTS if boss_pk8 or lairing else 2)
     if boss_pk8 is not None:
         party[0] = raid_host.RaidParty(host.constant, args.raid_console_serves)
+    show_lobby(app_data, boss_pk8, args.lair_legendary, args.code)
     print(f"[sw] up at {transport.our_ip}; waiting for a console")
     deadline = time.time() + args.seconds
     try:
@@ -589,6 +603,8 @@ def main(argv=None):
                     gone = trades.pop(ip, None)
                     if party[0] is not None:
                         party[0].remove(gone)
+            if boss_pk8 is not None or lairing:
+                screen.joined(min(len(present), RAID_PARTICIPANTS - 1))
             if left_after_trade(present):
                 print("[sw] the console left after the trade; closing")
                 break
@@ -618,6 +634,7 @@ def main(argv=None):
     except KeyboardInterrupt:
         print("\n[sw] stopping")
     finally:
+        screen.drain()
         transport.stop()
         if partner:
             partner.close()
