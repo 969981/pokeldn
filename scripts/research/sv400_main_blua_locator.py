@@ -23,6 +23,8 @@ from typing import Iterable
 EXPECTED_VIOLET_400_SHA256 = (
     "c1a4f4e2625912cf0b739a642a79ba3357df0557a544b92da22a6cb139de2815"
 )
+EXPECTED_VIOLET_400_ROOT_CHILD_COUNT = 30_829
+EXPECTED_VIOLET_400_ROOT_CODE_COUNT = 429_034
 MAX_INPUT = 64 * 1024 * 1024
 MAX_DEPTH = 512
 MAX_PROTOTYPES = 1_000_000
@@ -317,6 +319,16 @@ def analyze_bytes(
         )
 
     root = parse_chunk(data)
+    is_verified_build = sha == EXPECTED_VIOLET_400_SHA256
+    if is_verified_build and (
+        len(root.children) != EXPECTED_VIOLET_400_ROOT_CHILD_COUNT
+        or len(root.code) != EXPECTED_VIOLET_400_ROOT_CODE_COUNT
+    ):
+        raise ValueError(
+            "verified-hash chunk has unexpected 4.0.0 root shape: "
+            f"code={len(root.code)} children={len(root.children)}"
+        )
+
     protos = list(walk(root))
     include_instructions_for = include_instructions_for or set()
     candidate_groups = {}
@@ -368,12 +380,16 @@ def analyze_bytes(
     return {
         "status": (
             "VERIFIED_VIOLET_400"
-            if sha == EXPECTED_VIOLET_400_SHA256
+            if is_verified_build
             else "STRUCTURAL_ONLY_UNVERIFIED_BUILD"
         ),
         "sha256": sha,
         "expected_violet_400_sha256": EXPECTED_VIOLET_400_SHA256,
         "bytes": len(data),
+        "root_code_count": len(root.code),
+        "root_child_count": len(root.children),
+        "expected_violet_400_root_code_count": EXPECTED_VIOLET_400_ROOT_CODE_COUNT,
+        "expected_violet_400_root_child_count": EXPECTED_VIOLET_400_ROOT_CHILD_COUNT,
         "prototype_count": len(protos),
         "candidates": candidate_groups,
     }
