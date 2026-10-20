@@ -106,7 +106,7 @@ struct RaidBootstrapRaw {
 
 ## 5. 重要勘误：上游 donor 文档的奖励行整体向前错 4 字节
 
-旧 [SV_RAID_BOOTSTRAP_ENCODER.md](references/SV_RAID_BOOTSTRAP_ENCODER.md) 把首条奖励设在**明文 0x798**，并解释为 marker/item/quantity/reserved；但研究分支当前 [pokeldn/sv/raid.py](../../../../pokeldn/sv/raid.py) 定义：**POINT_REWARDS=0xE4，行格式为 little-endian 4×u32，即 item、quantity、rare、subject**。
+旧 [SV_RAID_BOOTSTRAP_ENCODER.md](references/SV_RAID_BOOTSTRAP_ENCODER.md) 把首条奖励设在**明文 0x798**，并解释为 marker/item/quantity/reserved；但研究分支当前 [pokeldn/sv/raid.py](../../../pokeldn/sv/raid.py) 定义：**POINT_REWARDS=0xE4，行格式为 little-endian 4×u32，即 item、quantity、rare、subject**。
 
 正确布局：
 
