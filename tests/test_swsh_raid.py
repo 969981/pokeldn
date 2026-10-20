@@ -84,10 +84,11 @@ def test_lobby_host_follows_the_emulated_hosts_order():
 
 def test_master_steps_the_barrier_once_the_console_mirrors_it():
     console, ours = 0x7F00030000020000, 0x7F00020000020000
-    m = raid_battle.Master(ours, console, log=lambda *a: None)
-    m.receive(0, raid_battle.sync(raid_battle.PING_REPLY))
-    out = m.receive(1, raid_battle.framework(raid_battle.BATTLE, console, 909, bytes.fromhex("00000100")))
-    bodies = [raid_battle.parse_framework(p)["body"].hex() for _, p in out]
+    m = raid_battle.Master(ours, [console], log=lambda *a: None)
+    m.receive(0, raid_battle.sync(raid_battle.PING_REPLY), console)
+    out = m.receive(1, raid_battle.framework(raid_battle.BATTLE, console, 909, bytes.fromhex("00000100")),
+                    console)
+    bodies = [raid_battle.parse_framework(p)["body"].hex() for _, p, _ in out]
     assert bodies == ["0100", "01000100"]
 
 
@@ -127,3 +128,66 @@ def test_boss_record_keeps_the_den_bosss_dynamax_type():
     built = gen8.decrypt(raid.boss_record(pokemon.encrypt(bytes(traded))))
     assert built[gen8.OFF_DYNAMAX_TYPE:] == den_boss[gen8.OFF_DYNAMAX_TYPE:] == b"\x01\x00"
     assert gen8.read(built)["species"] == 831
+
+
+def test_an_emulated_den_hosts_rewards_fit_its_den_slot():
+    """The Rewards an emulated Shield den host sent all pass the guest's check against the den slot
+    and rank its advertisement names (0x01032570), and a pair from outside the tables does not."""
+    import struct
+    ads = json.loads((Path(__file__).parent / "data" / "swsh_raid_adverts.json").read_text())
+    row, rank = raid.den_of(bytes.fromhex(ads["advert_pidove"]))
+    assert row[:4] == [38, 2, 519, 0] and rank == 0
+    sent = raid.parse(bytes.fromhex(DATA["host_start"][2]))[1]
+    pairs = [p for p in struct.iter_unpack("<II", sent) if p[0]]
+    kept, refused = raid.fitting_rewards(row, rank, pairs + [(1, 1)])
+    assert kept == pairs and refused == [(1, 1)]
+
+
+def test_two_consoles_start_together_and_both_must_mirror_the_barrier():
+    """Two emulated Shields in one hosted lobby: the start waits for both, BattleStart lists both
+    consoles then us, object k is console k's record and ours is last, and the framework barrier
+    steps only once both consoles mirror it. Each failure was a stall or a split battle."""
+    from pokeldn.swsh import raid_host
+    ours, a, b = 0x7F00020000020000, 0x7F00030000020000, 0x7F00040000020000
+    lobby = [bytes.fromhex(h) for h in DATA["lobby"]]
+    pk8 = raid.parse(lobby[2])[1][8:]
+    boss = raid.parse(bytes.fromhex(DATA["host_start"][1]))[1][len(raid.BOSS_HEAD):]
+    party = raid_host.RaidParty(ours, console_serves=True, log=lambda *x: None)
+    sent = {a: [], b: []}
+    hosts = {}
+    for console in (a, b):
+        hosts[console] = raid_host.RaidHost(
+            ours, console, None, pk8, boss,
+            lambda pr, port, p, z, c=console: sent[c].append((pr, port, p)), None, None,
+            ready_after=0.0, log=lambda *x: None, console_serves=True, party=party)
+        hosts[console].stage = "lobby"
+    hosts[a].on_data(0x80, 0, raid.battle_ready(True))
+    for h in hosts.values():
+        h.tick(100.0)
+    assert all(h.stage == "lobby" for h in hosts.values())
+    hosts[b].on_data(0x80, 0, raid.battle_ready(True))
+    for t in (101.0, 101.1):
+        for h in hosts.values():
+            h.tick(t)
+    for console in (a, b):
+        start = [raid.parse(p)[1] for pr, _, p in sent[console]
+                 if pr == 0x80 and raid.parse(p) and raid.parse(p)[0] == raid.BATTLE_START]
+        assert start == [raid.parse(raid.battle_start([a, b, ours]))[1]]
+    for console in (a, b):
+        hosts[console].on_data(0x80, 0, raid.battle_ready(True, started=True))
+        hosts[console].tick(102.0)
+    m = party.battle
+    assert m is not None and m.consoles == [a, b] and m.slot == 2
+    out = []
+    for console in (a, b):
+        out += m.receive(0, raid_battle.sync(raid_battle.PING_REPLY), console)
+    records = {raid_battle.parse_framework(p)["base"]: raid_battle.parse_framework(p)["body"]
+               for _, p, _ in out if raid_battle.parse_framework(p)
+               and raid_battle.parse_framework(p)["station"] is None}
+    assert records[0] == raid_battle.server_record(a, 0)
+    assert records[1] == raid_battle.server_record(b, 1)
+    assert records[2] == raid_battle.server_record(ours, 2)
+    step = raid_battle.framework(raid_battle.BATTLE, a, 909, bytes.fromhex("00000100"))
+    assert m.receive(1, step, a) == []
+    out = m.receive(1, raid_battle.framework(raid_battle.BATTLE, b, 909, bytes.fromhex("00000100")), b)
+    assert [raid_battle.parse_framework(p)["body"].hex() for _, p, _ in out] == ["0100", "01000100"]

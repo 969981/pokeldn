@@ -258,13 +258,17 @@ helper request, and a run inherits it as `POKELDN_HOME_TRACKER`.
 
 | setting | bank move, import, and the builder's gift repair | legality | warning shown |
 |---|---|---|---|
-| `empty` (default) | the tracker stays unset | the missing tracker is accepted when it is PKHeX's only problem; every other problem is refused | PKHeX flags the missing HOME tracker |
+| `empty` (default) | the tracker stays unset | accepted when PKHeX finds the record legal with a tracker; any other problem is refused | PKHeX flags the missing HOME tracker |
 | `made` | a random 63-bit tracker, the bank's for a banked Pokemon | unchanged | Can't be deposited in HOME |
 
 Every helper reply carries `home_tracker` (`empty`, `made` or empty), and `destinations` gives it per
 game. The warning shows on a built or loaded offer, a bank entry, a bank destination and an import line.
-An unset tracker can change other verdicts: PKHeX 26.8.26 refuses the Hidden Ability of the Black 2 Patrat
-in `tests/data/bank_import.json` moved into Legends Z-A without a tracker, and accepts it with one.
+PKHeX 26.8.26 conditions other checks on a tracker being present: without one it lets no evolution happen
+in another HOME game (`EvolutionGroupHOME.CheckAllAdjacent`), so a Pikachu hatched as a Pichu in Scarlet
+reads as an impossible evolution in Sword/Shield, and Legends Z-A keeps the ability HOME realigned only on a
+tracked record (`AbilityVerifier.VerifyBirthAbility`, the Black 2 Patrat's Hidden Ability in
+`tests/data/bank_import.json`). Under `empty` the helper judges such a record on a copy that carries a tracker
+and what HOME changes on a Pokemon it has seen (`ValidWithTracker`); the record itself keeps none.
 
 Mystery Gift - Simulated follows the setting too ([Mystery Gift - Simulated](#mystery-gift---simulated)).
 Among the gifts, PKHeX wants a tracker only on one HOME gave: under `empty` its copy has none, under
@@ -485,6 +489,33 @@ A click seats a trainer, numbered by the slot it takes; a second click leaves th
 Each pick passes `--raid-partner`, in order. Raising Consoles joining drops the last pick, and a
 pick the chosen stage lacks (Dylan or Luke below four stars) is dropped. Folding only hides the card
 (`GamesView.show_raid_partners`): the choice still goes to the raid, and the header names it.
+
+## Union Circle
+
+Scarlet/Violet's two Union Circle tools join the circle a console hosts under a four-digit Link Code
+([Union Circle](sv_union_circle.md)). A circle's code is new each time, so the field starts empty at
+every launch (`Field.remembered`).
+
+- Union Circle - Quests: Task unlocks every remaining Snacksworth legendary or gives BP;
+  the BP field takes 1 to 9,999,999 (`Field.bounds`). The console steps follow the task chosen: a
+  step given as `(text, (flag, value))` shows only while that field has that value
+  (`command.steps`). A Snacksworth run draws a bar of the host's clears against those it lacked
+  ([Progress](#progress)).
+- Union Circle - Encounters: the Pokemon to spawn card (`gui/views/encounter.py`, field kind
+  `encounter`) sets the species, shiny, form, level, Tera Type, nature, gender, ability, held item,
+  scale and IVs. Nature, ability, scale and IVs left empty are drawn as the host's own wild ones
+  are. A new species resets the fields below it. With Legal encounters only, on by default, the card
+  offers the species, forms and levels PKHeX's wild slots give and the Tera Types PKHeX accepts
+  somewhere, and lists every location where PKHeX accepts the spawn caught, or why it accepts it
+  nowhere. The card passes `--spawn` and the `--spawn-*` flags (`command.encounter_args`).
+
+A built-in run's `[panel]` cards ([Status cards](plugins.md#status-cards-18)) show at the top of its
+tool's options while it runs, and only there (`GamesView.show_run_cards`); they go when the run
+ends. The encounters run shows its area search this way.
+
+A circle run's log keeps to what a user follows: the join, the host's totals, the BP clear, the
+spawns coming out or being battled, and the host's area found or lost. `--verbose-circle` (in the
+Advanced tab's Advanced options) adds every circle message sent and each step of the area search.
 
 ## Mystery Gift - Simulated
 
