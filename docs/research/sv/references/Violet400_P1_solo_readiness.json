@@ -54,8 +54,11 @@
     "max_rows": 45
   },
   "regression_assets": {
-    "model": "scripts/research/sv_lua_reward_append_prototype.py",
-    "tests": "tests/test_sv_lua_reward_append_prototype.py"
+    "append_model": "scripts/research/sv_lua_reward_append_prototype.py",
+    "append_tests": "tests/test_sv_lua_reward_append_prototype.py",
+    "main_blua_locator": "scripts/research/sv400_main_blua_locator.py",
+    "locator_tests": "tests/test_sv400_main_blua_locator.py",
+    "locator_mode": "read_only_sha_gated_lua54_prototype_inventory"
   },
   "gates": [
     {
@@ -77,10 +80,16 @@
       "completion_evidence": "Attempting a 46th row raises and leaves originals unchanged."
     },
     {
-      "id": "P1-04",
-      "name": "exact_violet400_prototype_pc",
+      "id": "P1-04A",
+      "name": "violet400_main_blua_identity_gate",
+      "status": "TOOLING_READY_INPUT_MISSING",
+      "completion_evidence": "Locator rejects non-matching SHA by default and parses standard Lua 5.4 prototype/code offsets."
+    },
+    {
+      "id": "P1-04B",
+      "name": "exact_violet400_reward_prototype_and_pc",
       "status": "PENDING_RAW_MAIN_BLUA",
-      "requirement": "Input main.blua SHA-256 must equal target.main_blua_base_sha256 before bytecode PC/index work."
+      "requirement": "Input main.blua SHA-256 must equal target.main_blua_base_sha256; then locator candidates must be uniquely confirmed before any runtime patch."
     },
     {
       "id": "P1-05",
@@ -115,5 +124,11 @@
       "extra item remains after full restart/reload"
     ]
   },
-  "overall_status": "OFFLINE_APPEND_MODEL_READY__EXACT_V400_PC_AND_HARDWARE_PENDING"
+  "current_file_inventory_check": {
+    "main_blua_found": false,
+    "data_trpfs_found": false,
+    "main_blua_trpak_found": false,
+    "note": "Conversation + Library filename/content search on 2026-10-20 did not find these raw 4.0.0 inputs."
+  },
+  "overall_status": "OFFLINE_APPEND_AND_LOCATOR_TOOLING_READY__RAW_V400_MAIN_BLUA_AND_HARDWARE_PENDING"
 }
