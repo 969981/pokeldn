@@ -225,3 +225,48 @@ GitHub 索引可找到 Reisyukaku/SVScripts 中相同类哈希的早期资料，
 6. 按 S0→S6 完成持久化闭环。
 
 在拿到与 C1A4F4E2625912CF0B739A642A79BA3357DF0557A544B92DA22A6CB139DE2815 完全一致的 4.0.0 main.blua 之前，**不把 3.0.1 的 Prototype index / PC 硬搬到 4.0.0。**
+
+
+## 11. 补充：能否完全不改 main.blua，只做 ExeFS / ARM64 Hook
+
+本轮对 KM-Editor 的 4.0.0 runtime module 做了时序复核。
+
+[native/km-native-settings/src/sv_runtime.cpp](https://github.com/KotMatrosk1n/KM-Editor/blob/e108ec745488a0e38c28edf8585dd1d5c4bbfd96/native/km-native-settings/src/sv_runtime.cpp) 的 km_sv_registration_hook 先调用原版 registration trampoline，然后注册若干 C global，并通过 luaL_loadbufferx / pcall 执行 helper source。源码注释明确说明该回调发生在 **Lua VM construction，主 scripts/gameplay 消费设置之前**。
+
+因此现成 registration hook 不能直接执行：
+
+~~~text
+C81390F82EADEF632_prototype.FE77BCB620AB2EDCA = wrapper
+~~~
+
+因为此时 main Lua 尚未建立该 class/prototype table。
+
+这条纯 ExeFS 路线如果继续，需要额外解决一个“late trigger”：
+
+1. 找到 main.blua 已执行完成后的 native 边界；或
+2. hook main script 的 loader / protected-call 完成边界，只对目标主 chunk 的返回时刻执行一次 helper；或
+3. 找到一个确定在 main 初始化后、首次团战生成前调用的原生生命周期函数，在同一 Lua state 线程内安装 wrapper。
+
+不建议从后台线程直接调用 Lua state，因为 Lua VM 的线程/栈所有权需要由游戏原调用线程保证。
+
+旧版 Violet 4.0.0 ELF 审计也支持这个边界判断：F316609DEA110601D 与 RaidResultAddItem 是 Lua closure，尚无独立 ARM64 RVA；f21AF1B35 / f66894ABE 等属于原生绑定/初始化候选，不能直接等同于上述 Lua closure。
+
+所以当前两条实现路线的优先级是：
+
+~~~text
+A. main.blua 路线
+   exact SHA -> Prototype locator -> 最小 bytecode append call
+   优点：目标语义最直接，容易证明只改一个边界
+
+B. pure ExeFS 路线
+   Lua VM registration -> 再寻找 post-main late trigger -> runtime wrapper
+   优点：可以不分发 main.blua 派生文件
+   缺点：第二触发点尚未闭合，当前不能声称已可实机
+~~~
+
+本轮新增 [sv400_main_blua_locator.py](../../../scripts/research/sv400_main_blua_locator.py)，其默认硬校验 Violet 4.0.0 base SHA，并按 KM-Editor 已验证的 root shape 再检查：
+
+- root code count = 429,034
+- root child Prototype count = 30,829
+
+随后按 LotteryRewardItem、45 行 serializer、F316 filter、RaidResultAddItem 的常量指纹枚举候选 Prototype，并可输出每条 Lua 指令的 file offset / PC / raw word 字段。它只读，不修改 main.blua。
