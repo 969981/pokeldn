@@ -95,11 +95,7 @@ jobs:
                 [[ -z "$changed_file" ]] && continue
                 if [[ "$target" == 'main' ]]; then
                   case "$changed_file" in
-                    .github/workflows/sync-upstreams.yml|\
-.github/workflows/auto-build.yml|\
-.github/workflows/auto-release.yml|\
-.github/workflows/research-integrate.yml|\
-.github/workflows/research-build.yml)
+                    .github/workflows/sync-upstreams.yml|.github/workflows/auto-build.yml|.github/workflows/auto-release.yml|.github/workflows/research-integrate.yml|.github/workflows/research-build.yml)
                       continue
                       ;;
                   esac
