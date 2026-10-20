@@ -21,6 +21,7 @@ Pia 6、交换消息、太晶团体战、战斗服务器和奖励。
 
 - [晶耀护符、太晶坑奖励资格与 999 道具案例](glimmering-charm-raid-rewards.md)：结合 PokéLDN 奖励结构、4.0.0 上游 ELF/Lua 逆向记录、联网模式证据分级和待验证实验。
 - [FieldRaidJewelry.LotteryRewardItem 晶耀奖励生成链源码核验](fieldraidjewelry-lotteryrewarditem-glimmering.md)：逐参数还原数量表读取、18 项碎块道具映射及 subject=5 写入，区分旧版 Lua 与 4.0.0 实证并给出无损追加测试方案。
+- [《紫》4.0.0 LotteryRewardItem 精确 Prototype 定位与单条晶耀奖励追加校验](violet400-lotteryrewarditem-exact-prototype.md)：归档原版 Lua 4.0.0 历史静态绑定，增加严谨的 SHA/偏移门槛与离线无损追加测试，区分静态定位与实机到账。
 
 - [《紫》4.0.0 ELF：RaidPoint/bootstrap 原生机器码复核](violet400-elf-raid-bootstrap-audit.md)：核对用户 Library ELF 的 Build ID、SHA-256、15 条原始指令与逆向证据边界。
 - [SV BattleRewardData 与 Bag 的 Lua 交叉分析](battle-reward-lua-cross-version.md)：找到公开旧版反编译 Lua，核对 ID 2481 的背包查询及 subject=5 过滤。
