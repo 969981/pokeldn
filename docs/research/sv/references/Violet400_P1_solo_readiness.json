@@ -1,0 +1,119 @@
+{
+  "schema_version": 1,
+  "generated_on": "2026-10-20",
+  "target": {
+    "game": "Pokemon Violet",
+    "update_version": "4.0.0",
+    "title_id": "01008F6008C5E000",
+    "build_id": "709BFD66115298640155FCC4979DBA151C7CC79A000000000000000000000000",
+    "main_blua_path": "romfs/script/lua/bin/release/main/main.blua",
+    "main_blua_base_sha256": "C1A4F4E2625912CF0B739A642A79BA3357DF0557A544B92DA22A6CB139DE2815",
+    "trpfd_pack": "arc/scriptluabinreleasemainmain.blua.trpak",
+    "trpfd_pack_index": 14659,
+    "trpfd_pack_size": 2255432,
+    "trpfd_pack_file_count": 1
+  },
+  "semantic_reference": {
+    "repository": "Martmists-GH/SV-Script-RE",
+    "commit": "1f843bd2517c707fbb47491dad58856eaa2c2cc7",
+    "declared_baseline": "3.0.1 at time of writing",
+    "raw_main_blua_present_in_public_tree": false
+  },
+  "hook_window": {
+    "producer": {
+      "class_hash": "C81390F82EADEF632",
+      "method_hash": "FE77BCB620AB2EDCA",
+      "name": "FieldRaidJewelry.LotteryRewardItem",
+      "output": "BattleRewardData"
+    },
+    "mutable_reward_list": "BattleRewardData[3]",
+    "post_generation_store": "C79A8A2641CC135A3.SE9713F112CDA989C",
+    "serializer": {
+      "class_hash": "C050DB411547B4BAC",
+      "method_hash": "FCE48462FE20C26A7",
+      "rows": 45,
+      "row_fields": [
+        "ItemNo",
+        "ItemNum",
+        "rareType",
+        "subjectType"
+      ]
+    },
+    "receiver_filter": {
+      "class_hash": "C07C34FC3B976E5A7",
+      "method_hash": "F316609DEA110601D",
+      "subject5_gate": "Bag.GetNumItem(2481) > 0"
+    },
+    "settlement": {
+      "class_hash": "C889F6553EDFCD011",
+      "method_hash": "FCBBD4D63B93E4C04",
+      "name": "GameEventBattleResult.RaidResultAddItem"
+    },
+    "invariant": "append only after retail generation; never replace or truncate an original row",
+    "full_capacity_behavior": "fail_closed_no_append",
+    "max_rows": 45
+  },
+  "regression_assets": {
+    "model": "scripts/research/sv_lua_reward_append_prototype.py",
+    "tests": "tests/test_sv_lua_reward_append_prototype.py"
+  },
+  "gates": [
+    {
+      "id": "P1-01",
+      "name": "original_reward_prefix_unchanged",
+      "status": "COVERED_BY_REGRESSION_TEST",
+      "completion_evidence": "Offline append model preserves all original rows in order."
+    },
+    {
+      "id": "P1-02",
+      "name": "subject5_uses_retail_filter",
+      "status": "COVERED_BY_REGRESSION_TEST",
+      "completion_evidence": "Offline model exercises charm false/true using F316 semantics."
+    },
+    {
+      "id": "P1-03",
+      "name": "45_row_capacity_fail_closed",
+      "status": "COVERED_BY_REGRESSION_TEST",
+      "completion_evidence": "Attempting a 46th row raises and leaves originals unchanged."
+    },
+    {
+      "id": "P1-04",
+      "name": "exact_violet400_prototype_pc",
+      "status": "PENDING_RAW_MAIN_BLUA",
+      "requirement": "Input main.blua SHA-256 must equal target.main_blua_base_sha256 before bytecode PC/index work."
+    },
+    {
+      "id": "P1-05",
+      "name": "real_hardware_original_rewards_not_reduced",
+      "status": "PENDING_HARDWARE"
+    },
+    {
+      "id": "P1-06",
+      "name": "real_hardware_extra_item_arrives",
+      "status": "PENDING_HARDWARE"
+    },
+    {
+      "id": "P1-07",
+      "name": "reload_save_persistence",
+      "status": "PENDING_HARDWARE"
+    }
+  ],
+  "hardware_acceptance": {
+    "recommended_first_extra": "one low-quantity ordinary bag item with sufficient free capacity",
+    "stages": [
+      "S0 pre-battle inventory and retail reward baseline",
+      "S1 post-LotteryRewardItem BattleRewardData[3]",
+      "S2 serialized RaidPoint reward rows",
+      "S3 receiver F316 filtered rows",
+      "S4 post-victory Bag delta",
+      "S5 save completion observation",
+      "S6 full game restart and inventory re-check"
+    ],
+    "pass_rule": [
+      "original rewards are not reduced versus control",
+      "extra item is added exactly as expected after retail capacity handling",
+      "extra item remains after full restart/reload"
+    ]
+  },
+  "overall_status": "OFFLINE_APPEND_MODEL_READY__EXACT_V400_PC_AND_HARDWARE_PENDING"
+}
