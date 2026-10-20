@@ -3,7 +3,7 @@
 
 Proof-of-concept for synthetic Lua 5.4 chunks. For Violet 4.0.0, input must
 match the exact retail main.blua SHA-256, the prototype path and code offset,
-and the chosen PC must contain a RETURN1 instruction. No game deployment is
+and the chosen PC must return exactly one value (RETURN B=2 or RETURN1). No game deployment is
 claimed. Always run only on your own legally extracted game file.
 """
 from __future__ import annotations
@@ -17,7 +17,7 @@ import struct
 
 ORIGINAL_SHA = 'c1a4f4e2625912cf0b739a642a79ba3357df0557a544b92da22a6cb139de2815'
 LUA_HEADER = bytes.fromhex('1b4c7561540019930d0a1a0a040808') + struct.pack('<q', 0x5678) + struct.pack('<d', 370.5)
-OP_MOVE, OP_GETTABUP, OP_CALL, OP_RETURN1, OP_CLOSURE, OP_JMP = 0, 11, 68, 72, 79, 56
+OP_MOVE, OP_GETTABUP, OP_CALL, OP_RETURN, OP_RETURN1, OP_CLOSURE, OP_JMP = 0, 11, 68, 70, 72, 79, 56
 MAX_ARG_BX = (1 << 17) - 1
 OFFSET_SJ = ((1 << 25) - 1) // 2
 MAX_SIZE = 64 * 1024 * 1024
@@ -199,8 +199,15 @@ def graft_tail(raw: bytes, path: str, return_pc: int, helper_chunk: bytes,
     if expected_code_start is not None and target.code_start != expected_code_start:
         raise ValueError('Prototype code_start differs from pinned 4.0.0 anchor')
     candidate = word(raw,target,return_pc)
-    if candidate & 127 != OP_RETURN1:
-        raise ValueError(f'expected RETURN1 at PC {return_pc}, found opcode {candidate & 127}; refusing patch')
+    opcode = candidate & 127
+    is_single_return = opcode == OP_RETURN1 or (
+        opcode == OP_RETURN and ((candidate >> 16) & 255) == 2
+    )
+    if not is_single_return:
+        raise ValueError(
+            f'expected single-result RETURN (B=2) or RETURN1 at PC {return_pc}, '
+            f'found opcode {opcode}; refusing patch'
+        )
     if target.maxstack > 253:
         raise ValueError('not enough free Lua registers for safe appended call')
     if target.line_count not in (0,target.code_count):
@@ -253,6 +260,7 @@ def graft_tail(raw: bytes, path: str, return_pc: int, helper_chunk: bytes,
         'patched_sha256':hashlib.sha256(patched).hexdigest(),
         'target':path, 'return_pc':return_pc,
         'old_instruction_hex':f'{candidate:08X}',
+        'original_return_opcode':opcode, 'return_register':result_reg,
         'jump_instruction_hex':f'{jump:08X}',
         'append_tail_pc':tail_pc,'helper_proto_child_index':old_child_count,
         'original_code_count':target.code_count,'patched_code_count':actual.code_count,
