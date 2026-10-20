@@ -2,6 +2,7 @@
 
 import importlib.util
 from pathlib import Path
+import sys
 
 import pytest
 
@@ -11,6 +12,7 @@ SPEC = importlib.util.spec_from_file_location(
     ROOT / "scripts" / "research" / "sv_lua_reward_append_prototype.py",
 )
 prototype = importlib.util.module_from_spec(SPEC)
+sys.modules[SPEC.name] = prototype
 SPEC.loader.exec_module(prototype)
 
 RewardRow = prototype.RewardRow
