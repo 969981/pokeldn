@@ -8,6 +8,13 @@ name: Sync upstream branches
 on:
   schedule:
     - cron: '*/5 * * * *'
+  # Bootstrap a sync immediately after this workflow's configuration is fixed.
+  # GITHUB_TOKEN pushes created by this sync do not recursively trigger it.
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/sync-upstreams.yml
   workflow_dispatch:
     inputs:
       target:
