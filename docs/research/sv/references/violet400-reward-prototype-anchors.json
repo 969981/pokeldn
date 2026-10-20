@@ -1,0 +1,76 @@
+{
+  "schema_version": 1,
+  "provenance": "Prior exact Violet 4.0.0 bytecode static analysis saved in user Library; not reverified against raw file in this session.",
+  "current_session_raw_main_blua_present": false,
+  "build": "Pokemon Violet 4.0.0",
+  "main_blua_sha256": "c1a4f4e2625912cf0b739a642a79ba3357df0557a544b92da22a6cb139de2815",
+  "main_blua_bytes": 12912264,
+  "prototype_total": 37743,
+  "root_code_count": 429034,
+  "root_children": 30829,
+  "methods": {
+    "LotteryRewardItem": {
+      "class_hash": "C81390F82EADEF632",
+      "method_hash": "FE77BCB620AB2EDCA",
+      "prototype_path": "root/2899",
+      "code_file_offset_hex": "0x377501",
+      "instruction_count": 477,
+      "registration_pc": 59986,
+      "runtime_hook_rva": "NOT_ESTABLISHED",
+      "lua_state": "NOT_ESTABLISHED",
+      "candidate_post_construction_pc": 475,
+      "candidate_return_file_offset_hex": "0x377c6d",
+      "early_return_pcs": [
+        27,
+        33,
+        39,
+        53
+      ]
+    },
+    "FilterSubject5": {
+      "class_hash": "C07C34FC3B976E5A7",
+      "method_hash": "F316609DEA110601D",
+      "prototype_path": "root/4870",
+      "code_file_offset_hex": "0x410673",
+      "instruction_count": 137,
+      "registration_pc": 87463,
+      "runtime_hook_rva": "NOT_ESTABLISHED",
+      "lua_state": "NOT_ESTABLISHED",
+      "bag_charm_item_id": 2481,
+      "new_list_store_pc": 134,
+      "return_pc": 135
+    },
+    "RaidResultAddItem": {
+      "class_hash": "C889F6553EDFCD011",
+      "method_hash": "FCBBD4D63B93E4C04",
+      "prototype_path": "root/3756",
+      "code_file_offset_hex": "0x3b1e39",
+      "instruction_count": 69,
+      "registration_pc": 74347,
+      "runtime_hook_rva": "NOT_ESTABLISHED",
+      "lua_state": "NOT_ESTABLISHED",
+      "reward_deref_pcs": [
+        1,
+        2,
+        3
+      ],
+      "bag_add_call_pc": 66
+    },
+    "RaidRewardSerializer": {
+      "class_hash": "C050DB411547B4BAC",
+      "method_hash": "FCE48462FE20C26A7",
+      "prototype_path": "root/27146",
+      "code_file_offset_hex": "0xaa084e",
+      "instruction_count": 91,
+      "registration_pc": 380468,
+      "runtime_hook_rva": "NOT_ESTABLISHED",
+      "lua_state": "NOT_ESTABLISHED",
+      "network_row_capacity": 45
+    }
+  },
+  "notes": [
+    "Prototype PC and code_file_offset are positions in Lua bytecode, not runtime addresses.",
+    "LotReward PC475 is a candidate post-construction point only; opcode/control-flow and relocation require exact raw chunk verification.",
+    "No runtime hook, mod deployment, real inventory receipt or save reload has been verified."
+  ]
+}
