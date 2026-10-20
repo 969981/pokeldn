@@ -116,3 +116,16 @@
 - [research: 4.0.0 readiness](https://github.com/969981/pokeldn/blob/research/docs/research/sv/references/Violet400_P1_solo_readiness.json) — 离线追加测试、未知项及版本门禁
 - [research: append prototype](https://github.com/969981/pokeldn/blob/research/scripts/research/sv_lua_reward_append_prototype.py) / [tests](https://github.com/969981/pokeldn/blob/research/tests/test_sv_lua_reward_append_prototype.py) — 可挑选移植的非实机模型
 - [Martmists-GH/SV-Script-RE](https://github.com/Martmists-GH/SV-Script-RE) — 用于语义交叉核对；**不能取代**目标 4.0.0 二进制校验
+
+
+## 10. N0/N1 已落地的独立基础（2026-10-20 更新）
+
+在 `host` 新增 `pokeldn/sv/host_trace.py`、`tests/test_sv_host_trace.py` 和 `docs/host/RESEARCH_MIGRATION.md`，对应能力是：
+
+- N0：依据当前 `main` 的 `0xE4 / 45 × 16` 布局，离线解析三类二进制输入；对错误大小、异常 subject、空槽后继续出现非空行给出错误/警告；
+- N0：建立 8 项隔离单元测试（含实际仓库 LZ4 算法的本地等价实现），已通过；**并非整仓测试/实机通过**；
+- N1 准备：以 `P0 rows JSON`、`P1 原生 RaidPoint`、`P2 0xAA0 明文`、`P3 0x012F 完整应用消息` 为固定输入合同，对同场数据进行行内容及原始 RaidPoint 哈希比对；
+- N1 未完成：尚未编写或部署房主 Switch 实机采集 Adapter，也无来自该实机的 `P0–P3` 同场原始输入。
+- 注：`SNAPSHOTS_MATCH_NOT_HARDWARE_PROVEN` 只能表明所输入的离线快照互相一致，不证明原始来源真实性，也不代表官方网络、发奖、背包及保存验证通过。
+
+具体用法和证据迁移决策见 [RESEARCH_MIGRATION.md](RESEARCH_MIGRATION.md)。下一步为**只读原生 Adapter**，先由目标 Build ID/文件 SHA 校验，再在完成生成、RaidPoint 成形、复制、发送前分别快照。不能在 N1 通过前打开写入 Hook。

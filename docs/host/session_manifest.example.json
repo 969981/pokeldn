@@ -1,0 +1,13 @@
+{
+  "format": "pokeldn.host.reward-trace.v1",
+  "session_id": "REPLACE_WITH_REAL_SESSION_ID",
+  "title_id": "01008F6008C5E000",
+  "build_id": "REPLACE_WITH_VERIFIED_BUILD_ID",
+  "game_version": "4.0.0",
+  "checkpoints": [
+    {"stage": "P0", "kind": "rows", "file": "p0.json"},
+    {"stage": "P1", "kind": "point", "file": "p1.bin"},
+    {"stage": "P2", "kind": "bootstrap", "file": "p2.bin"},
+    {"stage": "P3", "kind": "application", "file": "p3.bin"}
+  ]
+}

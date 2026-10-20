@@ -1,6 +1,6 @@
 # host — 实机房主联机奖励追加研究
 
-> 状态：PLAN / INSTRUMENTATION NOT STARTED。2026-10-20 从 `main` 派生；不得把离线模型通过等同于实机成功。
+> 状态：N0 离线只读工具与测试已提交；N1 实机捕获未启动，Hook 尚未开发。2026-10-20 从 `main` 派生；不得把离线模型通过等同于实机成功。
 
 ## 任务
 
@@ -32,3 +32,11 @@
 - 尚未证实官方互联网房间经过同一条房主提供的奖励数据链。
 
 详见 [开发规划](DEVELOPMENT_PLAN.md) 的 N0–N7 门禁。
+
+## N0/N1 独立实现（2026-10-20）
+
+- [上游研究迁移与真实房主只读观测合同](RESEARCH_MIGRATION.md)
+- [版本化会话清单模板](session_manifest.example.json)（仅模板；必须替换真实实机数据）
+- 自实现模块：`pokeldn/sv/host_trace.py`（见[源码](../../pokeldn/sv/host_trace.py)）。
+- 回归：`tests/test_sv_host_trace.py`（见[测试](../../tests/test_sv_host_trace.py)），8 项离线测试通过。
+- 只读 `point`／`bootstrap`／`application` 解码和 `P0→P3` 行/字节哈希对照；不执行 Switch 内存读写、Hook、网络操作或奖励修改。
