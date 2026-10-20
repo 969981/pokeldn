@@ -81,17 +81,32 @@ jobs:
             git checkout --force -B "$target" "refs/remotes/origin/$target"
             subject="$(git log -1 --format=%s)"
 
-            # Fail closed on manual commits instead of silently losing work.
+            # Fail closed if there is unmirrored local work outside the CI
+            # files we deliberately preserve below. Commit subject prefixes
+            # (e.g. fix(ci) vs chore(ci)) are not a reliable safety check.
             if [[ "$OVERWRITE_LOCAL" != 'true' ]]; then
-              if [[ "$subject" == "chore(sync): configure dual upstream mirrors" ]] || \
-                 [[ "$subject" == "chore(sync): $target from "* ]] || \
-                 [[ "$target" == 'main' && "$subject" == "chore(ci): "* ]] || \
-                 [[ "$target" == 'ew' && "$subject" == 'Sync ew with easyworld/pokeldn main (7de491e)' ]]; then
-                :
-              else
-                echo "::error::Refusing to overwrite local commits on $target ($subject). Manually review changes, or explicitly use overwrite_local on a manual run."
+              local last_sync_sha changed_file
+              last_sync_sha="$(git log -1 --format=%H --grep="chore(sync): $target from " || true)"
+              if [[ -z "$last_sync_sha" ]]; then
+                echo "::error::No previous $target mirror commit found; refusing automatic overwrite."
                 return 1
               fi
+              while IFS= read -r changed_file; do
+                [[ -z "$changed_file" ]] && continue
+                if [[ "$target" == 'main' ]]; then
+                  case "$changed_file" in
+                    .github/workflows/sync-upstreams.yml|\
+.github/workflows/auto-build.yml|\
+.github/workflows/auto-release.yml|\
+.github/workflows/research-integrate.yml|\
+.github/workflows/research-build.yml)
+                      continue
+                      ;;
+                  esac
+                fi
+                echo "::error::Refusing to overwrite local changes on $target: $changed_file (since $last_sync_sha). Review or explicitly set overwrite_local=true in a manual run."
+                return 1
+              done < <(git diff --name-only "$last_sync_sha" HEAD)
             fi
 
             source_sha="$(git rev-parse "$source_ref")"
