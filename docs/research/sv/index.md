@@ -15,6 +15,8 @@ Pia 6、交换消息、太晶团体战、战斗服务器和奖励。
 
 ## 个人研究记录
 
+- [《紫》4.0.0 实机房主 Bootstrap 发送副本 Hook 与 RaidCrawler/host 重构](violet400-raidcrawler-host-bootstrap-copy-refactor.md)：跳过重复 data.bin 实验；明确 +0xE4/0x79C 正确 ABI、Native 在 post-memcpy/pre-LZ4 受控追加、mailbox 与严格验收关卡。
+
 - [历史 donor BIN 解压、Ghidra 溯源与奖励字段偏移勘误](sv400-reward-donor-bin-ghidra-audit.md)：独立解压 1707→0xAA0，复核 45 条奖励表与 subject 字段，对照上游 Ghidra 地址及 0x798/0x79C 旧文档误差。
 
 - [晶耀护符、太晶坑奖励资格与 999 道具案例](glimmering-charm-raid-rewards.md)：结合 PokéLDN 奖励结构、4.0.0 上游 ELF/Lua 逆向记录、联网模式证据分级和待验证实验。
