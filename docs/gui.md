@@ -383,6 +383,8 @@ detects corruption and does not authenticate the release.
 | Updates off in Settings | no launch request |
 | no archive or `SHA256SUMS`, a source checkout, App Translocation, an unwritable folder (macOS, Linux) | Download only |
 | Windows, `C:\Program Files` | Update now behind UAC (`ShellExecuteExW` `runas`) |
+| Windows, the root of another drive (`D:\pokeldn`) | Update now without UAC: the swap only adds folders beside the app, which a volume's root allows users |
+| Windows, a mapped or `subst` drive | the drive letter is kept; the helper finds the old app's processes under either spelling |
 | a session, flash or cleanup running | asks to finish first |
 
 `scripts/check_update.py ARCHIVE FOLDER` tests a packed app's update against 127.0.0.1;
@@ -427,6 +429,12 @@ dotnet build -c Release services/pkhex -warnaserror
 python scripts/build_client.py    # optional: file drops; needs Flutter
 python gui/main.py
 ```
+
+Raspberry Pi OS adds piwheels as a package index, and piwheels' `flet_web-1.0.2-py3-none-any.whl`
+(25 KB) lacks the `flet_web/web` client that PyPI's wheel (27 MB) carries; the app then answers
+`RuntimeError: Web root path not found`. Install that package from PyPI alone:
+`python -m pip install --force-reinstall --no-cache-dir --index-url https://pypi.org/simple flet-web==1.0.2`.
+There is no Linux arm64 release; a Raspberry Pi runs the app from source.
 
 A checkout has no firmware image. Download the firmware on the Board page fetches all images from the
 newest release with `SHA256SUMS` and writes them only when all match.
