@@ -37,7 +37,8 @@ BDSP: Brilliant Diamond/Shining Pearl · PLA: Legends Arceus · SV: Scarlet/Viol
 
 Scarlet/Violet also supports [local Tera Raids](docs/sv_raid.md) and the
 [Union Circle](docs/sv_union_circle.md) as a guest, and Sword/Shield
-[Max Raid Battles and Dynamax Adventures](docs/swsh_raid.md) with a chosen boss or legendary. Event Pokemon arrive through Mystery
+[Max Raid Battles and Dynamax Adventures](docs/swsh_raid.md), hosted with a chosen boss or legendary
+or joined as the console's partner. Event Pokemon arrive through Mystery
 Gift on FRLG and SwSh, and elsewhere as an official gift traded by the host
 ([Simulated Mystery Gifts](docs/gift_simulated.md)).
 
@@ -100,7 +101,8 @@ Contributors to this repository (GitHub does not list contributors on a fork):
 - [Gr3nSkyDragon](https://github.com/Gr3nSkyDragon): ESP32-S3 firmware
 - [ismailhasannnnnn](https://github.com/ismailhasannnnnn): Scarlet/Violet Tera Raid hosting and joining,
   reverse engineering and reconstruction of the RaidPoint structure, including reward encoding and
-  raid bootstrap compression, and hosted raid reward templates
+  raid bootstrap compression, and hosted raid reward templates, with mint, battle item, berry and
+  evolution item bundles
 - [easyworld](https://github.com/easyworld): ESP32 serial reconnects after a high-baud session,
   language packs that translate game names, module messages, tool help, the documentation and its
   page titles, game choices and raid partners' names, the language pack checker, CJK tooltips, and
