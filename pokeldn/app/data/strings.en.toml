@@ -162,6 +162,8 @@
 "boards.chip_722389" = "Chip"
 "boards.connecting_5f04ae" = "Connecting..."
 "boards.connection_639a40" = "Connection"
+"boards.copy_board_details_e0d595" = "Copy board details"
+"boards.copying_ad61bf" = "Copying..."
 "boards.cp210x_b37fe7" = "CP210x: {value0}"
 "boards.cp210x_driver_59da78" = "CP210x driver"
 "boards.download_the_firmware_63b408" = "Download the firmware"
