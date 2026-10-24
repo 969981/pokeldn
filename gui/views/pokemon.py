@@ -56,15 +56,12 @@ class PokemonPicker:
         level_shiny = [t.labeled_control(tr('pokemon.level_170930', 'Level'), self.level),
                        t.labeled_control(tr('pokemon.shiny_039a0a', 'Shiny'), ft.Container(
                            self.shiny, width=64, height=t.CONTROL_HEIGHT, alignment=ft.Alignment.CENTER))]
-        top = ([ft.Row([species]), ft.Row(level_shiny, spacing=10)] if t.compact else   # a phone: species takes the line
-               [ft.Row([species, *level_shiny], spacing=10, vertical_alignment=ft.CrossAxisAlignment.START)])
-        form = pokemon_header(self.sprite.control, [
-            *top,
-            ft.Row([self.nickname, self.build_button], spacing=10,
-                   vertical_alignment=ft.CrossAxisAlignment.CENTER),
-        ])
+        # Species takes its own line: beside Level and Shiny a long name is cut in a narrow column.
+        # Nickname and Build run the card's width: beside the sprite on a phone the hint broke in two.
+        form = pokemon_header(self.sprite.control, [ft.Row([species]), ft.Row(level_shiny, spacing=10)], spacing=10)
         self.body = ft.Container(ft.Column([
             form,
+            ft.Row([self.nickname, self.build_button], spacing=10, vertical_alignment=ft.CrossAxisAlignment.CENTER),
             self.options.control,
             self.result,
             ft.Row([t.secondary_button(tr('pokemon.or_use_a_pokemon_file_26272a', 'Or use a Pokemon file'), self._use_file, "file"),
@@ -352,9 +349,9 @@ class OfferQueue:
         for n, slot in enumerate(self.slots, start=1):
             slot["title"].value = tr('pokemon.trade_63a07c', 'Trade {value0}', value0=n)
             slot["header"].visible = several
-            slot["box"].border = ft.Border.all(1, t.DIVIDER) if several else None
-            slot["box"].border_radius = 12 if several else None
-            slot["box"].padding = ft.Padding(12, 6, 6, 12) if several else None
+            # A hairline between trades, as a grouped list; a box inside the card read as a card in a card.
+            slot["box"].border = ft.Border(top=ft.BorderSide(1, t.DIVIDER)) if n > 1 else None
+            slot["box"].padding = ft.Padding(0, 12 if n > 1 else 0, 0, 4) if several else None
         self.rows.controls = [slot["box"] for slot in self.slots]
         full = len(self.slots) >= self.limit
         self.add_box.disabled = full
@@ -446,7 +443,7 @@ ANY = "-"
 
 
 class OfferOptions:
-    """Nature, ability, gender, held item, ball, friendship, IVs and effort for the built Pokemon, folded under the
+    """Nature, ability, gender, held item, ball, friendship, Alpha, IVs and effort for the built Pokemon, folded under the
     form.
 
     The choices offered are the ones PKHeX permits for the species (services/pkhex Options); the build is
@@ -531,6 +528,8 @@ class OfferOptions:
                 self.chosen.pop(key)
         if not found["gendered"]:
             self.chosen.pop("gender", None)
+        if not found.get("alpha"):     # None: the game has no Alphas; False: the species is never one
+            self.chosen.pop("alpha", None)
         if "form" in self.chosen and all(f["id"] != self.chosen["form"] for f in found["forms"]):
             self.chosen.pop("form")
             self.picker.show_sprite()
@@ -545,6 +544,11 @@ class OfferOptions:
                 "gender", [{"id": int(k), "name": n} for k, n in GENDERS]), expand=True))
         second = [t.labeled_control(tr('pokemon.ball_ae5859', 'Ball'), self._choice("ball", found["balls"]), expand=True),
                   t.labeled_control(tr('pokemon.friendship_0_255_30186d', 'Friendship (0-255)'), self._number("friendship", 255), width=130)]
+        if found.get("alpha"):
+            second.append(t.labeled_control(tr('pokemon.alpha_b1a96d', 'Alpha'), self._alpha(), expand=True))
+        elif found.get("alpha") is False:
+            second.append(t.labeled_control(tr('pokemon.alpha_b1a96d', 'Alpha'), t.text(
+                tr('pokemon.never_an_alpha_in_this_game_883ade', 'Never an Alpha in this game'), 12, t.MUTED), expand=True))
         if found["held"]:
             second.insert(0, t.labeled_control(tr('pokemon.held_item_6af4a4', 'Held item'), self._choice("held_item", found["held"], search=True),
                                                expand=True))
@@ -552,8 +556,7 @@ class OfferOptions:
         self.total = effort.get("total")
         limit = f"0-{effort['max']}" + (tr('pokemon.in_all_09ffde', ', {value0} in all', value0=effort['total']) if effort.get("total") else "")
         return [
-            ft.Row(first, spacing=10),
-            ft.Row(second, spacing=10),
+            t.field_grid(first + second, 150),
             self._moves(found["move_names"]),
             self._stats("ivs", tr('pokemon.ivs_39e3d6', 'IVs'), 31, "0-31"),
             self._stats("effort", EFFORT[effort["kind"]], effort["max"], limit, effort.get("total")),
@@ -582,6 +585,19 @@ class OfferOptions:
                                        (sorted(names, key=lambda n: n["name"]) if search else names)]
         return t.dropdown(options, ANY if current is None else str(current), on_select=picked,
                           enable_filter=search, editable=search, menu_height=320)
+
+    def _alpha(self) -> ft.Dropdown:
+        def picked(e):
+            if e.control.value == ANY:
+                self.chosen.pop("alpha", None)
+            else:
+                self.chosen["alpha"] = e.control.value == "yes"
+            self._label()
+            self.label.update()
+        current = self.chosen.get("alpha")
+        return t.dropdown([(ANY, tr('pokemon.random_67bc48', 'Random')), ("yes", tr('pokemon.yes_85a39a', 'Yes')),
+                           ("no", tr('pokemon.no_1ea442', 'No'))],
+                          ANY if current is None else "yes" if current else "no", on_select=picked)
 
     def _moves(self, names: list[dict]) -> ft.Control:
         moves = (list(self.chosen.get("moves", [])) + [0] * 4)[:4]

@@ -1194,7 +1194,7 @@ def test_each_console_joining_takes_a_partner_s_slot():
 
 
 def test_a_favoured_raid_partner_s_card_shows_a_star_and_why(tmp_path):
-    """The level-80 cards of the partners raiders want end on a star and its reason, gold for the
+    """The level-80 cards of the partners raiders want end on a star and its reason, blue for the
     favoured and silver for the next tier; a pool without any, such as level 40's, shows neither. Each
     card names the Pokemon and, on a line of its own, its level: four fifths of Our Pokemon's, unknown
     until Our Pokemon is built."""
@@ -1216,7 +1216,7 @@ def test_a_favoured_raid_partner_s_card_shows_a_star_and_why(tmp_path):
                                app=SimpleNamespace(settings=SimpleNamespace(save=lambda: None, sprites=False),
                                                    ui=lambda work: None))
         card = list(raid_controls(RaidPartnersPicker(view, field).control))
-        for rank, ink, tier in ((1, theme.AMBER, "Favoured by raiders"),
+        for rank, ink, tier in ((1, theme.BLUE, "Favoured by raiders"),
                                 (2, theme.SILVER, "Next tier for raiders")):
             reasons = [why for r, why, _ in wanted.values() if r == rank]
             assert [c.value for c in card if isinstance(c, ft.Text) and c.color == ink] == reasons
@@ -1896,3 +1896,34 @@ def test_enter_on_typed_species_text_picks_the_option_it_names_or_nothing(typed,
     box.text = typed
     box.on_select(SimpleNamespace(control=box))
     assert seen == picked
+
+
+def _parents(root, target, path=()):
+    """Every chain of controls from `root` down to `target`."""
+    if root is target:
+        yield path
+        return
+    children = []
+    for name in ("content", "controls"):
+        value = getattr(root, name, None)
+        children += value if isinstance(value, list) else [value] if isinstance(value, ft.Control) else []
+    for child in children:
+        yield from _parents(child, target, path + (root,))
+
+
+@pytest.mark.parametrize("order", [("full", "split", "single", "narrow", "split", "full"),
+                                   ("single", "split", "narrow", "single", "full")])
+def test_a_window_resized_through_every_layout_places_each_pane_once_with_the_content_in_front(order):
+    """Narrowing a window from side by side shows the tool's options, not the list it was picked from."""
+    games, options, session = (ft.Container(width=t.SIDEBAR_WIDTH), ft.Container(expand=True),
+                               ft.Container(width=t.SESSION_WIDTH))
+    panes = t.Panes(("Games", "gamepad", games), ("Options", "sliders-horizontal", options),
+                    ("Session", "play", session))
+    for layout in order:
+        previous = panes.layout
+        panes._arrange(layout)
+        for pane in (games, options, session):
+            assert len(list(_parents(panes.control, pane))) == 1, (layout, pane)
+        if previous in ("full", "narrow") and layout in ("split", "single"):
+            assert panes.index == 1
+    assert panes._choose(1440 - 96) == "full" and panes._choose(1000) == "split" and panes._choose(600) == "single"
