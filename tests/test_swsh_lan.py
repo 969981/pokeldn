@@ -256,3 +256,105 @@ def test_the_apps_lan_trade_trades_twice_with_our_lan_host_on_loopback(tmp_path,
     assert [species(n) for n in ("join.pk8", "join-2.pk8")] == [94, 95]
     assert [species(n) for n in ("host.pk8", "host-2.pk8")] == ([94, 94] if empty_offer
                                                                 else [96, 97])
+
+
+@pytest.mark.parametrize("activity", ["raid", "lair"])
+def test_our_lan_den_and_adventure_lobbies_seat_our_lan_guest(tmp_path, monkeypatch, capsys, activity,
+                                                              loopback_lan):
+    """The app's Max Raid and Dynamax Adventure LAN tools against each other: the guest's 4-seat
+    browse finds the lobby, whose session info carries the lobby's game bytes a guest's Y-Comm reads
+    (`0x006bb968`), and the lobby runs to the battle start or the adventure's handover."""
+    ports = (pia_lan.BROWSE_PORT, pia_lan.BROADCAST_PORT, pia_lan.STATION_PORTS[0])
+    if not all(_bindable(ip, port) for ip in (HOST_IP, JOIN_IP) for port in ports):
+        pytest.skip("needs the lo0 aliases 127.0.0.2 and 127.0.0.3 with ports 30000, 40000 and "
+                    "49152 free")
+    monkeypatch.delenv("POKELDN_RADIO", raising=False)
+    import swsh_connect
+    import swsh_host
+    from test_swsh_trade_payload import a_payload
+    from pokeldn import gen8, pokemon as pokemon_service
+    monkeypatch.setattr(pokemon_service, "prepare_file", lambda game, path, **kw: path)
+    monkeypatch.setattr(pokemon_service, "prepare", lambda game, raw, **kw: gen8.decrypt(raw))
+    party = a_payload(count=3)
+    (tmp_path / "snapshot.bin").write_bytes(party)
+    lan = ["--lan-broadcast", "127.255.255.255"]
+    from pokeldn.app.catalog import GAMES
+    from pokeldn.app.command import build
+    from pokeldn.app.settings import Settings
+    tools = {t.key: t for game in GAMES for t in game.tools}
+    if activity == "raid":
+        adverts = json.loads((Path(__file__).parent / "data" / "swsh_raid_adverts.json").read_text())
+        (tmp_path / "boss.pk8").write_bytes(bytes.fromhex(adverts["boss_hoothoot"]))
+        (tmp_path / "m1.pk8").write_bytes(party[gen8.SIZE_PARTY:2 * gen8.SIZE_PARTY])
+        host_tool, join_tool = tools["swsh-lan-raid-host"], tools["swsh-lan-raid-join"]
+        hosting = {"--raid-boss": {"file": str(tmp_path / "boss.pk8")},
+                   "--offer-file": {"file": str(tmp_path / "m1.pk8")}}
+    else:
+        host_tool, join_tool = tools["swsh-lan-lair-host"], tools["swsh-lan-lair-join"]
+        hosting = {"--lair-legendary": "144", "--lair-seed": "173502832"}
+    assert not host_tool.radio and not join_tool.radio
+    host_args = build(host_tool, hosting, {}, Settings())
+    join_args = build(join_tool, {}, {}, Settings())
+    # Our host is on an alias, not on a local /24: the address replaces the tool's `auto`.
+    join_args[join_args.index("auto")] = HOST_IP
+    result = {}
+    host = threading.Thread(target=lambda: result.setdefault("host", swsh_host.main(
+        host_args + ["--our-ip", HOST_IP, *lan, "--seconds", "45"])), daemon=True)
+    join = threading.Thread(target=lambda: result.setdefault("join", swsh_connect.main(
+        join_args + ["--our-ip", JOIN_IP, *lan, "--capture", str(tmp_path / "join.jsonl"),
+                     "--dwell", "0.5", "--scans", "20", "--listen-first", "2", "--hold", "35",
+                     "--send-snapshot", str(tmp_path / "snapshot.bin")])), daemon=True)
+    host.start()
+    time.sleep(1.0)
+    join.start()
+    join.join(150)
+    host.join(150)
+    out = capsys.readouterr().out
+    assert result == {"host": 0, "join": 0}
+    target = next(json.loads(line) for line in (tmp_path / "join.jsonl").read_text().splitlines()
+                  if '"target"' in line)
+    data = bytes.fromhex(target["application_data"])
+    assert len(data) == 0x168
+    if activity == "raid":
+        # Den record at advertisement 0xAF and 0xB0 (docs/swsh_raid.md), 0x18 lower: rank 0, Hoothoot.
+        assert data[0xAF - 0x18] == 0x11 and struct.unpack_from("<H", data, 0xB0 - 0x18)[0] == 163
+        assert "[raid] 127.0.0.3: both sides started" in out
+    else:
+        assert "[lair] the legendary is species 144" in out and "we are index 1" in out
+
+
+def test_a_host_on_an_alias_hears_a_session_request_broadcast_to_its_station_port(loopback_lan):
+    """An emulated Shield joining from Y-Comm sent its session request to 192.168.1.255:49152..49155
+    and nothing to the host's own address; a host on a loopback alias missed it (error 34)."""
+    if not _bindable(HOST_IP, pia_lan.STATION_PORTS[0]):
+        pytest.skip("needs the lo0 alias 127.0.0.2 with port 49152 free")
+    ours = next((ip for ip in pia_lan.local_addresses() if not ip.startswith("127.")), None)
+    if ours is None:
+        pytest.skip("needs an address off loopback")
+    if not _bindable(pia_lan.broadcast_address(ours), 0):
+        pytest.skip("this system binds no socket to a broadcast address (Linux, Windows)")
+    host = pia_lan.LanHostTransport(GAME_KEY, 60006, our_ip=HOST_IP, console_ip=ours,
+                                    log=lambda *a: None)
+    host.start()
+    try:
+        heard = {s.getsockname() for s in host._station_ports}
+    finally:
+        host.stop()
+    assert (pia_lan.broadcast_address(ours), pia_lan.STATION_PORTS[0]) in heard
+
+
+def test_our_adventure_host_answers_a_retail_max_lair_search_with_its_attributes(loopback_lan):
+    """A retail Sword's Invite Others in LAN mode browses once for game mode 50000 with attributes
+    2, 3 and 4 set, and joins only a session whose attributes hold those values; then it hosts."""
+    if not _bindable(HOST_IP, pia_lan.BROWSE_PORT):
+        pytest.skip("needs the lo0 alias 127.0.0.2 with port 30000 free")
+    host = pia_lan.LanHostTransport(GAME_KEY, 50000, our_ip=HOST_IP, broadcast=BROADCAST,
+                                    console_ip=CONSOLE_IP, max_participants=4, log=lambda *a: None)
+    host.bind_host(pia_lan.constant_id(HOST_IP, 49152), 1, host.network_id, bytes(32))
+    host.start()
+    try:
+        reply = pia_lan.browse(GAME_KEY, HOST_IP, bytes.fromhex(VECTORS["criteria"]["lair"]),
+                               our_ip=JOIN_IP, broadcast=BROADCAST, tries=1, wait=0.5)
+    finally:
+        host.stop()
+    assert reply["attributes"] == [0, 0, 0xFFFFFFFE, 0x33D39298, 0x253CAD29, 0]
