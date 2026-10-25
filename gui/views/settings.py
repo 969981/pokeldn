@@ -47,10 +47,9 @@ class SettingsView:
         app.update_listeners.append(self._update_shown)
         self._update_text()
         self.show_advanced = False
-        self.column = ft.Column(spacing=t.GAP, width=None if t.compact else 760, expand=t.compact)
-        self.scroll = ft.ListView([ft.Row([self.column], alignment=ft.MainAxisAlignment.CENTER)],
-                                  padding=ft.Padding(4, 8, 4, 24), expand=True)
-        self.control = t.fade(self.scroll)
+        self.column = ft.Column(spacing=t.GAP)
+        self.scroll = t.readable(self.column, 760)
+        self.control = self.scroll
         self.render()
 
     def enter(self, **_) -> None:
@@ -181,8 +180,7 @@ class SettingsView:
         ]
 
     def _find_button(self, row: str) -> ft.Control:
-        return ft.Container(t.button(tr('settings.find_mine', 'Find mine'), lambda e: self._find_trainer(row),
-                                     "search", filled=False), height=48, alignment=ft.Alignment.CENTER)
+        return t.button(tr('settings.find_mine', 'Find mine'), lambda e: self._find_trainer(row), "search", filled=False)
 
     def _find_trainer(self, row: str) -> None:
         """Fills the trainer from the newest one a run read off a console (pokeldn.console_trainer)."""

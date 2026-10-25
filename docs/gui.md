@@ -67,7 +67,11 @@ A page's panels are laid out by the width they have, measured as the window chan
 | less | one panel at a time on a switcher |
 
 Narrowing a window from side by side brings the options column forward. On a wide window the options
-column keeps to 720 points, centred, and fields go as many to a row as fit.
+column keeps to 720 points, centred, and fields go as many to a row as fit; Settings and Plugins keep
+to 760. A page opened after a resize starts in the layout its width allows.
+
+The desktop window goes down to 380 points wide. Below 760 it switches to the phone layout below,
+live, and back when widened; a desktop window keeps its title bar row above the content.
 
 ## Phones
 
@@ -199,6 +203,11 @@ IDs are kept, and the run omits `--fresh-pid`.
 | species or form absent | destination's personal table |
 | Legends Z-A records out | PKHeX.Core 26.8.26 has no route |
 
+The box lists every banked Pokemon with a search over its summary, a sort (newest, oldest, Pokedex
+number, name) and Select, which picks several Pokemon (a long press starts it too) for one Export to a
+folder, Take out of trades or Remove. A sprite's crop is kept with its SHA-256 in the sprite cache's
+`index.json`, so a box opens without decoding a PNG it has shown before.
+
 Edit allows what the game allows: nickname, level upward, moves, held item. The helper's `check`
 refuses an edit that makes a legal Pokemon illegal. Queued Pokemon are not editable.
 `tests/test_bank.py` covers moves, refusals, edits and imports through the real helper.
@@ -245,9 +254,13 @@ changed records.
 
 ## The GTS
 
-The GTS page lists open listings filtered by species and the player's own under Yours. Deposit takes
-a legal, unqueued banked Pokemon, held in `Documents/pokeldn/GTS` while listed. The app answers offers
-whenever it runs ([The GTS](online.md#the-gts)).
+The GTS page lists open listings filtered by species and the player's own under Yours. Shiny only
+keeps listings offering a shiny; My bank can answer keeps those a legal, unqueued banked Pokemon
+answers. The listings sort newest first, by end date, by Pokedex number or by level. A shiny Pokemon,
+offered, asked for or picked to deposit, carries sparkles. Deposit takes a legal,
+unqueued banked Pokemon, held in `Documents/pokeldn/GTS` while listed, and asks for up to three
+species, each optionally shiny, under one level range. The app answers offers whenever it runs
+([The GTS](online.md#the-gts)).
 
 ## Boards and firmware
 
