@@ -13,6 +13,9 @@ radio firmware for ESP32, ESP32-S3, ESP32-C3 and ESP32-C6; the user supplies `pr
 3. Choose a game and a tool, prepare a Pokemon or a file, follow the console steps and press Start.
    Received Pokemon go to the Settings folder, opened by the button beside Output.
 
+Every trade tool's Pokemon to offer may be left empty: Start has PKHeX build a random legal Pokemon
+of that game for your trainer (`command.prepare`), new at each run.
+
 Mystery Gift tools share one builder (preset, build your own, `.pokegift`, `.wc8` on Sword/Shield).
 Save gift file exports without a board as `.pokegift`, `.wc3` or `.wc8`
 ([Mystery Gift files](gifts.md#desktop-app)).
@@ -204,9 +207,18 @@ IDs are kept, and the run omits `--fresh-pid`.
 | Legends Z-A records out | PKHeX.Core 26.8.26 has no route |
 
 The box lists every banked Pokemon with a search over its summary, a sort (newest, oldest, Pokedex
-number, name) and Select, which picks several Pokemon (a long press starts it too) for one Export to a
+number, name), a filter (shiny, waiting to trade, not legal) and Select, which picks several Pokemon (a long press starts it too) for one Export to a
 folder, Take out of trades or Remove. A sprite's crop is kept with its SHA-256 in the sprite cache's
 `index.json`, so a box opens without decoding a PNG it has shown before.
+
+A Pokemon's pane shows its battle set from the helper's `check` (`battle`): IVs, effort and stats in
+Showdown's order, and its Showdown set in English for Copy as a Showdown set. The effort column is
+Let's Go's AVs (`IAwakened`), Legends Arceus's GVs as the game shows them (stored value plus
+`GanbaruExtensions.GetBias` of the IV) and EVs elsewhere.
+
+The Pokedex box lists every species one of the bank's seven games holds (the union of the helper's
+`species`), with the bank's count, a sprite and a shiny mark for each one it holds; a filter shows
+the held, the missing, or those with no shiny yet. A held species opens the box searched for it.
 
 Edit allows what the game allows: nickname, level upward, moves, held item. The helper's `check`
 refuses an edit that makes a legal Pokemon illegal. Queued Pokemon are not editable.
@@ -232,9 +244,20 @@ Scarlet/Violet, Z-A height, weight and Alpha mark). Sword/Shield Mystery Gift ca
 
 ### Importing
 
-The plus button or a dropped file imports a save (`SaveUtil.TryGetSaveFile`; a 3DS save is a file
-named `main`) or one record of any PKHeX format (`FileUtil.TryGetPKM`). A save yields party then box
-slots.
+The plus button or a dropped file imports a PKSM bank, a save (`SaveUtil.TryGetSaveFile`; a 3DS save
+is a file named `main`) or one record of any PKHeX format (`FileUtil.TryGetPKM`). A save yields party
+then box slots; a PKSM bank yields its box slots in order.
+
+| PKSM bank (`.bnk`) | layout (PKSM `common/source/BankFile.cpp`) |
+|---|---|
+| header | `PKSMBANK`, u32 version, u32 box count (absent in version 1, read from the length) |
+| entry | u32 generation tag, then the decrypted record padded with `0xFF`; 264 bytes in versions 1 and 2, 0x150 in version 3 |
+| slots | 30 per box, at most 500 boxes |
+| tags (PKSM-Core `Generation.hpp`) | 0 Gen 4, 1 Gen 5, 2 Gen 6, 3 Gen 7, 4 Let's Go, 5 Gen 8 (PK8), 6 Gen 3, 7 Gen 1, 8 Gen 2; `0xFFFFFFFF` empty |
+
+A Gen 1 or 2 entry is a one-Pokemon list with both names: 59 or 69 bytes for Gen 1, 63 or 73 for Gen 2,
+the Japanese length when its last byte is `0x50` or 0 (PKSM `3ds/source/Bank.cpp`, `Bank::pkm`). A
+version above 3 is refused. Box names live in PKSM's `.json` beside the bank and are not read.
 
 | record | kept as |
 |---|---|

@@ -251,6 +251,48 @@ comes 0.17 s after MIGRATION_START; answering nothing leaves it sending for 25.0
 `bin/swsh_connect.py --answer-migration --update-mesh --leave-with-host` (in `--preset trade`) does
 all three answers.
 
+## LAN mode
+
+Options, then L, R and the Left Stick pressed together, turns Sword's LAN mode on; the game shows
+"Mode réseau local activé" and warns that only Max Raid Battles are guaranteed. Pia then runs over the
+console's IP network ([LAN mode](pia.md#lan-mode)) and Y-Comm's Link Trade search works over it.
+
+| measured on an emulated Shield 1.3.2 | value |
+|---|---|
+| the session a Link Trade search hosts | game mode 60001, maximum 2, versions 7 and 7, no application data, no attributes |
+| its browse when the search starts | five requests, game mode 0, flags 0x2, maximum participants 4..4, result size 1 |
+| a hosting Sword leaving its joiner | MULTI_MIGRATION_START (0x49) on mesh port 1, then silence 5.2 s later |
+
+A Link Trade search's own session does not match the browse it sends when it starts.
+`bin/swsh_connect.py --lan auto` (the app's Trade (LAN Join)) browses every local /24 with
+`--preset trade`'s flags and completed a trade with a retail Sword on a Switch 2 over Wi-Fi and with
+the emulated console; it takes the console's silence as its departure (`--lan-quiet`, default 3 s),
+which ended the retail run 3.1 s after the player backed out. `bin/swsh_host.py --lan` (the app's Trade (LAN Host)) hosts a
+session a retail Sword joins from its Link Trade search and trades in, on a Switch 2 over Wi-Fi.
+Without `--our-ip` on a computer with several addresses (a VPN takes the default route), it waits
+for the console's first browse and hosts on the address in that subnet.
+
+A Link Trade search in LAN mode sends two kinds of browse:
+
+| browse | built at | criteria |
+|---|---|---|
+| the Y-Comm nearby-player registry | `0x006c46a0` | maximum participants 4..4, opened and vacant only, result size 1 |
+| the trade search's random matchmake (`Session::JoinRandomSession`, `0x0183f860`) | `0x006bb120` | game mode 60001, maximum participants 2..2, opened and vacant only, result size 8 |
+
+The second joins the first matching session it hears or, with none, hosts its own 2-player session
+([LAN mode](pia.md#lan-mode)). A 2-player session matches only the second.
+
+### The Link Code over LAN
+
+`SetMode(comm, mode, code)` (`0x01096d10`) keeps the scene at comm+0x70 and the Link Code at
+comm+0x74, an optional u32 (a present byte, then the value). `StartRandomMatching`'s parameters carry
+it at +0x88 into the matching object's +0x278 (`0x006b83ec` for LAN). The LDN join (`0x006ca1c0`)
+and the NEX random join (`0x006c6b7c`) format it with `%u` and pass it as the session password. No
+code in the LAN matching class (`0x006b6000`..`0x006bc000`, constructed at `0x006ba480`) reads
++0x278, and its create, browse and random-join settings carry no password. A coded Link Trade search
+in LAN mode sends the same browses as an uncoded one (measured on retail) and joins any session
+that matches them, whatever its code: the LAN host and joiner serve coded and uncoded searches alike.
+
 ## Operational notes
 
 - Never pass `--verbose` live; use `--capture FILE`.
