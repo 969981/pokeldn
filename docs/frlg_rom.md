@@ -874,6 +874,13 @@ So the record-resolver store reaches a live wrapper object on retail when the fo
 buffer's end, and the app aborts there; the same store kept in guest-visible memory does not. A
 payload that pushes the body's frame returns from the site on retail as well.
 
+The advertisement alone can end the title as well. A host beacon whose 8-byte display-name field
+holds no `0xFF`, the Gen III string terminator, closes the title with the same message as the
+friend list opens, before the console sends a datagram or joins; the host's scan capture records no
+`udp_in`. A `0xFF` anywhere inside the eight bytes prevents it, and one placed a few bytes past the
+field does not, so the search stays inside the field. A normally encoded name always ends in `0xFF`,
+so this needs a crafted advertisement; it is an abort on the wrapper side, not the component write.
+
 The dispatch after the write is the app's next `bkpt #0x52`. The game produces them from two
 places: the STWI driver's IWRAM copy, about 60 a second while the link is up (a live read of its
 hit count), and its own calls into `Sio32IDMain` at the site (12 hits in a live read of record 1).
@@ -897,8 +904,11 @@ outside the write. That name is slot bytes `+0x10..+0x17` ([The wrapper's own sc
 pipeline](#the-wrappers-own-scan-pipeline)), so the component's vtable pointer comes from the
 peer's advertisement record.
 
-The next `bkpt #0x52` reads `[component]` and calls `[component + 0x98]`. A host that advertises
-the display name as a native address therefore chooses the call target. Measured on the emulated
+The next `bkpt #0x52` reads `[component]` and calls `[component + 0x98]`, so in that state the
+advertised name is the call target. That state needs the guest-chosen fold: the game's own
+`swi 0x45` hands over `gRfuLinkStatus` in IWRAM ([the `swi 0x45`
+argument](#the-remaining-syscalls)), which keeps the write inside the RFU API buffer, so an
+advertisement on its own reaches no vtable. Measured on the emulated
 French FireRed, with the advertised name `08 01 df 1f 66 00 00 00` (`0x661FDF0108`, inside the
 ROM copy), a 4 KB block of `0xDEADBEEF` written through `swi 0x48` to fold `0xFA3F6`
 (`ROM + 0x3F6000`), one candidate, and the payload's `bkpt #0x52`:
@@ -946,7 +956,7 @@ column is what one issue from the Mystery Gift client with `sloop-svc` showed.
 | 0x42 | mode switch `main + 0x0588A0` | `rfu_REQ_startSearchChild` [sloopsvc.c:49]; sets the network manager to mode 2 | ends the session with the link error; no access point opens |
 | 0x43 | `main + 0x0570EC` -> `main + 0x058AD0` | `rfu_REQ_startConnectParent`, 16-bit PID in `r0` [sloopsvc.c:91]; the same mode switch | the buffer script answered, then "Erreur de connexion" at close |
 | 0x44 | `main + 0x057100` -> `main + 0x058B0C` | `rfu_REQ_stopMode`, no arguments [sloopsvc.c:102] | after 0x43, no visible change |
-| 0x45 | `main + 0x057110` -> `main + 0x058900` | `rfu_REQ_startSearchParent`, `rfu_STC_readParentCandidateList` with `&gRfuLinkStatus` [sloopsvc.c:67-75]; copies the wrapper's scan result through the region table into `struct RfuLinkStatus`, `findParentCount` [include/librfu.h] at offset 8 first | 220 zeroed bytes stayed zero (no parent search in a gift session) |
+| 0x45 | `main + 0x057110` -> `main + 0x058900` | `rfu_REQ_startSearchParent`, `rfu_STC_readParentCandidateList` with `gRfuLinkStatus` [sloopsvc.c:67-75]; the game loads the pointer variable at IWRAM `0x03003110` (`0x0800C6EA`, three instructions in the Switch ROM), which `rfu_initializeAPI` sets to `sRfuAPIBuffer` at `0x03004710`; copies the wrapper's scan result through the region table into `struct RfuLinkStatus`, `findParentCount` [include/librfu.h] at offset 8 first | 220 zeroed bytes stayed zero (no parent search in a gift session) |
 | 0x46 | jump-table entry `0x147` | falls through to the dispatcher's exit: the syscall does nothing | |
 | 0x47 | `main + 0x05715C` -> `main + 0x058680` | `rfu_REQ_configGameData`, `r0` points to `struct RfuGameData` (16 bytes) and the username (8, `RFU_USER_NAME_LENGTH`) [sloopsvc.c:34-46; include/link_rfu.h:103-115,232]; copies all 24 to `component + 0x6050D8` and `activity` (bits 16-22 of the second 64-bit word) to `component + 0x605360` if changed | `activity` 0x30 landed byte for byte at both |
 | 0x48, 0x56 | `main + 0x057084` | the flash-sector copy: the destination sector is guest `r0`, the source is `fold(guest r1)` through the same region table and bounds-checked against the region's size, up to 4 KB | [The flash sector path](#the-flash-sector-path) |
@@ -994,8 +1004,12 @@ The game-data object (vtable `main + 0x1C3B30`) is a sibling of the CPU/bus obje
 table resolves (vtable `main + 0x1C3878`, region table, syscalls 0x45, 0x48, 0x52, 0x55, 0x62); the
 live addresses differ by `0x100000000`.
 
-The per-candidate layout 0x45 writes is unsettled: the copy loop's byte count does not match
-`sizeof(struct RfuTgtData)`; read it live before depending on it.
+`swi 0x45` writes one fixed record per candidate rather than copying `sizeof(struct RfuTgtData)`:
+at `dest + 0x14 + n*0x20`, the id, slot, serial number, a 15-byte game name at `+6` and an 8-byte
+user name at `+0x15`, with `mbootFlag` at `+3` and the slot's last three bytes left as they were.
+The number of remaining candidates goes to `dest + 8`. One call writes at most four records and
+then advances its cursor, so a longer list needs a second call. The `0x18` gate therefore overruns
+by `0x19` bytes with one candidate and by `0x79` with four; the count never widens a single call.
 
 `component + 0x6050D8`, the 24 bytes `swi 0x47` copies ([main + 0x058694], a pre-indexed
 store from the guest's `r0` buffer), is read back by the same handler, which re-packs it into the
@@ -1282,7 +1296,14 @@ the whole `0x480` to `record + 0xB8`, then bit-precise field reads: source `+0xA
 (a 15-byte integer parse, `main + 0xA9830`, hex/oct/dec/bin with `b`/`x` prefixes,
 bound-checked at every advance), `+0x26A` (the advertise data size), `+0x281`/`+0x282`,
 `+0x11A..0x11F`; stores to record `+0x90`, `+0xA0`, `+0xA2`, `+0xA4`, `+0xA6`, `+0xB0`), then
-passes the record through a filter virtual and an accept virtual (`main + 0x80A88..0x80A94`).
+passes the record through a filter virtual (`main + 0x80A70`, `LocalSearchNetworkSetting::vfunc2`
+at `main + 0xA0F48`; the setting is the `LdnBackgroundProcessJob` subobject at `+0x300`, vtable
+`0x1CB408`) and an accept virtual (`main + 0x80A94`, the station list's
+`LocalSessionProperty::vfunc11` at `main + 0x87420`, which copies the record and calls `vfunc17`
+at `main + 0xA1BAC`). The filter tests the setting's flag byte at `+0x14` against the property's
+session id (`+0x98`), the u16 `+0xa2` against `[setting + 0x12, setting + 0x10]`, and the boolean
+at `+0xa6`; the accept copies the record, hashes the 15 bytes at record `+0x11` into `+0x90` and
+stores the flag at `+0xa7`. Neither reads the display name.
 
 The accepted networks land in the parent-candidate list: 16 slots x `0x1A` bytes at
 `owner + 0x6050F2`, the write index at `owner + 0x605294` capped at 15 (`cmp w8, #0xf; b.le`
@@ -2006,18 +2027,37 @@ in `callback1`. `ReadKeys` runs first in the next main-loop pass [main.c:81]; th
 `CB1_Overworld` back, ORs A into `gMain.newKeys` and calls it. A waiting script returns at once [scrcmd.c:1313]; with no script, A talks to what the
 player faces. Held B is no new press at a wait and does nothing standing still.
 
-| Pokemon | the press that creates it | `offset` |
-|---|---|---|
-| Mewtwo | its `waitbuttonpress`; `setwildbattle` follows [CeruleanCave_B1F/scripts.inc:37] | 1 |
-| Articuno, Zapdos, Moltres | the talk: `lock`, `faceplayer`, `setwildbattle`, then the wait | 2 |
+| Pokemon | the press that creates it | `offset` mGBA | `offset` retail Switch |
+|---|---|---|---|
+| Mewtwo | its `waitbuttonpress`; `setwildbattle` follows [CeruleanCave_B1F/scripts.inc:37] | 1 | 3 |
+| Articuno, Zapdos, Moltres | the talk: `lock`, `faceplayer`, `setwildbattle`, then the wait | 2 | 5 |
+
+On retail English FireRed on a Switch 2, a press at Mewtwo's cry with `offset=1` gave personality
+`0x9C9D9DC5`, drawn two calls after the targeted shiny one; `offset=2` gave a non-shiny Mewtwo and
+`offset=3` a shiny one. Facing Zapdos, the talk press with `offset=4` gave `0xC2C9758B`, one call after
+the targeted shiny one, and `offset=5` a shiny Zapdos (`tests/test_shiny.py`). The app sends 3 and 5.
+
+The Switch's emulator calls `Random` twice per V-blank where mGBA calls it once: standing in Cerulean
+Cave B1F in Ryujinx, French FireRed, 1200 calls in 600 V-blanks with `intrCheck` bit 0 clear on every
+one. A countdown that is odd at two calls a frame goes from 1 to -1 and is never pressed; on the retail
+console that cost the Zapdos talk press two of three countdowns. The hook keeps `64 - calls` of the
+last frame at state `+32` and drops a held target whose countdown is odd while that is 62, so every
+countdown it shows reaches 0. With that hook and `offset=3`, Ryujinx gave a shiny Mewtwo
+(`0xA893924D`) at the first countdown at its cry.
+
+In mGBA the recap after CONTINUE leaves the player object
+facing south (`gObjectEvents[0]` `+0x18` = `0x11`, `0x02036E34` on French and English FireRed), and a
+direction pressed during the recap is not taken; the hook's A then reached `gMain.newKeys` and talked
+to nothing. One frame of Up after the recap set `0x22` (north) and the next press talked. The app has the player
+talk to Mewtwo; at the cry no button is needed. After a wild battle the hook kept its countdown but pressed nothing at the
+cry until it was sent again.
 
 `offset` counts calls from the hook's seed at the press frame to the one before the personality,
 measured in mGBA on French FireRed (A held for one frame, three presses each, `tests/test_shiny.py`)
 and run end to end with the app's payload while the player holds B: offsets 0 to 8 at Zapdos give
 one shiny, at 2. With the table's offsets the app's payload gave all four shiny on seven cartridges:
 French, English, Spanish and German FireRed, French, English and Italian LeafGreen. Japanese is
-untried. A target whose countdown is odd when the game advances two calls a frame is skipped; the
-next one is held.
+untried.
 
 `ivs` (`asm/resident/ivs.s`) shows the lead's IVs on two rows (`OVERLAY_TWO_ROWS`, the second in
 `gMain.oamBuffer[112..117]` at y 10): HP, Attack, Defense, Speed, then Sp. Atk, Sp. Def and

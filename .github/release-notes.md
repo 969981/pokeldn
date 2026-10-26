@@ -1,13 +1,14 @@
-# pokeldn 0.45.1
+# pokeldn 0.45.3
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- macOS: the app icon is the same size as other apps' in Launchpad, the Dock and Finder on macOS
-  15 and earlier, where it was drawn larger. On macOS 26 and later it is the layered Liquid Glass
-  icon.
+- FireRed and LeafGreen Shiny legendary: Mewtwo, Articuno, Zapdos and Moltres now come out shiny on
+  a Switch. The game's automatic press lands on every countdown instead of about one in two. For
+  Mewtwo, talk to it yourself and press nothing at its cry; for a bird, tap Up once after the recap,
+  then hold B.
 
 The radio firmware stays at 1.9.1 and the controller firmware at 1.3.0.
 
