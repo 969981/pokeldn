@@ -593,10 +593,10 @@ A move use draws, in this order:
 |---|---|---|
 | `chance(25)` | the user is paralysed | a full paralysis |
 | `chance(33)` | the user is confused | hitting itself, whose roll is a `below(16)` that replaces the move's draws |
-| `chance(accuracy)` | the move has an accuracy; 100 still draws | a hit |
-| `below(24)`, `below(8)`, `below(2)` | a damaging move, by critical-hit stage 0, 1, 2 | a critical hit when 0 |
+| `chance(accuracy)` | the move has an accuracy; 100 still draws | a hit; the accuracy is the move's times (3 + n) / 3, or 3 / (3 − n) for n below 0, truncated, n the user's accuracy stage less the target's evasion stage within ±6, then the abilities' modifiers |
+| `below(24)`, `below(8)`, `below(2)` | a damaging move, by critical-hit stage 0, 1, 2; none for a move that always lands one (Frost Breath, Wicked Blow, Flower Trick, Surging Strikes) | a critical hit when 0 |
 | `below(16)` | a damaging move | the roll r: the damage times (100 − r) / 100 |
-| `chance(p)` | a secondary effect of chance p (Body Slam's 30) | the effect |
+| `chance(p)` | a secondary effect of chance p (Body Slam's 30) | the effect; Fire, Ice and Thunder Fang draw their flinch before their status, the reverse of Showdown's list |
 
 A flinch secondary against the boss draws nothing ([A move in the round queue](#a-move-in-the-round-queue)
 has the rule). A confusion secondary steps the generator once, through a call outside `below` and
@@ -605,10 +605,24 @@ Water Pulse, Strange Steam, Magical Torque), whatever the step's output. A confu
 no duration. A stat-lowering secondary of 100 percent (Spirit Break, Bulldoze) draws `chance(0)` in
 some rounds and nothing in others. Battlers of equal Speed draw `below(2)` in the speed sorts ([Speed
 ties](#speed-ties)). A flinch secondary draws
-nothing against the boss or a target with Inner Focus (ability 39); against a player that already
-moved in the round it draws its `chance(p)`, and a flinch that lands there adds nothing to the queue.
-A contact move into Static, Poison Point, Flame Body or Cute Charm (abilities 9, 38, 49, 56), or from a
-user with Poison Touch (143), draws `chance(30)` after the move's secondaries. Over the 156 oracle
+nothing against the boss or a target with Inner Focus (ability 39), unless the user has Mold Breaker,
+Turboblaze or Teravolt (104, 163, 164); against a player that already moved in the round it draws its
+`chance(p)`, and a flinch that lands there adds nothing to the queue. A contact move into Static, Poison
+Point, Flame Body or Cute Charm (abilities 9, 38, 49, 56), or from a user with Poison Touch (143), draws
+`chance(30)` after the move's secondaries; into Cute Charm only between a male and a female. A
+secondary raising its user (Flame Charge, Steel Wing) draws its chance and adds the raise after the hit's
+`0x42`, before a knockout's commands, also when the hit knocks its target out. A move that lowers its user's
+stats (Close Combat, Hammer Arm, Ice Hammer) draws `chance(100)` after its roll and adds `0x0d (A, stat,
+n)`, `0x93` and `0xcb (A, 31 + stat, A, stat)` per stat after the hit's `0x42` (a battle with every draw
+logged shows the draw). A landed
+Static, Poison Point or Flame Body paralyses, poisons or burns the attacker inside the target's ability
+activation, after the secondaries' commands: `0x25 (T)`, `0xc7 (T, 0)`, the infliction from T ([Statuses](#statuses)),
+`0xc8 (T)`; an attacker already statused or immune shows nothing. Rough Skin and Iron Barbs (24, 160)
+answer a contact, also one that knocks their holder out, inside the activation with `0x01 (A, T, an
+eighth of A's maximum HP, 20)`, `0x9a (A, -damage)` and `0xcb (A, 143, A)`; Gooey and Tangling Hair (183,
+221) with the attacker's Speed down one. A drain move's heal comes right after the hit's `0x42`, before
+the secondaries and the contact answers, and reads the HP before them. A hit that
+knocks the boss out draws no secondary and no contact chance. Over the 156 oracle
 battles that log every draw, the draws of every round the plugin builds equal the logged ones.
 
 A battle draws `below(100)` once before its first round. The damage is Showdown's Gen 9 formula (data
@@ -618,10 +632,121 @@ for 137 of 140 hits with every draw logged the logged roll and critical draw giv
 Hits that do not fit come during the boss's shield (about 0.45 of the formula), from moves with their
 own rules (Body Press, Rising Voltage, multi-hit moves) or are capped at the HP left.
 
+Abilities change the formula as Showdown's do, each applied alone with its own 4096ths modifier
+(a pair chained into one modifier is unmeasured): Hustle (55) raises a physical move's Attack 1.5 times
+and lowers its accuracy to 3277/4096; Compound Eyes (14) raises accuracy 5325/4096, capped at 100;
+Thick Fat (47) halves the attacker's stat for Fire and Ice, Purifying Salt (272) for Ghost, and a
+Purifying Salt holder takes no status from a secondary; Secret Sword hits the Defense stat, and Chip
+Away, Sacred Sword and Darkest Lariat ignore the target's defensive and evasion stages; Strong Jaw (173) raises a biting move's
+power 1.5 times, Reckless (120) a recoil move's 4915/4096; Tinted Lens (110) doubles a not very
+effective hit after the type multiplier; Ice Scales (246) halves a special hit after a burn's halving,
+unless the attacker has Mold Breaker, Turboblaze or Teravolt; Filter and Solid Rock (111, 116, both
+broken by Mold Breaker) and Prism Armor (232) take a super-effective hit times 0.75 there. Skill Link (92) gives five hits and still
+draws the hit-count roll. Serene Grace (32) doubles every secondary chance; Stench (1) adds a 10 percent
+flinch drawn before the move's own secondaries; Shield Dust (19) on the target removes the secondaries
+and their draws. Rock Head (69) takes no recoil. Gluttony, Pickpocket, Symbiosis, Ripen and Cud Chew
+(82, 124, 180, 247, 291) do nothing while no battler holds an item.
+
+Sun raises a Fire hit's base damage 1.5 times and halves a Water hit's, rain the reverse, before the
+critical hit (Showdown's `onWeatherModifyDamage`; 125 corpus rounds with such a hit build equal). Swift
+Swim, Chlorophyll, Sand Rush and Slush Rush (33, 34, 146, 202) double Speed in their weather, for the
+order keys, the sorts and `0x5a` alike; Sand Veil and Snow Cloak (8, 81) lower a move's accuracy against
+their holder to 3277/4096 in theirs (83 corpus rounds with one of the six in its weather build equal).
+Sand Veil, Overcoat, Sand Rush and Sand Force (8, 142, 146, 159) take no sandstorm damage. Snow raises an
+Ice type's Defense 1.5 times against a physical hit, as sand raises a Rock type's Special Defense.
+
+Reversal and Flail take their power from the user's HP in 48ths (Showdown's table: 200 under 2, 150
+under 5, 100 under 10, 80 under 17, 40 under 33, else 20). A boss with Adaptability (91) takes 2.25 STAB
+on a move of its Tera type that is also one of its own types, 2.0 on another Tera-type move, and the
+plain 1.5 on its own types' other moves.
+
+Moves with their own power rule follow Showdown's `moves.ts`: Payback doubles when its target has moved
+earlier in the round (a boss reply the shield break dropped does not count), Hex on a statused target, Rising Voltage on a grounded target in Electric
+Terrain; Facade doubles under a status other than sleep, Venoshock on a poisoned target, Electro Drift
+and Collision Course take 5461/4096 on the damage after the type multiplier when super effective, Expanding Force 1.5 in Psychic Terrain from a
+grounded user. A doubled Rising Voltage carries 1 as the fifth argument of its `0x8b`; a doubled Payback
+carries 0. In the corpus rounds built equal Payback and Rising Voltage come raised once each; Hex, Facade,
+Venoshock and Electro Drift come only unraised.
+
+A terrain (Grassy 1, Misty 2, Electric 3, Psychic 4) changes the power of a move: 5325/4096 for a move of
+its type from a grounded user (Grass, Electric, Psychic; Misty Terrain boosts none), a half for a Dragon
+move into a grounded target in Misty Terrain and for Earthquake or Bulldoze into one in Grassy Terrain.
+A battler is grounded unless it is Flying, has Levitate or holds an Air Balloon. 151 corpus rounds under
+Electric, Psychic or Misty Terrain (42, 57, 52) build equal with these rules.
+
 A boss's HP pool is its record's HP times the RaidPoint's HP coefficient over 100 ([The battle
 bootstrap](#the-battle-bootstrap)): of the oracle battles won, 78 at one star, 84 at two, 125 at three and 35 at
 four ended after exactly 5, 5, 8 and 12 times the record's HP in `0x37 (2, 2, damage)`; the others took
 less, through the shield and moves with their own rules.
+
+### Statuses
+
+A secondary that lands a major status runs, after the hit's record: `0x13 (T, condition, 0, value, A)`,
+`0x90 (T, condition)`, `0xa7 (T's position, code)` and `0xcb (A, text, T)`:
+
+| status | condition | value | code | text |
+|---|---|---|---|---|
+| paralysis | 1 | 1 | 46 | 92 |
+| sleep | 2 | turns << 3 \| 2 | 42 | 103 |
+| freeze | 3 | 1 | 45 | 97 |
+| burn | 4 | 1 | 44 | 86 |
+| poison | 5 | 1 | 43 | 79 |
+| bad poison | 5 | 7801 | 43 | 80 |
+| confusion | 6 (no `0x90`) | turns << 3 \| 2 | 47 | 116 |
+
+A sleep secondary draws its turns as 2 + `below(3)` and a confusion secondary 2 + `below(4)` before its
+`chance(p)`, through a call the draw log does not show (the call counter at `rand+0x20` still counts it).
+A target already statused, or immune by its types (Electric to paralysis, Fire to burn, Ice to freeze,
+Poison and Steel to poison), takes nothing. A confusion secondary into Own Tempo (20) still draws and
+shows nothing.
+
+Before a move, a flinched battler shows `0xcb (A, 122, A)` and `0x52 (A, 0)`; a frozen one draws
+`chance(20)` to thaw and, staying frozen, shows `0xcb (A, 98, A)`, `0xa7 (A's position, 45)`, `0x52 (A,
+0)` and `0x1d (A, P, type, 0, 0, M, M)`; a paralysed one draws `chance(25)` and, fully paralysed, shows
+message 93 and code 46 the same way; asleep, message 104 and code 42. Each ends with `0x5b (A, M)` twice
+and `0x1e (A, 0)`, after the move's handler `0x5a (A, M, 0x72000 + speed)`. A paralysed battler's Speed
+is halved after its stage. A burned user's physical damage is halved after the type effectiveness, at
+least 1. A Fire hit on a frozen target thaws it after its `0xd1`: `0x14 (T)`, `0x90 (T, 0)`, `0xcb (T, 99,
+T)`. The shield going up and the boss's own stat reset (between its `0x0f (2)` and `0xc2 (3, 2, 2)`)
+cure the boss's status with `0x14 (2)` and `0x90 (2, 0)`; the shield also ends its confusion with `0x15
+(2, 6)`.
+
+Confusion acts before a move, after a freeze or sleep check; a battler both confused and paralysed is
+unmeasured. Its turns run down by one; at 0 it ends with `0x15 (A, 6)` and `0xcb (A, 118, A)` and the move goes on.
+Otherwise it shows `0xa7 (A's position, 47)` and `0xcb (A, 117, A)` and draws `chance(33)`; a hit on
+itself draws its roll `below(16)` and nothing else: Showdown's 40-power typeless physical damage at the
+battler's own Attack and Defense stages, shown as `0x91 (A)`, `0x01 (A, the battler that confused it,
+damage, 2)`, `0x9a (A, -damage)`, `0xca (A, 576, A)`, `0x52 (A, 0)`, then the stopped move's end (the
+boss's with its `0x1d`). The boss's extra-action move checks its confusion and paralysis the same way
+inside its `0xc1 (9, 0)` and `0xc1 (9, 1)`, a stopped one ending with `0x1d (2, P, type, 0, 0, M, M)`.
+
+A faint clears the battler's status and confusion.
+
+At a turn's end a burn deals a sixteenth of the battler's record HP (the boss's record HP, not its pool)
+right after its `0x19 (b, 4)`, a poison an eighth after `0x19 (b, 5)`, a bad poison n sixteenths on its
+n-th turn end: `0xa7 (b's position, 44 or 43)`, `0x01 (b, the battler that inflicted it, damage, 39 or
+38)`, `0x9a (b, -damage)` and `0xcb (b, 88 or 82, b)`. Salt Cure (864) sets condition 46 on its target after the hit's `0x42`
+(`0x13 (T, 46, 0, 1, A)`, `0xcb (A, 1033, T, A)`, its 100 percent chance drawn; Psychic Noise's Heal Block
+the same way with `0x13 (T, 15, 0, 18, A)` and `0xcb (A, 283, T)`); at each turn end, right
+after `0x19 (b, 46)`, it deals an eighth of the record HP, a quarter to a Water or Steel type: `0xa7 (b's
+position, 152)`, `0x01 (b, A, damage, 0)`, `0x9a (b, -damage)`, `0xcb (b, 125, b, 864)`. A Salt Cure on a
+salted target adds nothing.
+
+A player knocked out at a turn's end (by Salt Cure, a burn, a poison or the sandstorm) runs, right after that damage's
+commands, the knockout commands with `0x49 (V, 0, 0)` and no `0x09`, ending with `0x38 (s)` only when s, the
+battler that salted it or raised the sandstorm, is its foe (a sandstorm raised by an ally's Sand Spit
+shows none). The damage shown is the whole fraction.
+
+Moxie (153) on the boss raises its Attack after its hit knocks a player out, after the hit's `0xd1`:
+`0x25 (2)`, `0xc7 (2, 153)`, `0x0c (2, 1, 1)`, `0x92`, `0xcb (2, 11, 2)`, `0xc8 (2)`. At what the corpus
+counts as +5 (three knockouts in one battle) it showed nothing; whether the boss was already at +6 then is
+unknown. Speed Boost (ability 3) raises Speed after the
+`0x44` list (`0x25`, `0xc7`, `0x0c (b, 5, 1)`, `0x92`, message 15, `0xc8`), before the turn end's last
+three battler sorts, except for a revived battler that has not yet commanded a round since (2 of 2
+corpus cases each way; Showdown's `activeTurns`). Shed Skin
+(61) and Hydration (93) without a status, and Healer (131) on the boss, which has no ally, show and
+draw nothing at a turn's end; Shed Skin on a statused battler draws `chance(33)` there (no cure came in
+the corpora).
 
 ### Speed ties
 
@@ -636,16 +761,24 @@ over the five battlers in id order gives the logged number of draws at the battl
 | the battle start, before Trace's draw | the five battlers, id order | 1 | the switch-in events |
 | a round's start | the round's actions, command order; key priority, then not Stall, then Speed | 3, each of the previous one's result | the first: the second `0x51` pass; the third: the order of the moves |
 | after each move but the last | the actions | 1 | nothing in the queue |
-| a round's end | the five battlers, id order each time | 3 | the second: `0x43` |
-| a turn's end (every fourth round) | the five battlers, id order each time | 8 | the fourth and fifth agree with `0x19`; the seventh: `0x43` |
+| a round's end | the standing battlers, id order each time | 3 | the second: `0x43` |
+| the end of the round the boss falls in | the standing battlers | none: no draw | `0x43` in Speed order, ties in id order (5 of 5 corpus wins with a tie) |
+| a turn's end (every fourth round) | the standing battlers, id order each time | 8 | the fourth: the sandstorm, Leftovers and `0x19` order; the seventh, after the turn's end: `0x43` |
 
 The round-end `0x43` order matched the second sort in 109 of 123 battles; the 14 others had a battler's
 Speed changed by a move in that round. The chained action sorts matched the `0x51` and move orders in
 27 of 27 rounds whose two actors tied, and the draw after the first move came in 3 of 3 rounds that
-reached both moves. The turn-end orders matched in 8 of 8 turn ends whose sorts disagreed.
+reached both moves. The fourth sort gives the residual order in 12 of 12 corpus turn ends whose first five sorts disagreed;
+the first, second, third or fifth fails some of them.
 
 The boss's Trace draws `below(N)` over the players whose ability it can copy, in id order: `below(3)`
 with one player holding Embody Aspect. A move into Shell Armor (ability 75) draws no critical hit.
+
+A boss with Imposter transforms into battler 1 at the battle start and fights with that battler's
+stats but HP, moves, types and stat stages (its Tera type unchanged). The station still commands it
+Transform, which then fails every time: `0xc9 (2, 0, 144, P, 1)`, `0x7b`, five zero groups, `0xca (2,
+567)`, `0x1d (2, P, 0, 1, 0, 144, 144)`, `0x5b (2, 144)` twice and `0x1e (2, 0)`, after its handler's
+`0x5a`. Actions tied on their key beside a handler move sort and draw as any tie (11 corpus battles).
 
 ### A move in the round queue
 
@@ -656,42 +789,162 @@ move hits the boss and the boss's reply hits a player:
 
 | command | meaning |
 |---|---|
-| `0x05 (A, slot, pp)` | a player's move begins, spending pp (2 against a target with Pressure, else 1); the boss's has none; `slot` is the move's index in the moveset, as in `0x07 (A, slot)` and `0x08 (A, slot)`, 0 for the boss |
+| `0x05 (A, slot, pp)` | a player's move begins, spending pp (2 against a target with Pressure, else 1, and never more than it had left); the boss's has none; `slot` is the move's index in the user's moveset, as in `0x07 (A, slot)` and `0x08 (A, slot)`; a raid action's move outside the boss's moveset has no `0x07` and no `0x08` |
 | `0x07 (A, slot)` | the move is used |
 | `0xc9 (A, 0, M, T's position, 0)` | the move and its target |
 | `0x7b (M, n, A)` | n counts the rounds before this one |
 | six `0xcf` groups of zeros | 20, 5, 5, 5, 19 and 20 bytes |
-| `0x7e (0, ...)`, `0x7e (1, 0, 0, 0, 0, 0)`, `0x7e (2, e, e, e, e, e)` | the first: 1 at T's position + 1; the third: an effectiveness code per position, 7 for none |
+| `0x7e (0, ...)`, `0x7e (1, ...)`, `0x7e (2, e, e, e, e, e)` | the first: 1 at T's position + 1; the second: 1 there for a critical hit; the third: an effectiveness code per position, 7 for none |
 | `0x8b (A's position, T's position, M, type, 0, 0, 1, tera, class, 0)` | the hit; `tera` is 1 when the boss uses a damaging move of its Tera type (448 of 448 such hits), else 0; `class` is the move's target class: 0 one target, 1 adjacent ally or self, 4 all adjacent, 5 all adjacent foes, 6 allies, 7 self, 9 a random foe, 10 the field, 11 the foe side, 12 the ally side, 13 scripted (Showdown's `target` names, over 19,245 oracle hits) |
 | `0x37 (T, 2, damage)`, `0x37 (T, 5, 1)`, `0x02 (T, A, damage, 3)` | the damage |
 | `0xd0` with bytes `T, e` | e is the effectiveness: 7 neutral, 6 not very effective, 8 super effective |
 | `0x8e (1, 1, M)`; `0x8e (1, 3, M)` and `0xca (A, 575, 0xffff0000)` when not very effective; `0x8e (1, 2, M)` and `0xca (A, 574, 0xffff0000)` when super effective | the effectiveness message |
+| `0xa7 (T's position, 131)`, `0x20 (A, 26)` | only for a critical hit, then `0x37 (A, 0, 1)` also comes just before the damage commands |
 | `0x20 (A, 24)` | only for a super-effective hit |
 | `0x42 (T, A, A's position, type, cat, M, damage)` | the hit's record |
 | `0x25 (T)`, `0xc7 (T, 0)`, `0x0c (T, 5, 1)`, `0x92 (T, 5, 1, 0)`, `0xcb (T, 15, T)`, `0xc8 (T)` | Rattled (ability 155) raising T's Speed after a Bug, Dark or Ghost hit |
 | `0xcb (T, 138, T)`, `0x1e (T, 15)`, `0x26 (T, 0)`, `0x4f (T, 0)`, `0x62 (T)` | T's Air Balloon (item 541) popping; it leaves T |
-| the drain, when the move drains and its user is below full HP | `0xa7 (T, 51)`, `0x03 (A, heal)`, `0x9a (A, heal)`, `0xcb (A, 290, T)`; heal is damage times the drain fraction, rounded half up, uncapped even when the user lacks less (2 of 2 such rounds); the HP it restores stops at full |
+| the drain, when the move drains and its user is below full HP | `0xa7 (A's position, 51)`, `0x03 (A, heal)`, `0x9a (A, heal)`, `0xcb (A, 290, T)`; heal is damage times the drain fraction, rounded half up, uncapped even when the user lacks less (2 of 2 such rounds); the HP it restores stops at full |
 | the secondary effect, if any | for example a paralysis: `0x13`, `0x90`, `0xa7`, `0xcb (2, 92, T)` |
 | `0xd1` with bytes `01 00`, `0x2e (2, A − 1)` | |
 | `0x85 (7, damage)` | only for damage to the boss |
 | `0x7c ()`, `0x08 (A, 0)`, `0x1d (A, T's position, type, 1, 0, M, M)`, `0x5b (A, M)` twice, `0x1e (A, 0)` | the move ends |
 
 A round ends with `0xb2 (0)`, `0x37 (b, 7, 1)` for each battler that moved, `0x75 (3, n)`, `0xc5 (1)`,
-`0x43 (b)` for each battler in speed order (party record speed at its stat stage, the boss among them), `0x23 (b)` for
-each of the round's actors in id order, or all five in the battle's first round, and `0x2d (0)`;
-`0x75 (3, n)` counts the command rounds of the current turn, this one included. A turn ends with every
-fourth command round, whichever slots sent them (3,606 of 4,090 turn ends in the oracle corpora; the rest
-have one or two raid-action rounds between, which do not count): its `0x75 (3, 0)` is followed by
-`0xc5 (0)`, `0x50 (0)`, `0x19 (b, k)` for each end-of-turn kind k in the order 36, 21, 18, 5, 4, 9, 10, 8,
-46, 43, 48, 11, 12, 23, 13, 31, 33, 15, 19, 29, 30, 38, 37, 39, 40, 41, 24, 45, 14, 20, 1, 2, 3, 7, 6,
-16, 17, 22, 25, 26, 27, 28, 32, 34, 35, each over the battlers in speed order, then `0x44 (k)` for k 1
-to 13, before the usual `0xc5 (1)`. Measured on turn ends with no held item, status or weather acting;
-what those add is unmeasured.
+`0x43 (b)` for each battler in speed order (party record speed at its stat stage, the boss among them),
+`0x23 (b)` for each of the round's actors in id order, or all five in the battle's first round, and `0x2d
+(0)`; `0x75 (3, n)` counts the command rounds of the current turn, this one included. A turn ends with
+every fourth command round, whichever slots sent them (3,606 of 4,090 turn ends in the oracle corpora;
+the rest have one or two raid-action rounds between, which do not count): its `0x75 (3, 0)` is followed
+by `0xc5 (0)`, `0x50 (0)`, `0x19 (b, k)` for each end-of-turn kind k in the order 36, 21, 18, 5, 4, 9,
+10, 8, 46, 43, 48, 11, 12, 23, 13, 31, 33, 15, 19, 29, 30, 38, 37, 39, 40, 41, 24, 45, 14, 20, 1, 2, 3,
+7, 6, 16, 17, 22, 25, 26, 27, 28, 32, 34, 35, each over the battlers in speed order, then `0x44 (k)` for
+k 1 to 13, before the usual `0xc5 (1)`. A weather lasts five turn ends, the turn it rises in counting as
+the first: at its fifth it ends right after `0x50 (0)` with `0x99 (w)`, `0x54 ()`, `0x6a (0)`, and a
+sandstorm ending does no damage that turn (7 of 7 weather ends in the oracle corpora). Sun, rain and snow
+add nothing at a turn's end. A terrain lasts five turn ends as well and ends between `0x44 (8)` and `0x44
+(9)` with `0x34 (8)`, `0x6a (8)`, `0xca (0, text)`, `0x32 (0, 0, 1, 0)`, `0x6a (8)`, `0xb2 (0)`, `0xaa
+(0)`, `0x69 (8, 0)`; the end text is 705 Grassy, 709 Electric, 829 Psychic (Misty's is not in the
+corpora). A sandstorm adds, after `0x50 (0)`, for each battler in speed order it damages (a sixteenth of
+its maximum HP): `0xcb (b, 133, b)`, `0xa7 (b's position, 14)`, `0x01 (b, s, damage, 1)` with s the
+battler that raised the sandstorm (its Sand Stream or Sand Spit, or the boss's Sandstorm), and `0x9a (b,
+-damage)`. Leftovers (item 234) then heals each holder below its maximum, in speed order and before the
+residual kinds, by a sixteenth of its record HP: a 5-byte zero `0xcf` group, `0x9b (b, 0)`, a 3-byte zero
+group, `0xa7 (b's position, 51)`, `0x03 (b, heal)`, `0x9a (b, heal)` and `0xcb (b, 295, b, 234)`; the
+heal shown is the whole sixteenth even when less HP was missing. Grassy Terrain heals each grounded
+battler below its maximum by a sixteenth of its record HP right after the weather's commands and before
+Leftovers, in speed order: `0xa7 (b's position, 51)`, `0x03 (b, heal)`, `0x9a (b, heal)`, `0xcb (b, 130,
+b)`. Moody (ability 141) acts at a turn's end after the `0x44` list: one `below(20)` draw v picks the
+raised stat (Attack to Speed) v // 4 and the lowered one v % 4 among the four others; `0x25 (b)`, `0xc7
+(b, 0)`, the raise by 2 (by 1 from +5), the drop by 1 (`0x0d`, `0x93`, `0xcb (b, 31 + stat, b, stat)`),
+`0xc8 (b)` (every Moody turn end in the corpora; stats at ±6 unmeasured). Other held items at a turn's
+end are unmeasured.
 
 A damaging move the target's types are immune to draws nothing, not even its accuracy, and runs
 `0x05`, `0x07`, `0xc9 (A, 0, M, P, 1)`, `0x7b`, five `0xcf` groups (20, 5, 5, 5 and 19 zero bytes), `0xcb
 (A, 72, T)`, `0x52 (A, 3)`, `0x08 (A, slot)`, `0x52 (A, 0)`, `0x1d (A, P, type, 0, 0, M, M)`, `0x5b (A, M)`
 twice and `0x1e (A, 0)`: 5,353 of the 5,550 message-72 runs in the oracle corpora (the rest open an ability activation).
+A Ground move into a target with Levitate (26) that its types do not already make immune runs the same
+way with message 72 inside the target's ability activation: `0x25 (T)`, `0xc7 (T, 0)`, `0xcb (T, 72, T)`,
+`0xc8 (T)`, then `0x52 (A, 3)`. A Grass move into Sap Sipper (157) or an Electric one into Motor Drive (78)
+runs as an immune move whose activation raises the target's Attack or Speed one stage (`0x25 (T)`, `0xc7
+(T, 0)`, `0x0c (T, stat, 1)`, `0x92`, `0xcb (T, 10 + stat, T)`, `0xc8 (T)`), then `0x52 (A, 2)`.
+
+A damaging move that misses its accuracy draw runs as an immune one with message 73 and `0x52 (A, 1)` in
+place of message 72 and `0x52 (A, 3)`. A player's move with no PP left (the party record's PP, less 1 per
+use, 2 against Pressure) runs only `0xc9 (A, 0, M, 10, 1)`, `0xca (A, 578, A)`, `0x52 (A, 0)`, `0x5b (A,
+M)` twice and `0x1e (A, 0)`, before a paralysis draws its `chance(25)`.
+
+A player's move outside Scarlet and Violet (Showdown's `isNonstandard` Past or LGPE: Pursuit, Embargo,
+Sizzly Slide and the rest) fails before anything else, with no draw and no PP: `0xca (A, 567, A)`, `0x52
+(A, 0)`, `0x5b (A, M)` twice and `0x1e (A, 0)`, after its handler's `0x5a` if it registers one (Aromatherapy,
+Sappy Seed and Freezy Frost do). 2,622 of 2,622 such runs in the oracle corpora fit it, and no player's
+move outside the game reaches a `0xc9`. The Unobtainable ones (Cut and the Torques) run as ordinary
+moves (183 runs in the corpora).
+
+A damaging move whose target fainted after it was aimed (the boss's extra-action move aimed when its entry
+joined the list) runs as an immune move with `0xc9 (A, 0, M, P, 1)` and `0xca (A, 567)` in place of the
+message and its `0x52 (A, 3)`.
+
+A status move aimed at the boss while its shield is up fails before it runs, with no draw: `0x05`,
+`0x07`, `0xc9 (A, 0, M, P, 1)`, `0xca (A, 567, A)`, `0x52 (A, 0)`, `0x1d (A, P, type, 0, 0, M, M)`, `0x5b
+(A, M)` twice and `0x1e (A, 0)` (120 of 120 stat-dropping and status-inflicting moves into the shield in
+the oracle corpora; a move on its user still runs). A stat-dropping move into a target whose dropped
+stats are all at -6 runs as an immune move with `0xcb (A, 59 + stat, T)` per stat (60 for Attack) in place
+of message 72 and `0x52 (A, 3)`, with no draw; a raising move whose stats are all at +6 on its user runs
+the same way with `0xcb (A, 52 + stat, A)` per stat. A damaging move's secondary raise of a stat at +6
+shows nothing.
+
+A status move that misses its accuracy draw runs as a damaging miss (message 73 and `0x52 (A, 1)`). One
+whose status the target's types are immune to (Thunder Wave into Electric) runs as an immune move with
+`0xcb (A, 72, T)` and no `0x52 (A, 3)`, with no draw; a poisoning move into a poisoned target the same
+way with `0xcb (A, 84, T)`. A
+sleep move draws its turns, through the call the draw log does not show, before its accuracy.
+
+A weather move (Sunny Day, Rain Dance, Snowscape, Sandstorm) runs as a stat-stage status move with the
+field class (10) and, in place of the stat changes, the weather's start: `0x6a (0)`, `0x69 (0, w)`,
+`0x79 (w, 5, 0, A, 0)` and `0x88 (w, A, 0)`, w 1 sun, 2 rain, 3 snow, 4 sand; a status move that inflicts a
+status (Thunder Wave, Will-O-Wisp, Toxic, Spore) runs the infliction there ([Statuses](#statuses)). Sand
+Spit (245) hit by a damaging move raises a sandstorm after the hit's `0x42` and its secondaries' commands: `0x25 (b)`, `0xc7 (b, 0)`, the
+weather's start with w 4, `0xc8 (b)`, and no message, before the knockout commands when the hit knocks
+its holder out; under a sandstorm already up it shows nothing. A
+weather raised over another (a weather move or Sand Spit) shows only its own start and replaces the old
+one, whose end shows nothing. A
+terrain move runs the same way with the terrain's start: `0x32 (t, 0, 42, A)`, `0x6a (8)`, `0xb2 (0)`,
+`0xaa (t)`, `0x69 (8, t)` and `0xca (A, text)`, the start text 704 Grassy, 706 Misty, 708 Electric, 828
+Psychic; a terrain already up fails it with text 567. A field move's `0x8b` carries position 10 whatever
+position was commanded. Weather is field slot 0 and terrain field slot 8 in
+`0x6a`, `0x69` and `0x44`.
+
+Trick Room (433) runs as a weather move with position 10 in its `0x8b` and, as its effect, `0x69 (1, 0)`,
+`0x30 (1, 0, 42, A)` and `0xcb (A, 275, A)` (field slot 1). While it is up every Speed the order keys and
+the sorts read is Showdown's 10000 − Speed, the run's handler key included (32 corpus rounds under it build
+equal; its end did not come).
+
+Tailwind (366) raises side condition 4 on its user's side (0 the players', 1 the boss's) for four turn
+ends, the turn it rises in counting as the first. It runs as a weather move with the side class (12) and
+position 10 in its `0x8b` (the `0xc9` keeps the commanded position), then `0x4a (side, 4, 0, 34, A)` (34
+is its four turns << 3 | 2),
+`0x65` with the same arguments and `0xca (A, 643, side)`. It doubles the Speed of its side's battlers in
+the order keys and the sorts but not in a handler's `0x5a`. Each turn end it is up adds `0x4c (side, 4)`
+after the last `0x19` and before `0x44 (1)`; at its fourth come `0x4b (side, 4)`, `0x66 (side, 4)` and
+`0xca (A, 645, side)` with A the battler that raised it. Reflect, Light Screen and Safeguard are side
+conditions 0, 1 and 2 for five turn ends, raised the same way with `0x4a (side, c, 0, 42, A)` and start
+texts 623, 627 and 635, ending with texts 625, 629 and 637. Reflect takes a physical hit, Light Screen a
+special one, on its side times 2732/4096 on the final damage unless it is a critical hit, on either side
+(Showdown's factor beside several battlers; the boss's own screens in the corpora fit it). A battler with Wind Power (277) on the Tailwind's side is charged right after the
+start text: `0x25 (b)`, `0xc7 (b, 0)`, `0xcb (b, 1024, b, 366)`, `0xc8 (b)`, `0x1e (b, 20)`, `0x7d (20, b,
+0, 0)`; Wind Rider (274) beside a Tailwind is unmeasured. 47 corpus
+rounds with a Tailwind up, three with its end, build equal.
+
+A two-to-five-hit move rolls its hit count right after the accuracy draw (`0x19d4f2c`): one draw of the
+battle generator's low 7 bits, redrawn while 100 or more, gives 2 hits under 35, 3 under 70, 4 under 85,
+else 5; a fixed count (Double Kick's 2, Triple Dive's 3) draws nothing. Each hit draws its critical hit and
+its roll and runs, after a 20-byte zero group, its own `0x7e` triple, `0x8b` with the hit index as the
+sixth argument and the hit count as the tenth, the damage commands with `0x8e (1, e, M)` only, `0x42` and
+`0xd1`; a hit that knocks its target out ends the run, and its knockout commands carry no fainted
+message. The tenth argument of every hit's `0x8b` is the number of hits that landed, so the hits are
+counted before their commands go out. After the last hit come the effectiveness message
+`0xca (A, 574 or 575)` when not neutral, `0xca (A, 516, hits)`, `0x20 (A, 24)` once per hit when super
+effective, `0xa6 (96)`, then the move's usual end with `0x85 (7, total damage)` on the boss; Dragon
+Darts shows no message 516. A multi-hit move that knocks the boss out adds its fainted message `0xcb (A,
+0, 2)` after `0xa6 (96)`; one that knocks a player out does not. Every two-to-five-hit round of the
+corpora builds equal this way.
+
+A recoil move adds, after the hit's `0xd1` and after any knockout's commands, `0x01 (A, A, r, 4)`, `0x9a
+(A, -r)`, `0xcb (A, 127, A)` and `0x37 (A, 4, r)`, r the damage dealt (at most the HP the target had)
+times the move's fraction, rounded half up, at least 1. Chloroblast ends the same way with half its user's
+maximum HP. Steel Beam pays half its user's maximum HP right after its `0x8b`, before the damage
+commands: `0x01 (A, A, cost, 0)` and `0x9a (A, -cost)`, with no message. A player holding a Life Orb (item
+270) loses a tenth of its maximum HP after a move that dealt damage, after the hit's `0xd1`: `0x01 (A, A,
+cost, 29)`, `0x9a (A, -cost)`, `0xcb (A, 328, A)`; its hits on the boss carry no 1.3 damage boost (9 hits
+built equal, and 7 battles that diverged at the first such hit with the boost).
+
+Focus Energy runs as a status move on its user (class 7) whose effect is `0x1e (A, 9)`, `0x7d (9, A, 0,
+0)` and `0xcb (0, 336, A)`; from then on the user's critical-hit stage is two higher (`below(2)` for a
+stage-0 move). Stockpile's first layer runs the same way with `0x35 (A, 0, 1)`, `0xcb (0, 236, A, 1)`, the
+Defense raise, `0x35 (A, 1, 1)`, the Special Defense raise and `0x35 (A, 2, 1)` (18 of 18 in the corpora;
+no second layer came).
 
 A status move whose only effect is stat stages runs `0x05` (a player's), `0x07 (A, 0)`, `0xc9 (A, 0,
 M, P, 0)` with P the commanded position, `0x7b (M, n, A)`, one `0xcf` group of 20 zero bytes, `0x7e (0,
@@ -700,31 +953,46 @@ M, type, 0, 0, 0, 0, class, 0)` (T is A for a move on itself, class 7), the stat
 `0x08 (A, 0)`, `0x1d (A, P, type, 1, 0, M, M)`, `0x5b (A, M)` twice and `0x1e (A, 0)`. A raise is `0x0c
 (b, stat, n)`, `0x92 (b, stat, n, 0)` and `0xcb (b, text, b)`; a drop is `0x0d (b, stat, n)`, `0x93 (b,
 stat, n, 0)` and `0xcb (A, text, b, stat)`. The text is 10, 17 or 24 plus the stat for a raise of 1, 2 or
-3 stages and 31 or 38 plus the stat for a drop of 1 or 2 (stats 1 Attack to 7 evasion), over every
-stat change in the oracle corpora. A move that cannot miss (Showdown accuracy `true`) draws no accuracy.
+3 stages and 31 or 38 plus the stat for a drop of 1 or 2 (stats 1 Attack to 7 evasion), in Showdown's source
+order, which is the stat order (Coil raises Attack, Defense, then accuracy) but for Shift Gear (Speed,
+then Attack) and V-create (Speed, Defense, Special Defense), over every
+stat change in the oracle corpora. A move that cannot miss (Showdown accuracy `true`) draws no accuracy. Clear Body, White Smoke and Full Metal Body (29, 73, 230) block a damaging
+move's secondary drop with no command and no message, as a secondary drop of a stat at -6 does (its
+chance still drawn). Defiant and Competitive (128, 172) answer a foe's
+drop of one stat, after its message: `0x25 (b)`, `0xc7 (b, 0)`, `0x0c (b, 1 or 3, 2)`, `0x92`, `0xcb (b,
+18 or 20, b)`, `0xc8 (b)`.
 
 A spread move (Showdown target `allAdjacent` or `allAdjacentFoes`) hits only the position its
 command names, with the single-target damage and no spread modifier: every oracle round holding one
 builds equal as a one-target hit, with `class` 4 or 5. Moves run in priority bracket order, then by
 Speed at its stat stage: a boss's Aqua Jet or Shadow Sneak moves before a faster player.
 
-A hit that knocks the boss out wins the battle. After its `0x42` come `0x49 (2, A, M)`, `0x09 (A, 0)`,
+A hit that knocks the boss out wins the battle. After its `0x42` come `0x49 (2, A, M)`, `0x09 (A, slot)`
+with `slot` M's index in A's moveset (382 of 383 oracle knockouts),
 `0x37 (2, 1, 1)`, `0xcb (2, 0, 2)`, `0x94 (2, 0)`, `0x37 (2, 8, 1)`, `0x5f (2)`, `0x62 (2)`, `0x6c (2)`,
-`0x5d (2)`, `0x41 (b, 2)` for each player in id order, `0x33 (2, k)` for k 0 to 13 except 8, `0x80 (2)`,
+`0x5d (2)`, `0x41 (b, 2)` for each player in id order, `0x33 (2, k)` for k 0 to 13 (8 only while a
+terrain is up), `0x80 (2)`,
 `0x29 (2)` and `0x38 (A)`, then the move's usual end. Nobody moves after it, and the round ends with
 only the `0x43` of the battlers left standing, the `0x23` list and `0x2d (0)`. The `0x85 (7, damage)`
 and the damage commands carry the HP the boss had left.
 
 The prefix starts with `0xb5 (0)`, then runs `0x51 (b, 1)` once for the round's actors in id order and
-once in the order they move; in the second run a battler with Stall (ability 100) moves last and
-carries `0x51 (b, 0)`. A battler whose chosen move registers its own handler adds `0x5a (b, M, speed)`, speed at its stat stage,
-and `0x5b (b, M)` after each run, in that run's order, then twice more in move order. Before each
-battler after the first moves, every such battler repeats the pair once more, and a mover whose move
-registers a handler adds `0x5a (b, M, 0x72000 + speed)` just before its `0x05`. 347 of 631 moves register one (Facade and Body Slam among them, Night Slash not).
+once in the order of the first action sort; in the second run a battler with Stall (ability 100) carries
+`0x51 (b, 0)`, and from then on its actions sort last in their bracket; the round's first sort still
+counts it as 1. Mycelium Might (298) carries `0x51 (b, 0)` the same way for a status move only, and
+Prankster (158) raises a status move's priority by 1. Every action sort ([Speed ties](#speed-ties)) first computes each move
+action's order key in the list's order, and a move that registers its own handler shows that as `0x5a
+(b, M, speed)`, speed at its stat stage, and `0x5b (b, M)`. The round's first move to run computes every
+move action's key once more, and a mover whose move registers a handler adds `0x5a (b, M, key)` just
+before its `0x05`, the key (priority + 7) << 16, its `0x51` value << 13, plus its Speed (`0x72000 +
+speed` for a priority-0 move; Stall's `0x70000`). A sort's `0x5a` carries the Speed stat at its stage
+only; the run's carries it with Tailwind and paralysis. (the oracle's command log interleaved with its sorts and action runs).
+347 of 631 moves register one (Facade and Body Slam among them, Night Slash not).
 
-The boss is Terastallized from the start: a damaging move of its Tera type under 60 base power, with
-no priority and a single hit, hits at 60, Gen 9's Tera rule (a Smoliv's Tera Normal Tackle did 4
-where 40 base power gives 2). A move's secondaries each draw `chance(n)` in Showdown's order, except
+The boss is Terastallized from the start: a damaging move of its Tera type hitting under 60 power after
+its base power modifiers, with no priority and a single hit, hits at 60, Gen 9's Tera rule (a Smoliv's
+Tera Normal Tackle did 4 where 40 base power gives 2; a Rivalry boss's Tera Dark Bite into a player of
+the other gender did 25, the unmodified 60-power damage, where Rivalry's 45 gives at most 21). A move's secondaries each draw `chance(n)` in Showdown's order, except
 a flinch against the boss, which draws nothing: a player's Ice Fang on the boss draws only its
 freeze chance (a freeze shows as `0x13 (2, 3, 0, 1, 4)` with messages 97 and 98, and the boss draws
 `chance(20)` to thaw before it moves), the boss's Ice Fang on a player draws both. A hit that knocks
@@ -793,7 +1061,7 @@ table `0x3c6a90c`):
 |---|---|
 | 0xce | none: the end of the queue |
 | 0xcf, 0xd2 | a group: a u8 byte count, then that many bytes |
-| 0xd0 | a u8 count, at most 4, then that many bytes |
+| 0xd0 | a u8 count, then that many bytes: a (battler, effectiveness) pair per target hit, 8 bytes on four targets |
 | 0xd1 | two bytes |
 | 0xd3 | one byte |
 | 0xd4 | none |
@@ -924,6 +1192,72 @@ resets the players' stat changes ends its effect with `0xc2 (60, 2, 0)`, after `
 16, 0, w, 2)` for each player it clears; one that resets the boss's ends with `0x0f (2)`, `0xc2 (3, 2,
 2)`.
 
+### Raid actions in the action list
+
+A queued raid action becomes an action entry of kind 11 (word kind 12; its kind at +0x28, its value at
++0x2c). Entries are ordered by the round's action sort ([Speed ties](#speed-ties)) on the key `0x113ecdc`
+builds: class in bits 22..24 (4 for kind 11, 2 for kind 13, 1 for a move), the move's priority plus 7 in
+bits 16..21, 1 (0 for Stall) in bits 13..15 and Speed in bits 0..12. The boss's raid entries all share
+one key, so every comparison between two of them draws `below(2)`. The oracle's sort and run log:
+
+| entry run | what the queue gets | what joins the list |
+|---|---|---|
+| shield (kind 1) | `0x85 (1, v)`, `0xc1 (1, v)`; `0x14 (2)` and `0x90 (2, 0)` when it cures the boss's status | |
+| shield end (kind 2) | `0x85 (2, 1)`, `0xc1 (2, 1)` | |
+| time left (kind 3) | `0x85 (3, 0)`, `0xc1 (3, 0)` | |
+| extra action i (kind 4) | `0x85 (4, i)`, `0xc1 (4, action)`; nothing at all when action i already ran | action 1 or 2: a kind-13 entry (class 2); action 3: a move entry (class 1) for the profile's move |
+| double action (kind 5) | `0x85 (5, 0)`, `0xc1 (5, 0)`; the rounds after it in the corpora (84) still carry one slot action and at most one boss reply each, and build as before | |
+| kind 13 after action 1 | `0x0f (2)`, `0xc2 (3, 2, 2)`: the boss's lowered stats return to 0, its raised ones stay (a later hit, Speed order and damage in 4 corpus battles) | |
+| kind 13 after action 2 | `0x10 (b)` for each standing player in id order, `0x13 (b, 16, 0, b << 26 \| 12, 2)` for each of them whose ability can be suppressed, `0xc2 (60, 2, 0)` | |
+| the extra action's move | the boss's move run between `0xc1 (9, 0)` and `0xc1 (9, 1)` (before the move's `0x1e (2, 0)`) | |
+
+Action 2 clears the players' stat changes and gives condition 16 (ability suppressed): `0x13` skipped
+an Arceus with Multitype (Showdown flag `cantsuppress`). Action 4 (drain the Tera orb) adds, right after its `0xc1 (4, 4)`, `0x76 (2, k)` for each client slot k
+in order whose Pokemon is standing and has begun a move (`0xc9` with flag 0) since that slot's last drain,
+and no entry; a fainted Pokemon keeps its charge through a drain (25 of 25 drains in the oracle corpora;
+whether a drain empties the charge or lowers it by one, and whether failed moves count, the data do not
+separate). A Sandstorm or Snowscape extra move aims at position 10, Iron Defense
+at the boss (4); a move aimed at one player draws its target with `below(n)` over the standing players in
+position order when its entry joins the list (before the next sort's draws); one aimed at all of them
+(Snarl, Leer) carries position 10.
+
+A damaging extra-action move aimed at all of them (Snarl) hits every standing player at once. It draws
+each target's accuracy in position order, then each target's critical hit and roll, the damage times
+0.75 after the base formula (Showdown's spread modifier). Its run: `0xc9 (2, 0, M, 10, 0)`, `0x7b`, six zero
+groups (20, 5, 5, 5, 19, 20 bytes), the `0x7e` triple over the targets, `0x8b (4, 10, M, type, 0, 0, 1, tera,
+5, 0)`, `0x37 (2, 0, 1)` once when one target took a critical hit, `0x37 (T, 2, damage)` and `0x37 (T, 5,
+1)` per target, `0x02 (T, 2, damage, 3)` per target, one `0xd0` with every target's pair, `0x8e (n, 2 when
+one target took it super effectively else 1, M)`, `0xcb (2, 2, T)` or `0xcb (2, 3, T1, T2)` for one or two
+super-effective targets, `0xcb (2, 6, T)` or `0xcb (2, 7, T1, T2)` for resisted ones, `0x20 (2, 24)` once,
+`0xa7 (T's position, 132)` and `0x20 (2, 26)` for the critical hit, the `0x42`s, then each target's
+secondaries and Sand Spit, `0xd1`, `0x2e (2, 1)`, `0x7c`, `0x1d (2, 10, type, 1, 0, M, M)`. 4 of 4 Snarls
+in the corpora build equal this way. A stat-dropping status extra-action move aimed at all of them (Leer,
+Growl) draws each target's accuracy in position order and runs as a status move with `0x8b (4, 10, M,
+type, 0, 0, 0, 0, 5, 0)` and each standing player's drop in id order, ending `0x1d (2, 10, type, 1, 0, M,
+M)`.
+
+After every action run (`0x11405a0`), while the battle goes on and the boss stands, `0x11425b0` fills an
+empty list of waiting raid actions from the HP triggers: without a shield among them they join the
+round's action list; with one they wait for a raid action round. The list empties at each round's start,
+and running a shield empties it too, so the next run refills it with every HP trigger still met, actions
+already in the list included: those run again later and show nothing. A raid action round leaves its
+list as it stands: a shield refilled there behind the one that ran waits for the next raid action round,
+where it shows nothing. While the boss is frozen its HP
+triggers leave out an extra action of kind 3 (a move) and keep the others: a boss reset fires and runs
+while it stays frozen, the move action comes in after the boss thaws. A move action skipped while the
+boss's status blocks it can come in after the shield cures that status. The extra action's move checks
+the boss's confusion before it runs, as a commanded move does. While the shield is up, a hit on
+the boss does damage times the shield's percent (`0x2a`, 20 in standard profiles; 80 or 40 for a
+Terastallized attacker's own-type or other move), over 100, rounded up from a remainder of 50
+(`0x1535c8c`). The shield ends once the boss has lost the profile's end percent (20) of its HP pool
+since it went up.
+
+The round end puts one `0x37 (b, 7, 1)` per entry of the list, run or not, in the list's last order: 7
+for a shield, an extra boss reset and an extra move whose three entries were queued again by the
+shield. `0x75 (3, n)` counts only rounds with a player's entry, and a raid action round still counts in
+`0x7b (M, n, A)`. A raid action round otherwise ends as a command round: three battler sorts, `0x43` in
+the second one's order and `0x23 (2)`.
+
 ### The battle timer
 
 The battle timer is a 0x28-byte object at the server context's +0x38 (the per-frame machine's and every
@@ -996,14 +1330,40 @@ result of 0 or less takes the time-up branch `0xf6d830`:
 The machine runs only while no job runs, so a timer that runs out during a round is seen once the
 job ends. A raid time-up sends no 0x25: the boss's last timed round, then 0x2b with body `00 00 00 00
 02 00`, 0x35 and 0x37 ([The battle's end](#the-battles-end)). A raid the boss wins ends the same way:
-each fainted player Pokemon takes 75 s off the timer (the i16 at `[[module+0x1b0]+8]`).
+each faint of the host's or the console's Pokemon (not an NPC partner's) takes n seconds off the timer
+(the i16 at `[[module+0x1b0]+8]`, `0x287f3d4`): n is the time limit times 0.125 times the mean level of
+the four players over the boss's level, in float32, truncated (339 of 339 oracle battles; 28 to 61 s
+on a 300 s timer), and the knockout's queue carries `0x81 (-n)`.
 
 A slot whose Pokemon fainted goes through its reader's sub-states:
 
 | message | to | what |
 |---|---|---|
-| 0x21 | the fainted slot, header only | once the slot has no able member; its answer 0x22 starts the reader's timer (reader+0x50, limit from `0x1ffe4e8`) |
+| 0x21 | the fainted slot, header only | once the slot has no able member; its answer 0x22 starts the reader's timer (reader+0x50) for 5, 10, 15, 20, 25 or 30 s by how many times the slot's Pokemon fainted (`0x1ffe4e8`, table `0x3c69d1c`) |
 | 0x23 | every slot, 20608 bytes | once that timer runs out (`0x2016bc8`, a kind 0x23 block of the slot's one action, kind 8), built by kind 35 (`0x1153350`): HP restored (`0x288cde8`), command 3 (battler, HP), the member sent back in (`0x2887044`, `0x11482a0`: command 0x98) |
+
+A revive's queue: `0x03 (b, HP)` with its full HP, `0xcb (0, 1, b)`, then the battle start's send-out
+with the client slot c (`0x3d (c)`, `0x16 (c, 0, 0, n)` with n the rounds so far, `0x5e (b, ability)`,
+`0x61`, `0x6b`, `0x4e`), `0x98 (c, 0, 0, 1)`, `0x20 (b, 18)` and its switch-in ability (Pressure's
+message 162). Its stat changes are gone, and an ability the players' reset suppressed is its own again
+(`0x5e` carries it). The next round's `0x23` list starts with the battlers revived
+since the round before, in revive order, then that round's actors not already listed.
+
+A player's Pokemon knocked out runs, after the hit's `0x42`, the boss's knockout commands with its own
+id ([A move in the round queue](#a-move-in-the-round-queue)): `0x49 (V, A, M)`, `0x09 (A, slot)`, `0x37
+(V, 1, 1)`, `0xcb (V, 0, V)`, `0x94 (V, 0)`, `0x37 (V, 8, 1)` (its faint count), `0x5f`, `0x62`, `0x6c`, `0x5d`,
+`0x41 (b, V)` for each battler still standing in id order, `0x33 (V, k)` for k 0 to 13 (8 only while a
+terrain is up), `0x29
+(V)`, the timer's `0x81 (-n)` for the host's or the console's Pokemon, and `0x38 (A)`; no `0x80`. Its
+actions in the round are marked run, the hit draws `chance(0)` like the boss's knockout, a stat-drop
+secondary draws nothing, a flinch or confusion secondary and a contact ability still draw. A player holding an Air Balloon pops it (message 138, `0x1e (T, 15)`, `0x26 (T, 0)`, `0x4f (T, 0)`, `0x62
+(T)`) after the hit's `0x42` and before these commands.
+
+When the boss's shield ends with value 1, its record sets the five per-slot counters (u16 at record
+`+0x7c`) to -1 (`0x15661e0` event 2). At each round's start (`0x114d390`), a boss move aimed at a slot
+whose counter is negative is dropped with the boss's other actions, the counter reset (event 6) and `0x85
+(6, slot)` queued after the round start's `0x51` run: each player's next turn goes unanswered (271 such
+rounds in the oracle corpora).
 
 ### The server's flow
 
@@ -1021,6 +1381,13 @@ raid's setup +0x30 is kind 0. The per-frame machine (`0xf6d538`) steps five per-
 | 0 | otherwise | each answered pair erased (`0xf6edf4`) |
 | 1 | the slot was sent 5 and sent 6 | a block with the slot's command (`0xf6e6a8`, `0xf702ec`) posted as a ServerCommand, state 2 |
 | 2 | the slot answered a round (0x15 / 0x16) | state 0 |
+
+The server keeps, per slot, the messages it sent and the messages the slot sent in arrival order;
+`0xf6edf4` erases the first sent message of a type and the first received answer, one pair per call, and
+state 0 calls it once for each of the pairs (0x15, 0x16), (0x23, 0x24), (0x11, 0x12), (0x13, 0x14), (0x17,
+0x18), (0x19, 0x1a), (0x1b, 0x1c), (0x1d, 0x1e), (0x25, 0x26) and (0x1f, 0x20) a frame. A slot whose
+reader was held while rounds went out (a fainted slot) therefore erases its backlog one round a frame
+before it is asked again: 12 frames after a revive for 12 rounds. Wild::Setup's end clears both lists.
 
 The boss's slot (table `0x3c6a45a` against N+0x95) only erases answered pairs. Other reader paths: a
 slot that sent 4 gets a kind 0x13 block; on N's side in a raid the sub-states at reader+9 handle a
@@ -1050,6 +1417,22 @@ incoming link (`0xe0f440(server, N+0x95)`); next frame `0x2016290` copies its 0x
 machine's boss list, which posts the raid action. Without that step the timed action never fires.
 The machine's vf 0x70 `0x20162bc` also takes `0x0ab4bce035f3012b` (posted to `0x201665c`) and
 `0xde3856ecc4fe200c` (one kind-14 action, posted as a ServerCommand).
+
+On a frame with no job the machine (`0xf6d538`) reads the battle timer first, and a time left of 0 or
+less posts the time-up; then, while armed (`+0x118`, cleared when a 0x51 goes out and set again when a raid
+action is posted), it ends the frame if its boss list holds actions, or evaluates the time triggers on a
+copy and, when one fires, sends the 0x51 and ends the frame; a boss list holding actions is posted as a
+raid action and the frame ends; only then are the readers stepped. A round whose boss list holds a shield
+first posts the raid action itself (`0x16e5ad0`); a raid action jumps the posted queue. Over the 794
+oracle battles of the corpora, a server built this way sends every message the oracle sends at the same
+server time up to the first round it refuses (31,581 messages; 25 battles through a faint, 8 through a
+revive, 5 through a shield's 0x47).
+
+The machine's clock is the 19.2 MHz system tick: each frame moves it to the frame's time if that is
+later, and every `nn::os::GetSystemTick` read adds 256 ticks. A frame run again at the same time (a host
+starts each run of frames at the time the last one ended) therefore reads slightly later, and a timer
+that ends on a whole second (a fainted slot's 5 s wait) can end on either instance; over the corpora
+that moves a revive by one frame in 10 battles.
 
 `Server`, a Python port of this flow, runs at 30 frames a second on the machine's clock; no frame
 can be skipped, since a reader waiting on a fainted slot's timer moves the machine every frame. The
