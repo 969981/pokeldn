@@ -11,7 +11,7 @@ app_exclude: true
 
 The Switch build is pret/pokeemerald with pokefirered's `REVISION >= 0xA` changes ported, linked so
 the FireRed/LeafGreen application's load-time patches land on Emerald's wireless driver. It runs in
-place of a FireRed cartridge: in Ryujinx it saves, receives Mystery Gift, trades and uses the Union
+place of a FireRed cartridge: on an emulated console it saves, receives Mystery Gift, trades and uses the Union
 Room against pokeldn's hosts. `tools/rse/pokeemerald_switch.patch` is the port against pret commit
 `731ad5bf`; `tools/rse/emerald_switch_build.py` applies and builds it.
 
@@ -83,7 +83,7 @@ REVISION 0 build passes `pokeemerald.gba: OK`.
 
 The application loads the ROM from its RomFS at every launch ([The ROM map](frlg_rom_map.md)), so a
 LayeredFS file over that path replaces the cartridge until it is removed. `tools/rse/rom_mod.py`
-installs one for Ryujinx or an Atmosphere SD card:
+installs one in an emulator's mod folder or on an Atmosphere SD card:
 
     ./.venv/bin/python tools/rse/rom_mod.py install pokeemerald_switch_BPRE.gba --title 0100554023408000
     ./.venv/bin/python tools/rse/rom_mod.py install pokeemerald_switch_BPRE.gba --title 0100554023408000 --sd /Volumes/SWITCH
@@ -93,10 +93,9 @@ The ROM must match the title's cartridge: BPRE for English FireRed (`01005540234
 FireRed (`01004B3023412000`). The game keeps the title's save file name (`FireRed_e.sav`); an Emerald
 save and a FireRed save cannot share it, so back the FireRed save up first.
 
-In Ryujinx (English FireRed, BPRE build) Emerald boots at 60 FPS, shows no dead-battery message,
-saves, and loads the save after a relaunch. With Ryujinx's LDN pointed at the Mac
-(`RYUJINX_LDN_PEER`, `RYUJINX_LDN_SCAN_TARGETS`) the hosts' `--over-ip` serves it
-([Trade and the Union Room](rse_link.md), [Mystery Gift](rse_gift.md)).
+On an emulated console (English FireRed, BPRE build) Emerald boots at 60 FPS, shows no dead-battery
+message, saves, and loads the save after a relaunch. With the emulator's LDN pointed at the Mac the
+hosts' `--over-ip` serves it ([Trade and the Union Room](rse_link.md), [Mystery Gift](rse_gift.md)).
 
 ## Test saves
 
@@ -132,22 +131,65 @@ Three mechanisms are already measured and carry the design:
   ([Save backup and restore](frlg_gift.md#save-backup-and-restore)).
 
 The ROM transfer is that pipeline with the write target changed from a flash sector (0..13) to a ROM
-fold (`0xFA000 + n`) and a boot at the end instead of a save. Emerald is 14,929,764 bytes before its
-`0xFF` tail, 5.75 MB under LZMA; at the save transfer's rate the stream is hours, redone every launch
+fold (`0xFA000 + n`) and a boot at the end instead of a save. The stream is redone at every launch
 because the ROM copy is reloaded from RomFS at each application launch.
+
+Emerald (BPRE) is 14,929,764 bytes before its `0xFF` tail, 3645 sectors of 4 KB, and every one differs
+from the FireRed Switch image's sector at the same offset, so no sector can be skipped. A message
+carries 1012 token bytes (the 1 KiB link buffer less a 12-byte header):
+
+| coding | stream | messages | decoder |
+|---|---|---|---|
+| the save transfer's runs and literals | 11,667,649 bytes | 14,566 | on the GBA side, tested |
+| a copy/literal format with no entropy coding, matched against the whole FireRed image and Emerald's own output, byte-aligned tokens | 8,470,154 bytes | 8370 | none written |
+| LZMA2, 64 KB window | 6,169,577 bytes | 6097 | none written |
+| LZMA2, unbounded window | 5,747,728 bytes | 5680 | none written |
+| LZMA2 with the FireRed image as its dictionary | 2,561,046 bytes | 2531 | none written |
+
+DEFLATE's 32 KiB window cannot see across the two ROMs' 15 MB of shared library and engine code, so a
+FireRed dictionary under `zlib` barely helps (6,991,630 bytes, against 6,975,681 with no dictionary at
+all): the dictionary win is specific to a window the size of the ROM. A decoder's complexity does not
+have to grow with that window: a copy token can name any 32-bit source address at no extra cost, so an
+unbounded-window matcher needs the same dispatch-and-memcpy decoder as the save transfer's existing
+one, just with a third token type. Measured against a hash-chain matcher (6 candidates, 5-byte key)
+over the FireRed image and Emerald's own output, that format still trails LZMA2 by about 3.3 MB: most
+of LZMA2's win past window size is its range coder packing short matches and literals into fractions of
+a byte, which a byte-aligned format cannot do. Reaching the LZMA2 numbers needs a real entropy coder on
+the GBA side, not just a bigger window. `tools/rse/emerald_switch_build.py` already carries a working
+agbcc / arm-none-eabi toolchain for this exact target, so that decoder is better adapted from an
+existing small LZMA or LZMA2 reference decoder in C and cross-compiled with it than hand-assembled from
+nothing; none exists yet.
+
+A retail restore over the board moved about 150 token bytes a second plus about 3.5 s a sector: 19
+sectors took 107 s for 6182 token bytes and 249 s for 27,421, a 2-point fit, unconfirmed by a third run.
+At that rate the stream is about 22 hours in the save transfer's coding, 16 hours under the
+no-entropy-coding format, 11 hours under LZMA2 and 5 hours with the FireRed dictionary; 3645 sectors at
+3.5 s add 3.5 hours on top of any of them if each sector keeps the restore's one-ack-per-sector round
+trip. `SaveBackupServer` already batches up to 32 passes before an acknowledgement
+(`pokeldn/frlg/gift/save_transfer.py:27,243-245`); `SaveRestoreServer` acks every sector
+(`save_transfer.py:295-310`), so that cost has a cheap, host-only, offline-testable fix the backup path
+already proves out. The longest session measured so far lasted 269 s.
 
 The boot writes the GBA SoftReset flag and runs `swi 0x00`: the BIOS jumps to the ROM reset vector at
 `0x08000000` with RAM cleared, so Emerald's own `AgbMain` initialises from the bytes just written. A
-BIOS SoftReset is in-core and is not an application launch, so whether it keeps the written ROM copy
-or triggers a RomFS reload is the one unmeasured link in the chain. It is settled before the stream is
-built: a payload writes a recognisable 4 KB pattern to one ROM fold, runs `swi 0x00`, and a second
-Mystery Gift session dumps that address. The pattern surviving means ROM writes outlive a soft reset
-and the delivery works; FireRed's original bytes mean the copy is reloaded and the boot needs another
-route.
+BIOS SoftReset is in-core and is not an application launch, so a write to the ROM copy outlives it. The
+rom-reset-probe payload (`asm/rom-reset-probe.s`) wrote `word[i] = 0x454D4552 + i` to ROM copy block
+0xF00 (0x08F00000, in FireRed's `0xFF` tail), ran `swi 0x00`, and after the reboot a second Mystery
+Gift session dumped 0x08F00000: all 16 words read back unchanged (English FireRed, emulated console, over the IP
+host). The RomFS reload happens at an application launch, not a soft reset, so the written ROM survives
+the boot into the new game.
 
 ## Unresolved
 
-- Whether a GBA `swi 0x00` soft reset keeps writes to the ROM copy or reloads it from RomFS.
-- Whether the application emulates the GPIO real-time clock Emerald reads.
-- Whether a retail console runs the build: the Ryujinx measurements are the only ones.
+- Whether the application emulates the GPIO real-time clock Emerald reads. Emerald's main menu showed
+  no dead-battery message on an emulated console.
+- Whether a retail console runs the build: the emulated-console measurements are the only ones.
+- The whole-ROM stream, its message rate and the boot into the streamed ROM. Only a one-block write
+  followed by `swi 0x00` has run, and it wrote the `0xFF` tail.
+- Whether the link survives the stream. The Mystery Gift session runs FireRed's librfu and client code
+  from the ROM copy, and the three librfu patches ([The breakpoint hooks](frlg_rom.md#the-breakpoint-hooks))
+  are bytes in the same copy; a stream that writes those sectors replaces them with Emerald's unpatched
+  instructions.
+- Whether a session lasting hours stays up.
+- What FireRed does with the save file after Emerald has saved into it.
 - A build for the Japanese cartridges.
