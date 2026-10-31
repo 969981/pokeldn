@@ -170,8 +170,8 @@ def test_blocks_of_one_byte_go_as_fills_and_the_sound_engine_stops_at_install():
 
 
 def test_with_the_cartridge_rom_the_stream_is_lzma_and_the_console_boots_the_same_rom():
-    """The decoder goes to block 0xFFF, the blocks go as LZMA against the console's copy, the boot
-    leaves the ROM the token path leaves."""
+    """The decoder goes to block 0xFFF and the emission order to 0xFFD-0xFFE, the blocks go as LZMA
+    against the console's copy, the boot leaves the ROM the token path leaves."""
     sent = []
     base = bytearray(image(1, 300, 1))
     base[0xAC:0xB0] = b"BPRF"                       # the console the scripted session plays
@@ -182,7 +182,8 @@ def test_with_the_cartridge_rom_the_stream_is_lzma_and_the_console_boots_the_sam
     assert server.outcome == "booted" and client.rebooted
     assert rom_of(client) == NEW_COPY.ljust(len(rom_of(client)), b"\xff")
     lz = [m for m in sent if len(m) > 4 and m[4] == 7]
-    tokens = [m for m in sent if len(m) > 4 and m[4] == rom_transfer.OP_DATA and m[6:8] != (0xFFF).to_bytes(2, "little")]
+    tokens = [m for m in sent if len(m) > 4 and m[4] == rom_transfer.OP_DATA
+              and int.from_bytes(m[6:8], "little") not in rom_transfer.RESERVED]
     assert lz and not tokens
 
 
@@ -216,3 +217,22 @@ def test_after_a_long_decode_the_host_waits_so_the_console_drops_no_block():
     client.rom_stubs = {buffer_script.ROM_BASE: OLD.ljust(rom_transfer.BLOCKS * rom_transfer.BLOCK, b"\xff")}
     drive(host, client, ticks=3_000_000, stop=lambda: client.rebooted)
     assert client.dropped_blocks == 0 and server.outcome == "booted"
+
+
+def test_a_block_that_copies_from_a_higher_one_is_emitted_before_it_and_still_lands():
+    """Block 10 of the new image is block 30 of the old: in descending order block 30 is gone by
+    the time block 10 decodes; the reference order emits 10 first, and the stream is smaller."""
+    old = bytearray(OLD)
+    new_blocks = list(rom_transfer.blocks_of(NEW))
+    new_blocks[10] = bytes(old[30 * 4096:31 * 4096])
+    new = b"".join(new_blocks)
+    base = bytearray(image(1, 300, 1))
+    base[0xAC:0xB0] = b"BPRF"
+    base[30 * 4096:31 * 4096] = old[30 * 4096:31 * 4096]
+    server = rom_transfer.RomTransferServer(new, live=LIVE, base=bytes(base), encoder_process=False)
+    client = run(server, OLD)
+    assert server.outcome == "booted"
+    assert server.order.index(10) < server.order.index(30)
+    expected = bytearray(NEW_COPY.ljust(len(rom_of(client)), b"\xff"))
+    expected[10 * 4096:11 * 4096] = old[30 * 4096:31 * 4096]
+    assert rom_of(client) == bytes(expected)

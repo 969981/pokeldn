@@ -157,6 +157,15 @@ screen palettes recoloured (blocks `0xEAB`, `0xEAD`, `0xEAE`) wrote those 3 bloc
 151 live blocks at `0xEB1`, passed the check, and after the boot op the console restarted through the
 intro to the recoloured title screen.
 
+The whole Emerald build for BPRE has streamed and booted on emulated English FireRed: 3073 blocks in
+place and 157 live blocks staged at `0xE3D`, 3,691,122 bytes of LZMA in 4268 messages (`--block-repeat
+1 --inter-block-gap-frames 8`, messages cut at 10 frames of decoding), the check pass whole, the boot
+op sent at 3 h 12 min, then Emerald's intro and its title screen in the FireRed application. Past
+the title Emerald printed "The internal battery has run dry. The game can be played." and "However,
+clock-based events will no longer occur.", then a main menu offering CONTINUE on FireRed's save file
+(player name and play time read back, 0 badges). Emerald loaded at launch through LayeredFS showed
+no battery message; which of the application's launch steps sets up the clock is unknown.
+
 The ROM copy carries the application's three librfu patches ([The breakpoint
 hooks](frlg_rom.md#the-breakpoint-hooks)), which the cartridge file lacks. The image is written with
 the same patches applied at the cartridge's `librfu_sio32id.o` (`builds.SIO32ID`, offsets `+0x12E`,
@@ -167,14 +176,16 @@ there are not the cartridge's instructions is refused: the patches would land on
 
 With `--rom-base` naming the console's own cartridge ROM, the blocks go as LZMA (lc 0, lp 0, pb 2,
 `pokeldn.frlg.gift.rom_lzma`) instead of run and literal tokens. The dictionary is the console's
-copy itself: a virtual position below 16 MB is the copy's byte, past it the stream's output, emitted
-from the highest block still to write down to block 0. A match names a copy byte only while that
-block still holds what the survey showed: not yet overwritten by the stream (blocks at or below the
-current one, live blocks, untouched ones). A match stops before a block it may not read, and a
+copy itself: a virtual position below 16 MB is the copy's byte, past it the stream's output. Every
+block from 0 to the highest still to write is emitted, in an order the host writes to ROM blocks
+`0xFFD` and `0xFFE` first: a pass with no availability limit records which copy blocks each block
+copies from, and a block goes before any copy block it takes 8 bytes or more from (a topological
+sort, highest block first). A match names a copy byte only while that block still holds what the
+survey showed: not yet overwritten by the stream, a live block, or an untouched one. A match stops before a block it may not read, and a
 literal after a match is coded against the byte the console holds there.
 
 The decoder (`asm/rom-lzma.c`, 1768 bytes of Thumb built by clang) runs from ROM block `0xFFF`,
-which the host writes first and the boot's fill clears. Its state, 6.9 KB with 5.2 KB of
+which the host writes first and the boot's fill clears with the order table. Its state, 6.9 KB with 5.2 KB of
 probabilities, sits at `gDecompressionBuffer + 0x2000`. It decodes about a thousand bytes a frame
 (at most 98,000 instructions a call under unicorn) and returns 0 until a message is consumed, so the
 client calls it again the next frame. A finished block is written with `swi 0x48` and read back.
@@ -184,14 +195,17 @@ The console drops a link block that arrives while it is still running the last m
 records the decoder's cost per stream byte (a symbol 6 units, a copied byte 1, 1000 units a frame);
 a symbol decodes once the decoder holds its 20-byte lookahead, 25 bytes past the encoder's count, so
 its work falls on the message that brings those. Each data message carries the frames of decoding it
-causes, and the host stays quiet that long plus 6 frames after its last link block. A few bytes of
+causes plus 6 frames; the next message's header block may arrive during the decoding, its second
+block only after. A few bytes of
 stream for a long run of `0xFF` can decode for over a hundred frames.
 
 | coding of Emerald for BPRE | bytes |
 |---|---|
 | runs and literals | 11,667,649 |
 | runs and literals plus a copy token from any ROM byte still held (offline) | 9,081,120 |
-| LZMA against the console's copy (57 chunks, encoded in 26 s) | 3,691,122 |
+| LZMA against the console's copy, descending order (57 chunks, encoded in 26 s) | 3,691,122 |
+| the same in the reference order (offline) | 3,206,459 |
+| LZMA with no availability limit, greedy (offline bound) | 3,027,095 |
 
 ### The live blocks
 
@@ -259,13 +273,16 @@ the boot into the new game.
 
 ## Unresolved
 
-- Whether the application emulates the GPIO real-time clock Emerald reads. Emerald's main menu showed
-  no dead-battery message on an emulated console.
+- Whether the application emulates the GPIO real-time clock Emerald reads: loaded at launch, Emerald's
+  main menu showed no dead-battery message; streamed in, it did.
 - Whether a retail console runs the build: the emulated-console measurements are the only ones.
-- The whole Emerald stream and the boot into it. The boot op has moved FireRed's own live blocks and
-  restarted the game; Emerald has not been streamed.
-- The live blocks of the error path: a session cut short returns to the menu through code outside
-  the measured set.
+- The real-time clock after a streamed boot, and what Emerald does continuing FireRed's save file.
+- The stream over the board on a retail console, and its pacing there.
+- The live blocks of the error path. After a link error 2816 blocks into an emulated stream, A on
+  the error screen gave a black screen: the way back to the title runs from overwritten blocks, so a
+  cut stream restarts from a relaunch.
+- Why an emulated console's link stopped twice mid-stream (after 20 min and after 1 h 49 min) with
+  its frame rate steady until the last second.
 - The live blocks of the eleven other cartridges.
 - Whether a session lasting hours stays up.
 - What FireRed does with the save file after Emerald has saved into it.
