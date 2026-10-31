@@ -134,6 +134,86 @@ The ROM transfer is that pipeline with the write target changed from a flash sec
 fold (`0xFA000 + n`) and a boot at the end instead of a save. The stream is redone at every launch
 because the ROM copy is reloaded from RomFS at each application launch.
 
+### The ROM transfer
+
+`bin/frlg_mg_host.py --rom-transfer ROM` runs it (`pokeldn.frlg.gift.rom_transfer`,
+`asm/rom-transfer.s`; `--rom-no-boot` stops after the check). A session:
+
+1. installs the payload, which stops the m4a engine (`gSoundInfo.ident` and `SOUNDCNT_X` zeroed):
+   the music otherwise reads song and wave data from the ROM being replaced;
+2. hashes all 4096 blocks of the ROM copy (`h = rotl(h, 1) ^ word`, 32 blocks per frame);
+3. writes every block whose hash differs from the image, 62 messages per acknowledgement, each block
+   read back through the ROM window; a run of blocks of one byte goes as one fill message of up to
+   eight blocks;
+4. hashes all blocks again and compares;
+5. sends the boot op: with `IME` and the four DMA channels off, the staged blocks move into place,
+   the blocks past the image become `0xFF`, then `swi 0x00`.
+
+The hash pass makes a cut session resumable within one application launch: the next session writes
+only the blocks still different.
+
+Measured on emulated English FireRed over the IP host: an image of FireRed with its three title
+screen palettes recoloured (blocks `0xEAB`, `0xEAD`, `0xEAE`) wrote those 3 blocks in place, staged
+151 live blocks at `0xEB1`, passed the check, and after the boot op the console restarted through the
+intro to the recoloured title screen.
+
+The ROM copy carries the application's three librfu patches ([The breakpoint
+hooks](frlg_rom.md#the-breakpoint-hooks)), which the cartridge file lacks. The image is written with
+the same patches applied at the cartridge's `librfu_sio32id.o` (`builds.SIO32ID`, offsets `+0x12E`,
+`+0x314`, `+0xA28`; the cartridge bytes there checked on all twelve cartridges). An image whose bytes
+there are not the cartridge's instructions is refused: the patches would land on other code.
+
+### The LZMA stream
+
+With `--rom-base` naming the console's own cartridge ROM, the blocks go as LZMA (lc 0, lp 0, pb 2,
+`pokeldn.frlg.gift.rom_lzma`) instead of run and literal tokens. The dictionary is the console's
+copy itself: a virtual position below 16 MB is the copy's byte, past it the stream's output, emitted
+from the highest block still to write down to block 0. A match names a copy byte only while that
+block still holds what the survey showed: not yet overwritten by the stream (blocks at or below the
+current one, live blocks, untouched ones). A match stops before a block it may not read, and a
+literal after a match is coded against the byte the console holds there.
+
+The decoder (`asm/rom-lzma.c`, 1768 bytes of Thumb built by clang) runs from ROM block `0xFFF`,
+which the host writes first and the boot's fill clears. Its state, 6.9 KB with 5.2 KB of
+probabilities, sits at `gDecompressionBuffer + 0x2000`. It decodes about a thousand bytes a frame
+(at most 98,000 instructions a call under unicorn) and returns 0 until a message is consumed, so the
+client calls it again the next frame. A finished block is written with `swi 0x48` and read back.
+The host encodes in a worker process while one-block surveys keep the link busy.
+
+The console drops a link block that arrives while it is still running the last message. The encoder
+records the decoder's cost per stream byte (a symbol 6 units, a copied byte 1, 1000 units a frame);
+a symbol decodes once the decoder holds its 20-byte lookahead, 25 bytes past the encoder's count, so
+its work falls on the message that brings those. Each data message carries the frames of decoding it
+causes, and the host stays quiet that long plus 6 frames after its last link block. A few bytes of
+stream for a long run of `0xFF` can decode for over a hundred frames.
+
+| coding of Emerald for BPRE | bytes |
+|---|---|
+| runs and literals | 11,667,649 |
+| runs and literals plus a copy token from any ROM byte still held (offline) | 9,081,120 |
+| LZMA against the console's copy (57 chunks, encoded in 26 s) | 3,691,122 |
+
+### The live blocks
+
+The session runs FireRed's own link and Mystery Gift code from the copy it overwrites. Those blocks
+are written last: their new bytes go to staging blocks past both images (`0xEB1` to `0xFFF` on BPRE,
+335 blocks) and the boot op moves them.
+
+The set for English FireRed (BPRE) is 157 blocks, `pokeldn/frlg/data/rom_live_blocks.json`: the
+functions an emulated session executes (216 million host-side samples of the GBA `pc` over a
+transfer fall in 327 functions and 53 blocks), their direct callees, and the data their literal
+pools name. With every other block of the copy filled with `0xFF`, an emulated English FireRed
+session ran its writes and its check pass and printed its end message. Closing further over data
+pointers reaches nearly the whole ROM (3380 blocks at two levels). The other eleven cartridges have
+no measured set and are refused.
+
+### Rates
+
+Emulated English FireRed over the IP host: a full hash pass takes 120 s (0.6 s per 32-block answer);
+a 1 KB data message takes 6.3 s (160 B/s); 2077 blocks as fill messages took 400 s. A 252-byte link
+block costs about 80 frames at the default pacing: 21 fragments sent twice (`block_repeat`) and a
+36-frame gap (`inter_block_gap_frames`), against one fragment per frame on the link.
+
 Emerald (BPRE) is 14,929,764 bytes before its `0xFF` tail, 3645 sectors of 4 KB, and every one differs
 from the FireRed Switch image's sector at the same offset, so no sector can be skipped. A message
 carries 1012 token bytes (the 1 KiB link buffer less a 12-byte header):
@@ -165,10 +245,8 @@ sectors took 107 s for 6182 token bytes and 249 s for 27,421, a 2-point fit, unc
 At that rate the stream is about 22 hours in the save transfer's coding, 16 hours under the
 no-entropy-coding format, 11 hours under LZMA2 and 5 hours with the FireRed dictionary; 3645 sectors at
 3.5 s add 3.5 hours on top of any of them if each sector keeps the restore's one-ack-per-sector round
-trip. `SaveBackupServer` already batches up to 32 passes before an acknowledgement
-(`pokeldn/frlg/gift/save_transfer.py:27,243-245`); `SaveRestoreServer` acks every sector
-(`save_transfer.py:295-310`), so that cost has a cheap, host-only, offline-testable fix the backup path
-already proves out. The longest session measured so far lasted 269 s.
+trip. The restore now sends up to 62 data messages per acknowledgement
+([Restore](frlg_gift.md#restore)), and the ROM transfer uses the same batches. The longest session measured so far lasted 269 s.
 
 The boot writes the GBA SoftReset flag and runs `swi 0x00`: the BIOS jumps to the ROM reset vector at
 `0x08000000` with RAM cleared, so Emerald's own `AgbMain` initialises from the bytes just written. A
@@ -184,12 +262,11 @@ the boot into the new game.
 - Whether the application emulates the GPIO real-time clock Emerald reads. Emerald's main menu showed
   no dead-battery message on an emulated console.
 - Whether a retail console runs the build: the emulated-console measurements are the only ones.
-- The whole-ROM stream, its message rate and the boot into the streamed ROM. Only a one-block write
-  followed by `swi 0x00` has run, and it wrote the `0xFF` tail.
-- Whether the link survives the stream. The Mystery Gift session runs FireRed's librfu and client code
-  from the ROM copy, and the three librfu patches ([The breakpoint hooks](frlg_rom.md#the-breakpoint-hooks))
-  are bytes in the same copy; a stream that writes those sectors replaces them with Emerald's unpatched
-  instructions.
+- The whole Emerald stream and the boot into it. The boot op has moved FireRed's own live blocks and
+  restarted the game; Emerald has not been streamed.
+- The live blocks of the error path: a session cut short returns to the menu through code outside
+  the measured set.
+- The live blocks of the eleven other cartridges.
 - Whether a session lasting hours stays up.
 - What FireRed does with the save file after Emerald has saved into it.
 - A build for the Japanese cartridges.

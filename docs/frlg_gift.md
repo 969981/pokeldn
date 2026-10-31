@@ -32,7 +32,9 @@ The console's client boots with `{CLI_RECV, MG_LINKID_CLIENT_SCRIPT}, {CLI_COPY_
   messages. The CRC covers the padded buffer.
 - Block pacing has no acknowledgement: `SEND_BLOCK_INIT` is ignored unless the receiver's slot is
   `RECV_STATE_READY` [link_rfu_2.c:1146]. `MysteryGiftTiming.inter_block_gap_frames` is 36; a dropped
-  block leaves the console waiting forever.
+  block leaves the console waiting forever. A payload the client calls over several frames holds the
+  slot that long: a server sends such a message with `after`, the frames the host stays quiet once
+  its last block is out.
 - Stalls while the console sends follow
   [the mirror rule](frlg_link.md#row-one-of-the-parents-table-is-the-consoles-own-command-mirrored-back).
 
@@ -373,6 +375,9 @@ trainer id.
 4. Later messages start `b RESIDENT + 4` (`0xEA0000FF`), then an op. `OP_DATA` (1) carries sector,
    write flag, u16 offset, u16 token length and tokens into a 4 KiB buffer; the sector's last
    message writes it with `swi 0x48` and verifies it, setting a fail-mask bit on mismatch.
+   One client script carries up to 62 data messages, several sectors, and the console reports the
+   accumulated fail mask once at its end. The new id 0 opens a batch of its own, so it is sent only
+   after the rest of its slot read back whole.
 5. `OP_FINISH` (2) calls `LoadGameSave(SAVE_NORMAL)` if nothing failed [save.c:803]. On
    `SAVE_STATUS_OK` the session ends on `CLI_MSG_BUFFER_SUCCESS` and the console saves the loaded
    game; otherwise on `CLI_MSG_BUFFER_FAILURE` and the old save stays.
