@@ -1,21 +1,17 @@
-# pokeldn 0.51.0
+# pokeldn 0.53.0
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- PKHeX.Core 26.10.18 checks every Pokemon the app builds or receives. Legends Z-A's Greninja gift
-  joins the Simulated Mystery Gifts. Legends Z-A's Spewpa event Pokemon still needs the next
-  PKHeX.Core release.
-- FireRed and LeafGreen: a Pokemon built with EVs past 100 gets the experience PKHeX now requires
-  for them.
-- Hosting: a console that resends its join request keeps a single seat instead of taking a second one.
-- The radio firmware's gift decoder moves to zstd 1.5.7.
-- Updated libraries: flet 1.0.5, esptool 5.6.0, trio 0.35.0, websockets 17.4, pycryptodome 3.24.1
-  (a timing fix for plugin signatures), certifi 2026.10.23.
+- Sword and Shield Max Raid (Host): the boss is generated from a real den seed, as a den makes it, so a
+  console that catches it gets a Pokemon PKHeX accepts. The boss keeps its species, form, Gigantamax
+  state, moves and shininess from its file; its level, IVs, nature and size come from the seed, within
+  the star rank's levels. Wild Area Event bosses are generated the same way. The command line's
+  `--raid-boss-as-is` sends the file unchanged, whose catch PKHeX refuses.
 
-The radio firmware is now 1.9.2; the controller firmware stays at 1.3.0.
+The radio firmware stays at 1.9.2 and the controller firmware at 1.3.0.
 
 pokeldn is an unofficial fan project, not affiliated with Nintendo or The Pokemon Company. It is not
 meant for commercial or promotional use; see the License section of the README.
