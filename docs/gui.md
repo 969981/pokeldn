@@ -167,8 +167,11 @@ found, Find mine asks for a trade.
 
 A different trainer for each game gives each title its own name, gender, language, ID and secret ID,
 edited one game at a time; the IDs are as that game shows them. A game never edited keeps the shared
-trainer. `settings.json` holds the switch as `per_game_trainer` and the values as `game_trainers`,
-game key to the fields that differ. `Settings.own(game)` is the trainer a game sees; `Settings.ids`,
+trainer. A game sold as two versions lists each version (FireRed and LeafGreen, Sword and Shield, and the
+rest), so two saves of one game keep their own trainers; a version never edited keeps its game's trainer.
+When the two versions differ, that game's tools show Your game beside Hosts and Joins, and a run uses the
+picked version's trainer. `settings.json` holds the switch as `per_game_trainer`, the values as
+`game_trainers`, game or version key to the fields that differ, and each game's picked version as `played`. `Settings.own(game)` is the trainer a game sees; `Settings.ids`,
 `Settings.name`, `Settings.trainer` and the launch tokens `{ot}`, `{tid}`, `{sid}`, `{language}`,
 `{gender}` read through it (`tests/test_gui_catalog.py`). Find mine on a game takes the newest trainer
 read off that game.
@@ -454,7 +457,7 @@ Scarlet/Violet's Union Circle tools join a console's circle under a four-digit L
 - Quests: unlock remaining Snacksworth legendaries or give BP (1 to 9,999,999); a Snacksworth run
   draws a [progress](#progress) bar of clears.
 - Encounters: the spawn card (`gui/views/encounter.py`) sets species, shiny, form, level, Tera Type,
-  nature, gender, ability, item, scale and IVs; Legal encounters only (default) restricts them to what
+  nature, gender, ability, item, mark, scale and IVs; Legal encounters only (default) restricts them to what
   PKHeX accepts and lists the valid locations. It passes `--spawn` and `--spawn-*`.
 
 `[panel]` cards ([Status cards](plugins.md#status-cards-18)) show atop the tool's options while a run

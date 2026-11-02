@@ -822,16 +822,19 @@ def test_a_trainer_per_game_edits_only_the_chosen_games_trainer(tmp_path, monkey
     def type_into(label, text):
         fields()[label].on_change(SimpleNamespace(control=SimpleNamespace(value=text, update=lambda: None)))
 
-    fields()["Game"].on_select(SimpleNamespace(control=SimpleNamespace(value="sv")))
+    fields()["Game"].on_select(SimpleNamespace(control=SimpleNamespace(value="violet")))
     type_into("ID", "123456")
     type_into("Secret ID", "4295")          # past 32 bits with that ID: refused
     type_into("Name", "Misty")
-    fields()["Game"].on_select(SimpleNamespace(control=SimpleNamespace(value="frlg")))
+    fields()["Game"].on_select(SimpleNamespace(control=SimpleNamespace(value="firered")))
     assert fields()["ID"].value == "1" and fields()["Name"].value == "Ash"
     type_into("ID", "65536")                # a FireRed ID is five digits, at most 65535
     saved = settings_module.load()
+    # Scarlet keeps the shared trainer until the tool's Your game picks Violet, whose save Misty plays.
+    assert saved.split("sv") and not saved.split("swsh") and saved.name("sv") == "Ash"
+    saved.played["sv"] = "violet"
     assert saved.own("sv") == {"ot": "Misty", "gender": 0, "language": 2, "tid": 123456, "sid": 4}
-    assert (saved.ot, saved.switch_tid, saved.tid) == ("Ash", 3, 1) and "frlg" not in saved.game_trainers
+    assert (saved.ot, saved.switch_tid, saved.tid) == ("Ash", 3, 1) and "firered" not in saved.game_trainers
     assert saved.ids("sv") == ((4 * 10**6 + 123456) & 0xFFFF, (4 * 10**6 + 123456) >> 16)
 
 
@@ -2063,3 +2066,25 @@ def test_a_failed_trade_run_retries_on_the_offers_it_has_not_traded(tmp_path, mo
 
     runs[1].end("prod.keys has no master_key_12; dump the keys again")
     assert panel.retry_at is None and len(runs) == 2
+
+
+@pytest.mark.parametrize("current, shown", [(True, "Installed. Ready to use."), (False, "")])
+def test_the_line_after_an_install_ends_when_the_board_answers(monkeypatch, current, shown):
+    from gui.views import boards
+    view = object.__new__(boards.BoardView)
+    port = SimpleNamespace(device="COM3")
+    identities = {}
+    view.app = SimpleNamespace(identities=identities, chips={}, controllers=[], radio_port=lambda ports: "", settings=SimpleNamespace(board_names={}),
+                               board_status=lambda ports, key=None: SimpleNamespace(state="checking", detail=""))
+    view.ports, view.selected, view.list, view.detail = [port], "COM3", ft.ListView(), ft.Column()
+    view.progress_text = SimpleNamespace(value="Installed. Checking the board...")
+    view.confirming = True
+    for card in ("header", "firmware_card", "about_card", "help_card", "line"):
+        monkeypatch.setattr(view, card, lambda *a: "", raising=False)
+    view.render()
+    assert view.progress_text.value == "Installed. Checking the board..."
+    monkeypatch.setattr(boards.board, "Identity", SimpleNamespace)
+    identities["COM3"] = SimpleNamespace(ble=False, firmware_version="1", sta_mac="", stock=False, gift_kept=False, chip="",
+                                         current=current)
+    view.render()
+    assert view.progress_text.value == shown and not view.confirming

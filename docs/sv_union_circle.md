@@ -432,6 +432,11 @@ An entity's object id is station + 4n, the u16 that opens its record. A console 
 only with a member whose player stands near its own. Every id is a pair of unsigned integers (the
 dispatcher `0x1dbd4b0` reads no signed tag).
 
+A retail host sends each of its entities' transforms about 27 times a second while it lives, and the
+entity wanders: 0 to 41 m from where it came, 61 of 70 entities under 15 m, over 310 s. The height
+in each transform is the ground's. In 1 m squares both the host's player and its entities crossed,
+the lowest height of each agreed within 0.15 m (52 squares, median 0.00 m).
+
 A console files another's entity as unsettled (status 1) and refuses to battle it
 (`BattleStartWait`) until a state names status 0. Walking into a settled one, it shows the "!"
 and asks the owner (`0x1972664`): it takes a new id of its own for the entity, stores the pair
@@ -459,7 +464,7 @@ Pokemon itself. Every record captured fits this layout:
 | | 32 | shiny; the spawn is shiny when set |
 | | 33-37 | form |
 | | 38-44 | level |
-| | 45-52 | ribbon (mark), applied when not 0 |
+| | 45-52 | ribbon (mark) by PKHeX's `RibbonIndex`, applied when not 0 |
 | | 53-57 | nature |
 | | 58-62 | Tera Type |
 | 0x0C | u32 bits 0-3 | Alcremie decoration |
@@ -518,14 +523,31 @@ category; a member walks categories 1, 2, 3, 4, 5, 9, 10, 13 and 16 about every 
 `sv_join --spawn SPECIES:LEVEL` joins the circle as a member and keeps three spawns of a Pokemon the
 user crafts around the host's player; with `--follow-host` the guest's player follows the host's.
 The `--spawn-*` flags set what a record carries: form, shiny, Tera Type, nature, gender, ability
-slot, size, held item and IVs. One left out is drawn as the host's own wild ones were: the size, the
-nature and each IV at random, the ability slot 0 or 1, no held item. Each spawn comes 15 to 25 m
-from the host's player. One the host battles (its ask, handed over), removes (a kind 2 naming it) or
-walks more than 50 m from is let go and another comes near the host.
+slot, size, held item, mark and IVs. One left out is drawn as the host's own wild ones were: the
+size, the nature and each IV at random, the ability slot 0 or 1, no held item, no mark.
+`--spawn-mark` takes PKHeX's `RibbonIndex` (53 Lunchtime to 97 Slump); the game reads the record's
+ribbon field in the same numbering: a retail Scarlet caught a spawn sent with 58 holding the Rainy
+Mark (bit 58 of the PK9's flags at 0x34, no title affixed), and PKHeX found it legal. One the host
+battles (its ask, handed over), removes (a kind 2 naming it) or walks more than 50 m from is let go
+and another comes near the host.
+
+The record carries no ground, so `circle.Ground` keeps the one the host's console shows: in each 1 m
+square, the lowest height its player (or ride) and its entities stood at. A spawn comes 15 to 25 m
+from the host's player, only on a square one of the host's entities stood on within the last 120 s
+with at least eight known squares within 6 m, so none of ours comes where the host's console spawns
+none (a retail Scarlet showed none of the spawns sent while its player stood in a town). Each spawn
+rests 2 to 6 s, then walks at 1 m/s to a known square within 6 m of where it came, its height the
+ground's every 0.5 m; a step rising or dropping more than 0.6 m, or crossing a square with no ground
+known, is not taken. A walking spawn's transform goes out every 1/30 s. A retail Scarlet showed these
+spawns standing on the ground and walking, and its player running into a walking one started the
+battle.
 
 With `--spawn-legal`, PKHeX decides: the helper's `wild_areas` command lists the Scarlet / Violet
 wild slots by location, and `wild_legal` runs PKHeX's legality analysis on the crafted spawn caught
-from each, once per Tera Type. A spawn PKHeX accepts at no location stops the run.
+from each, once per Tera Type; a location counts when any of its slots for the spawn is accepted, so
+a weather mark needs a slot naming that weather (a level 9 Wooper takes Rainy, never Snowy). The app
+offers the 42 wild marks: time, weather, Destiny, Uncommon, Rare and personality. A spawn PKHeX
+accepts at no location stops the run.
 
 The spawns then wait for the host's area (`wild.Locator`). Each wild Pokemon the host's console
 shares (key 0x0026 kind 1, once the guest's player is near) narrows the locations to those with a
@@ -552,3 +574,4 @@ The search shows as a `[panel]` status card with id `zone` in the app.
   above the quest's goal.
 - What the status record's further slots, its byte string and its element 7 hold.
 - What the type-10 objects are, and what the key-0x0025 ids and queries arbitrate.
+- What a spawn state's first float (0.001 to 0.04 from a retail host) stands for.

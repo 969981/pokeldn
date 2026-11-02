@@ -18,6 +18,8 @@ from pokeldn import plugins
 from pokeldn.app.catalog import Field, Game, Tool, activities, activity_of
 from pokeldn.app.introspect import flags_of
 from pokeldn.app.paths import SESSION
+from pokeldn.app.settings import VERSIONS as VERSIONS_OF
+from gui.views.settings import TRAINER_GAMES
 from gui.views.event_gifts import EventGiftPicker
 from gui.views.pokemon import NAME_LISTS, VERSIONS, LinkCodePicker, NamePicker, OfferQueue, PokemonPicker
 from gui.views.raid_event import FOLDED, RaidEventPicker
@@ -109,7 +111,8 @@ class GamesView:
         forget_unremembered(app.settings.tool_values, self.catalog)
         self.tree = ft.ListView(spacing=2, padding=ft.Padding(8, 8, 8, 8), expand=True)
         self.summary = t.text("", 12, t.MUTED, text_align=ft.TextAlign.CENTER)
-        self.variants = ft.Column(spacing=t.GAP)    # render_variants
+        # The choices card hugs its rows, centred as the tabs above it.
+        self.variants = ft.Column(spacing=t.GAP, horizontal_alignment=ft.CrossAxisAlignment.CENTER)  # render_variants
         self.cards = ft.Column(spacing=t.GAP)
         self.run_panel = ft.Column(spacing=t.GAP, visible=False)    # show_run_cards
         # The cards start below the toolbar and scroll under its glass.
@@ -370,8 +373,20 @@ class GamesView:
                              lambda option, a=name: self.select(self.game, activity.pick(
                                  self.chosen[(self.game.key, activity.key)], a, option)))
                 for name, axis, options in activity.axes(self.tool)]
-        self.variants.controls = [t.card_box(ft.Column(rows, spacing=12, tight=True))] if rows else []
+        settings = self.app.settings
+        if settings.split(self.game.key):     # two saves of one game: which one this run trades with
+            names = dict(TRAINER_GAMES)
+            rows.append(t.choice_row(tr('games.your_game', 'Your game'),
+                                     [(key, names[key], "gamepad") for key, _ in VERSIONS_OF[self.game.key]],
+                                     settings.version(self.game.key), self._played))
+        # Side by side while they fit, one under another on a narrow window.
+        self.variants.controls = [t.card_box(ft.Row(rows, spacing=24, run_spacing=12, wrap=True, alignment=ft.MainAxisAlignment.CENTER))] if rows else []
         self.variants.visible = bool(rows)
+
+    def _played(self, version: str) -> None:
+        self.app.settings.played[self.game.key] = version
+        self.app.settings.save()
+        self.select(self.game, self.tool)
 
     def render_body(self) -> None:
         self.raid_partners = self.reward_picker = None

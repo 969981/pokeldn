@@ -10,7 +10,7 @@ import sv_join
 from pokeldn import gen9
 from pokeldn.sv import circle, streams, wild
 from test_sv_circle import (DEMO_ENDED, FIELD_KEYS, HOST_OBJECTS, HOST_WALK, RETAIL_SPAWN, moved,
-                            position, sent, spawn_out, stands)
+                            position, sent, slope, spawn_out, stands, wild_walks)
 
 MEADOW, LAKE, CAVE = 1, 2, 3
 TABLE = wild.Table((
@@ -111,9 +111,9 @@ class Located:
         self.at.append(at)
 
 
-def keeping(copies=circle.SPAWN_COPIES, locator=None, crafted=None):
+def keeping(copies=circle.SPAWN_COPIES, locator=None, crafted=None, wild=True):
     """-> a member keeping `copies` Pikachu (dev number) out from the demo's end at 100, the host's
-    player where HOST_WALK has it."""
+    player where HOST_WALK has it, with `wild` a wild Pokemon of the host's walking around it."""
     member = circle.Member(spawner=circle.Spawner(25, 12, tera=12, copies=copies, crafted=crafted,
                                                   rng=random.Random(1)),
                            locator=locator)
@@ -124,6 +124,8 @@ def keeping(copies=circle.SPAWN_COPIES, locator=None, crafted=None):
     member.on_lua(DEMO_ENDED)
     member.tick(100.0)
     stands(member, HOST_WALK, 100.0)
+    if wild:
+        wild_walks(member, 100.0)
     return member
 
 
@@ -141,7 +143,8 @@ def test_a_member_keeps_three_out_15_to_25_metres_from_the_host():
     labels = run(member, 110.0, 120.0)
     assert len([l for l in labels if "species 25 level 12" in l]) == 3 and len(member.spawner.live) == 3
     host = position(HOST_WALK)
-    for _, at, _, _ in member.spawner.live:
+    for spawn in member.spawner.live:
+        at = spawn.position
         assert 15.0 <= math.hypot(at[0] - host[0], at[2] - host[2]) <= 25.0
 
 
@@ -174,11 +177,13 @@ def test_one_the_host_walks_away_from_goes_and_comes_again_near_it():
     member = keeping()
     run(member, 110.0, 113.0)
     stands(member, moved(HOST_WALK, 0.0, circle.SPAWN_CULL + 30), 113.0)
+    wild_walks(member, 113.0, around=position(moved(HOST_WALK, 0.0, circle.SPAWN_CULL + 30)))
     labels = run(member, 113.0, 117.0)
     gone = [l for l in labels if l.endswith(f"gone: the host is more than {circle.SPAWN_CULL:g} m away")]
     assert len(gone) == 3 and len(member.spawner.live) == 3
     host = position(moved(HOST_WALK, 0.0, circle.SPAWN_CULL + 30))
-    for _, at, _, _ in member.spawner.live:
+    for spawn in member.spawner.live:
+        at = spawn.position
         assert math.hypot(at[0] - host[0], at[2] - host[2]) <= 25.0
 
 
@@ -199,7 +204,7 @@ def test_a_located_member_spawns_only_while_the_host_s_area_is_found():
     member = keeping(locator=located)
     assert run(member, 110.0, 114.0) == [] and set(located.at) == {position(HOST_WALK)}
     member.on_lua(bytes.fromhex("260001bc60") + RETAIL_SPAWN)
-    ((species, form, level, at),) = located.spawns
+    species, form, level, at = located.spawns[-1]
     assert (species, form, level) == (gen9.national(954), 0, 27)
     located.found = True
     assert len(run(member, 114.0, 118.0)) == 3
@@ -220,13 +225,14 @@ def host_spawn(member, n, at, now):
 def test_with_the_host_s_transforms_gone_its_newest_spawns_place_it():
     """As in Area Zero: the host's console shares its wild Pokemon but not where its player stands."""
     located = Located()
-    member = keeping(locator=located)
+    member = keeping(locator=located, wild=False)
     run(member, 110.0, 111.0)
     member.test_host_frame = None
     x, y, z = position(HOST_WALK)
     far = [(x + 300.0 + dx, y - 40.0, z + dz) for dx, dz in ((10, 0), (-10, 0), (0, 20), (0, -20))]
     for n, at in enumerate(far):
         host_spawn(member, 0x40 + n, at, 111.5)
+    wild_walks(member, 111.5, rows=(-20, 20), around=(x + 300.0, y - 40.0, z), object_id=4 * 0x40)
     assert member.host_at == tuple(position(HOST_WALK)) and located.source == wild.GAME   # still fresh
     labels = run(member, 111.5, 114.0)
     middle = (x + 300.0, y - 40.0, z)
@@ -235,11 +241,14 @@ def test_with_the_host_s_transforms_gone_its_newest_spawns_place_it():
     located.found = True
     labels = run(member, 114.0, 118.0)
     assert len([l for l in labels if "species 25 level 12" in l]) == 3
-    for _, at, _, _ in member.spawner.live:
-        assert 15.0 <= math.hypot(at[0] - middle[0], at[2] - middle[2]) <= 25.0 and at[1] == pytest.approx(y - 40.0)
+    for spawn in member.spawner.live:
+        at = spawn.position
+        assert 15.0 <= math.hypot(at[0] - middle[0], at[2] - middle[2]) <= 25.0
+        assert at[1] == pytest.approx(slope(at[0], at[2], middle), abs=0.3)
     # Only the newest few count, and only for a while.
     for n in range(circle.ESTIMATE_SPAWNS):
         host_spawn(member, 0x50 + n, (x + 600.0, y, z), 118.0)
+    wild_walks(member, 118.0, rows=(-20, 20), around=(x + 600.0, y, z), object_id=4 * 0x50)
     assert member.host_at == pytest.approx((x + 600.0, y, z))
     run(member, 118.0, 118.0 + circle.ESTIMATE_WINDOW + 0.1)
     assert located.source == wild.LOST and member.host_at is None
@@ -275,10 +284,11 @@ def test_the_zone_card_says_when_the_host_s_position_is_estimated_or_lost():
 def test_our_own_spawns_are_not_weighed():
     located = Located()
     member = keeping(locator=located)
+    weighed = list(located.spawns)
     ours = bytearray(RETAIL_SPAWN)
     ours[:2] = (streams.JOINER_INDEX + 4 * 300).to_bytes(2, "little")
     member.on_lua(bytes.fromhex("260001bc60") + bytes(ours))
-    assert located.spawns == []
+    assert located.spawns == weighed
 
 
 # The app entry
@@ -297,7 +307,7 @@ def test_the_encounters_entry_crafts_the_spawn_s_arguments():
     assert command.problems(tool, values) == ["Pick the Pokemon to spawn."]
     values["--spawn"] = {"legal": True, "species": 906, "level": 20, "shiny": True, "tera": 11, "form": 0,
                          "nature": None, "gender": 1, "ability": 2, "scale": None, "item": 0,
-                         "ivs": "31/31/31/0/0/31"}
+                         "mark": 58, "ivs": "31/31/31/0/0/31"}
     assert command.problems(tool, values) == []
     parsed = parser_of(tool.script).parse_args(command.build(tool, values, {}, Settings()))
     assert parsed.union_circle and parsed.follow_host
@@ -305,6 +315,9 @@ def test_the_encounters_entry_crafts_the_spawn_s_arguments():
     assert (parsed.spawn_tera, parsed.spawn_form, parsed.spawn_gender, parsed.spawn_ability) == (11, 0, 1, 2)
     assert parsed.spawn_nature is None and parsed.spawn_scale is None and parsed.spawn_item is None
     assert sv_join.spawn_ivs(parsed.spawn_ivs) == (31, 31, 31, 31, 0, 0)    # HP Atk Def Spe SpA SpD
+    assert parsed.spawn_mark == 58
+    values["--spawn"] = dict(values["--spawn"], mark=0)
+    assert command.build(tool, values, {}, Settings()).count("--spawn-mark") == 0
     values["--spawn"] = dict(values["--spawn"], legal=False, level=0)
     assert command.problems(tool, values) == ["The level is 1 to 100."]
 
@@ -320,11 +333,13 @@ def test_a_legal_spawn_learns_where_pkhex_accepts_it(monkeypatch, capsys):
     monkeypatch.setattr(wild, "areas", lambda service: TABLE)
     monkeypatch.setattr(wild, "legal_at", lambda service, spawn: asked.append(spawn) or ([MEADOW, LAKE], {}))
     ap, args = circle_args(["--spawn", "25:11", "--spawn-legal", "--spawn-tera", "12", "--spawn-ivs",
-                            "31/30/29/28/27/26", "--spawn-gender", "1"])
+                            "31/30/29/28/27/26", "--spawn-gender", "1", "--spawn-mark", "58"])
     sv_join.circle_guest(ap, args)
     assert args.spawn_wanted == [MEADOW, LAKE] and args.spawn_table is TABLE
     assert asked[0]["species"] == 25 and asked[0]["level"] == 11 and asked[0]["tera"] == 12
-    assert asked[0]["ivs"] == [31, 30, 29, 26, 28, 27] and asked[0]["gender"] == 1
+    assert asked[0]["ivs"] == [31, 30, 29, 26, 28, 27] and asked[0]["gender"] == 1 and asked[0]["mark"] == 58
+    spawner = circle.Spawner(*args.spawn, args.spawn_shiny, tera=args.spawn_tera, crafted=args.spawn_crafted)
+    assert circle.record_fields(spawner._record(0, (0.0, 0.0, 0.0)))["ribbon"] == 58
     assert "at 2 location(s): Meadow, Lake" in capsys.readouterr().out
 
 
@@ -343,6 +358,7 @@ def test_a_legal_spawn_pkhex_accepts_nowhere_stops_the_run(monkeypatch, capsys):
     (["--spawn", "25:0"], "at a level from 1 to 100"),
     (["--spawn", "25:101"], "at a level from 1 to 100"),
     (["--spawn", "25:11", "--spawn-scale", "256"], "do not fit its record"),
+    (["--spawn", "25:11", "--spawn-mark", "256"], "do not fit its record"),
     (["--spawn", "25:11", "--spawn-ivs", "31/31/31/31/31/32"], "do not fit its record")])
 def test_a_crafted_spawn_refuses_what_its_record_cannot_carry(argv, why, capsys):
     with pytest.raises(SystemExit):
@@ -381,6 +397,13 @@ def test_pkhex_accepts_a_wild_pikachu_only_where_and_as_its_slots_allow():
         assert info["types"] == [12, 12] and [a["slot"] for a in info["abilities"]] == [0, 1, 2]
         bundle = {"species": 991, "form": 0, "level": 57, "shiny": False, "gender": 0, "tera": 10}
         assert [(p["name"], p["teras"]) for p in wild.scan(service, bundle)] == [("Area Zero (5)", [10, 14])]
+        marks = {m["id"]: m["name"] for m in wild.species(service, 194)["marks"]}
+        assert marks[58] == "Rainy Mark" and not {62, 66, 67} & set(marks) and len(marks) == 42
+        wooper = {"species": 194, "form": 0, "level": 9, "tera": 10}
+        assert all(10 in p["teras"] for p in wild.scan(service, dict(wooper, mark=58)))
+        snowy = wild.scan(service, dict(wooper, mark=60))       # no Wooper slot at level 9 names snow
+        assert snowy and not any(p["teras"] for p in snowy)
+        assert all(p["problems"] == ["Invalid Marking: Snowy Mark"] for p in snowy)
     finally:
         service.close()
 
