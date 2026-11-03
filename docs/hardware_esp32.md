@@ -649,13 +649,41 @@ attempt the host sends `STOP`: a scan's `CHANNEL` that follows is refused until 
 
 `POKELDN_ESP32_TX_POWER` caps the board's transmit power in dBm (2 to 20); the host sends it in
 0.25 dBm units as the power byte of `STA_JOIN` and `AP_START`, and the desktop app's Settings,
-Transmit power sets it. Unset, the driver's maximum applies. From firmware 1.9.3 the station's cap is
-set before the association; earlier images set it once `LINK` was up. ESP32-C3 Super Mini boards are
-reported in hobbyist forums to associate with access points only at 8.5 dBm, an antenna fault of
-those boards; on the ESP32-C3 0.42-inch OLED board the effect is unmeasured.
+Transmit power sets it. From firmware 1.9.3 the station's cap is set before the association; earlier
+images set it once `LINK` was up. ESP32-C3 Super Mini boards are reported in hobbyist forums to
+associate with access points only at 8.5 dBm, an antenna fault of those boards; on the ESP32-C3
+0.42-inch OLED board the effect is unmeasured.
+
+With no power chosen (Settings, Automatic), the host picks it (`pokeldn.ldn.esp32_wlan.board_tx_power`):
+
+| board | power |
+|---|---|
+| the HELLO reply names `esp32c3` | 8.5 dBm in both roles; a Super Mini and a XIAO ESP32C3 report the same chip and USB ids, so every C3 gets it |
+| any other | the driver's maximum; after `JOIN_ATTEMPTS` refused joins, one more `STA_JOIN` at 8.5 dBm, kept for the rest of the run when it associates |
+
+Settings, Full (20 dBm) restores the maximum on a C3.
+
+### The radio test
+
+The desktop app's Board page, Test the radio (`pokeldn.ldn.esp32_radio_test`), checks a board's two
+directions with no console run and no second board:
+
+| phase | what the board does | what the player reads |
+|---|---|---|
+| hearing, about 20 s | on channels 1, 6 and 11: 3 s idle, where LDN advertisements reach the host as `RX_MGMT`, then 3 s of census (`SNIFF` to `ff:ff:ff:ff:ff:ff`) | each channel's Switch transmitters and Wi-Fi beacons with their best RSSI, frame and damaged counts, the median noise floor |
+| being heard, 60 s | a hidden access point (`AP_START`) at the trades' power, and from it an open `POKELDN-TEST` beacon every 100 ms by `RAW_TX` | whether a phone's Wi-Fi list shows `POKELDN-TEST` near the board |
+
+A console waiting in a local play menu that hosts shows up as a Switch on its channel. Wi-Fi heard
+with no Switch points at the console; nothing heard at all points at the board's receiver. A phone
+that never lists `POKELDN-TEST` beside the board points at its transmitter. A Mac's scan lists the beacon
+only with a running timestamp and the TIM element, and misses it in some scans; a beacon of only SSID,
+rates and channel was never listed. The results go to the
+Board page's log, which Copy board details includes.
 
 ## Unresolved
 
+- Whether a XIAO ESP32C3 trades at the automatic 8.5 dBm is unmeasured; it traded at the driver's
+  maximum ([Transmit power](#transmit-power)).
 - The softAP negotiates WMM, which a Switch host does not; trades complete with and without it
   (`POKELDN_ESP32_AP_FLAGS=2`, `AP_FLAG_NO_QOS`, clears the station's QoS flag).
 - What in the access point's receive path misses a station's OFDM first copies is unknown
