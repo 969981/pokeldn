@@ -2,7 +2,9 @@
 outlives the session and whose asm/rom-transfer.s runs under unicorn [docs/rse_switch_build.md,
 Delivery without Atmosphere]."""
 
+import os
 import random
+import time
 
 import pytest
 
@@ -219,6 +221,40 @@ def test_after_a_long_decode_the_host_waits_so_the_console_drops_no_block():
     assert client.dropped_blocks == 0 and server.outcome == "booted"
 
 
+def test_a_console_that_stalls_mid_stream_drops_no_block():
+    """The block after a header reached an emulated console still decoding, 0.4 s into a stall of its
+    frames: it dropped the block, the next header filled its place and the CRC failed."""
+    from pokeldn.frlg.gift import host_mystery_gift, mg_client
+    from pokeldn.frlg.link import linkplayer
+    from pokeldn.gba import rfu
+    blocks = rom_transfer.blocks_of(NEW)
+    new = b"".join(blocks[:20]) + bytes(48 * 4096) + b"".join(blocks[20:])
+    base = bytearray(image(1, 300, 1))
+    base[0xAC:0xB0] = b"BPRF"
+    server = rom_transfer.RomTransferServer(new, live=LIVE, base=bytes(base), encoder_process=False)
+    host = host_mystery_gift.HostMysteryGiftEngine(
+        server=server, link_player=linkplayer.LinkPlayer(name="EMU", version=linkplayer.VERSION_FIRE_RED),
+        timing=host_mystery_gift.MysteryGiftTiming(client_ready_idle_frames=10, inter_block_gap_frames=8,
+                                                   block_repeat=1))
+    client = mg_client.MysteryGiftClientEngine(
+        linkplayer.LinkPlayer(name="POKELDN", version=linkplayer.VERSION_FIRE_RED),
+        version="firered", game_code=b"BPRF", flash=b"\xff" * 0x20000)
+    client.rom_stubs = {buffer_script.ROM_BASE: OLD.ljust(rom_transfer.BLOCKS * rom_transfer.BLOCK, b"\xff")}
+    slot, child = rfu.SlotBuilder(), rfu.idle_slot()
+    for tick in range(3_000_000):
+        if client.rebooted:
+            break
+        table = rfu.pack_recv_cmds([rfu.serialize(host.tick()), child])
+        record = {"type": "T", "ts": tick, "slot_len": 73, "llsf_state": 4,
+                  "slots": [(m, table[m * 14:(m + 1) * 14]) for m in range(2)], "payload": b""}
+        record["positional"] = record["slots"]
+        client.feed_in_frame(record)
+        if tick % 211 >= 20:                  # the host's frames arrive; the game runs no frame, sends none
+            child = slot.build(client.tick() or [0] * 7)
+            host.feed_child_slot(child)
+    assert client.dropped_blocks == 0 and server.outcome == "booted"
+
+
 def test_a_block_that_copies_from_a_higher_one_is_emitted_before_it_and_still_lands():
     """Block 10 of the new image is block 30 of the old: in descending order block 30 is gone by
     the time block 10 decodes; the reference order emits 10 first, and the stream is smaller."""
@@ -236,3 +272,33 @@ def test_a_block_that_copies_from_a_higher_one_is_emitted_before_it_and_still_la
     expected = bytearray(NEW_COPY.ljust(len(rom_of(client)), b"\xff"))
     expected[10 * 4096:11 * 4096] = old[30 * 4096:31 * 4096]
     assert rom_of(client) == bytes(expected)
+
+
+def test_the_encoder_runs_as_a_child_of_the_app_and_gives_what_the_inline_one_gives():
+    """A packaged app carries no multiprocessing: a child of the app does the encoding."""
+    rom = bytearray(random.Random(3).randbytes(0x1E4000))
+    for at, original, _ in builds.wrapper_patches("BPRE"):
+        rom[at:at + len(original)] = original
+    job = ("BPRE", [None] * rom_transfer.BLOCKS, 7, {2: 0x400})
+    child = rom_transfer.encoder(bytes(rom), b"")
+    assert isinstance(child, rom_transfer._Child)
+    done = child.submit(rom_transfer._worker_encode, *job)
+    while not done.done():
+        time.sleep(0.02)
+    result, folder = done.result(), child.folder
+    child.shutdown()
+    assert not os.path.exists(folder)
+    rom_transfer.encoder(bytes(rom), b"", False)
+    assert result == rom_transfer._worker_encode(*job)
+
+
+def test_with_no_cartridge_the_stream_is_lzma_all_the_same():
+    """An empty base: LZMA that names no block of the console's copy."""
+    sent = []
+    server = rom_transfer.RomTransferServer(NEW, live=LIVE, base=b"", encoder_process=False)
+    real = server.send
+    server.send = lambda ident, payload, size=None, after=0: sent.append(bytes(payload)) or real(ident, payload, size, after)
+    client = run(server, OLD)
+    assert server.outcome == "booted" and client.rebooted
+    assert rom_of(client) == NEW_COPY.ljust(len(rom_of(client)), b"\xff")
+    assert [m for m in sent if len(m) > 4 and m[4] == 7]
