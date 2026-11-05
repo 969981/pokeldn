@@ -1,0 +1,214 @@
+name: Sync and release zh-Hans language pack
+# Source: easyworld/pokeldn:codex/zh-hans-pack
+# Keeps the translation mirror separate from main and ew.
+on:
+  schedule:
+    - cron: '17,47 * * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [.github/workflows/zh-hans-pack.yml]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: zh-hans-pack-mirror-and-release
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      source_sha: ${{ steps.sync.outputs.source_sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+          fetch-depth: 1
+      - name: Fast-forward the source-only zh-hans-pack branch
+        id: sync
+        shell: bash
+        run: |
+          set -euo pipefail
+          git remote add translation https://github.com/easyworld/pokeldn.git
+          git fetch --no-tags translation +refs/heads/codex/zh-hans-pack:refs/remotes/translation/zh-hans-pack
+          sha="$(git rev-parse refs/remotes/translation/zh-hans-pack)"
+          echo "source_sha=$sha" >> "$GITHUB_OUTPUT"
+          current="$(git ls-remote --heads origin refs/heads/zh-hans-pack | awk '{print $1}')"
+          if [[ "$current" == "$sha" ]]; then
+            echo "Already mirrored upstream $sha" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if [[ -n "$current" ]]; then
+            git fetch --no-tags origin +refs/heads/zh-hans-pack:refs/remotes/origin/zh-hans-pack
+            if ! git merge-base --is-ancestor "$current" "$sha"; then
+              echo "::error::Source was rebased or the mirror diverged; refusing destructive push."
+              exit 1
+            fi
+          fi
+          git push origin "$sha:refs/heads/zh-hans-pack"
+          echo "Synced language pack branch to $sha" >> "$GITHUB_STEP_SUMMARY"
+
+  release:
+    needs: mirror
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.mirror.outputs.source_sha }}
+          path: language-pack
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Read version, source and pinned application commit
+        id: metadata
+        env:
+          SOURCE_SHA: ${{ needs.mirror.outputs.source_sha }}
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import os, re, tomllib
+          source = Path("language-pack")
+          manifest = tomllib.loads((source / "plugin.toml").read_text(encoding="utf8"))
+          if (manifest.get("id"), manifest.get("locale"), manifest.get("api")) != ("community-zh-hans", "zh-Hans", "1.9"):
+              raise SystemExit("Unexpected plugin identity or API compatibility")
+          version = manifest.get("version", "")
+          if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+(?:[-.][A-Za-z0-9.-]+)?", version):
+              raise SystemExit("Invalid plugin version")
+          readme = (source / "README.md").read_text(encoding="utf8")
+          match = re.search(r"上游\s*`main`\s*的\s*`([0-9a-f]{8,40})`", readme)
+          if not match:
+              raise SystemExit("README must pin the exact upstream application's commit")
+          sha = os.environ["SOURCE_SHA"]
+          if not re.fullmatch(r"[0-9a-f]{40}", sha):
+              raise SystemExit("Invalid source SHA")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf8") as outputs:
+              print(f"version={version}", file=outputs)
+              print(f"app_pin={match.group(1)}", file=outputs)
+              print(f"tag=zh-hans-v{version}-{sha[:12]}", file=outputs)
+          PY
+
+      - name: Skip an already published source revision
+        id: exists
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.metadata.outputs.tag }}
+        shell: bash
+        run: |
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "published=true" >> "$GITHUB_OUTPUT"
+            echo "Already released: $TAG" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "published=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Resolve pinned official application commit
+        id: application
+        if: steps.exists.outputs.published == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APP_PIN: ${{ steps.metadata.outputs.app_pin }}
+        run: |
+          set -euo pipefail
+          full_sha="$(gh api "repos/Decryptu/pokeldn/commits/$APP_PIN" --jq '.sha')"
+          [[ "$full_sha" =~ ^[0-9a-f]{40}$ ]]
+          echo "sha=$full_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout pinned application source
+        if: steps.exists.outputs.published == 'false'
+        uses: actions/checkout@v4
+        with:
+          repository: Decryptu/pokeldn
+          ref: ${{ steps.application.outputs.sha }}
+          path: app
+          persist-credentials: false
+
+      - name: Install official requirements
+        if: steps.exists.outputs.published == 'false'
+        working-directory: app
+        run: python -m pip install -r requirements.txt
+
+      - name: Require zero untranslated, stale and incompatible keys
+        if: steps.exists.outputs.published == 'false'
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import sys
+          sys.path.insert(0, str(Path("app").resolve()))
+          from scripts.check_language_pack import check
+          result = check(Path("language-pack").resolve())
+          for key, issues in result.items():
+              print(f"{key}: {len(issues)}")
+              for issue in issues[:20]:
+                  print("  ", issue)
+          if any(result.values()):
+              raise SystemExit("Language-pack contract check failed; not publishing")
+          PY
+
+      - name: Build and validate .pokeplugin and SHA256
+        if: steps.exists.outputs.published == 'false'
+        env:
+          VERSION: ${{ steps.metadata.outputs.version }}
+        run: |
+          set -euo pipefail
+          python app/scripts/pack_plugin.py language-pack -o "community-zh-hans-$VERSION.pokeplugin"
+          sha256sum "community-zh-hans-$VERSION.pokeplugin" > "community-zh-hans-$VERSION.pokeplugin.sha256"
+          python - <<'PY'
+          import os, tomllib, zipfile
+          path = f"community-zh-hans-{os.environ['VERSION']}.pokeplugin"
+          with zipfile.ZipFile(path) as archive:
+              members = archive.namelist()
+              required = {"plugin.toml", "strings.toml", "messages.toml", "templates.toml", "terms.toml", "help.toml"}
+              assert required.issubset(members), "Missing language resources"
+              assert not any(x.endswith((".py", ".pyc")) or x.startswith("tests/") for x in members), "Non-data files leaked"
+              manifest = tomllib.loads(archive.read("plugin.toml").decode())
+              assert manifest["id"] == "community-zh-hans"
+              assert manifest["version"] == os.environ["VERSION"]
+              assert manifest["api"] == "1.9"
+          PY
+
+      - uses: actions/upload-artifact@v4
+        if: steps.exists.outputs.published == 'false'
+        with:
+          name: language-pack-${{ github.run_id }}
+          path: |
+            community-zh-hans-*.pokeplugin
+            community-zh-hans-*.pokeplugin.sha256
+          if-no-files-found: error
+
+      - name: Publish versioned prerelease
+        if: steps.exists.outputs.published == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.metadata.outputs.tag }}
+          VERSION: ${{ steps.metadata.outputs.version }}
+          SOURCE_SHA: ${{ needs.mirror.outputs.source_sha }}
+          APP_SHA: ${{ steps.application.outputs.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > release-notes.md <<EOF
+          ## 简体中文语言插件 v$VERSION
+
+          - 源码: https://github.com/easyworld/pokeldn/tree/codex/zh-hans-pack
+          - 语言包源提交: $SOURCE_SHA
+          - 校验使用的主程序提交: $APP_SHA
+          - 已通过官方语言键检查、插件打包与结构验证
+          - 在 pokeldn Plugins 安装本 .pokeplugin，Settings → App language 选择简体中文，然后重启
+          - 本 Release 只包含中文插件和 SHA256，不包含应用或固件
+          EOF
+          gh release create "$TAG" \
+            "community-zh-hans-$VERSION.pokeplugin" \
+            "community-zh-hans-$VERSION.pokeplugin.sha256" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$SOURCE_SHA" \
+            --title "pokeldn 简体中文语言插件 v$VERSION (${SOURCE_SHA:0:12})" \
+            --notes-file release-notes.md \
+            --prerelease
+          echo "Published $TAG" >> "$GITHUB_STEP_SUMMARY"
