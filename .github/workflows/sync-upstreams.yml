@@ -64,7 +64,7 @@ jobs:
           # ew intentionally stays an exact source snapshot.
           workflow_backup="$RUNNER_TEMP/pokeldn-ci"
           mkdir -p "$workflow_backup"
-          for file in sync-upstreams.yml auto-build.yml auto-release.yml research-integrate.yml research-build.yml; do
+          for file in sync-upstreams.yml auto-build.yml auto-release.yml research-integrate.yml research-build.yml zh-hans-pack.yml; do
             if [[ -f ".github/workflows/$file" ]]; then
               cp ".github/workflows/$file" "$workflow_backup/$file"
             fi
@@ -102,7 +102,7 @@ jobs:
                 [[ -z "$changed_file" ]] && continue
                 if [[ "$target" == 'main' ]]; then
                   case "$changed_file" in
-                    .github/workflows/sync-upstreams.yml|.github/workflows/auto-build.yml|.github/workflows/auto-release.yml|.github/workflows/research-integrate.yml|.github/workflows/research-build.yml)
+                    .github/workflows/sync-upstreams.yml|.github/workflows/auto-build.yml|.github/workflows/auto-release.yml|.github/workflows/research-integrate.yml|.github/workflows/research-build.yml|.github/workflows/zh-hans-pack.yml)
                       continue
                       ;;
                   esac
@@ -119,7 +119,7 @@ jobs:
             git restore --source="$source_ref" --staged --worktree -- :/ ':(exclude).github/workflows/**'
             if [[ "$target" == 'main' ]]; then
               mkdir -p .github/workflows
-              for file in sync-upstreams.yml auto-build.yml auto-release.yml research-integrate.yml research-build.yml; do
+              for file in sync-upstreams.yml auto-build.yml auto-release.yml research-integrate.yml research-build.yml zh-hans-pack.yml; do
                 if [[ -f "$workflow_backup/$file" ]]; then
                   cp "$workflow_backup/$file" ".github/workflows/$file"
                 fi
