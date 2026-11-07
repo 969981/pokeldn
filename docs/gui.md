@@ -148,6 +148,11 @@ square, star or plain shine; a PID the encounter fixes (Gen 3's nature, ability 
 overworld or raid seed) stays, and the card says the shine changed. A Pokemon legal only with its own
 trainer, an event with a fixed one, is refused with PKHeX's reason.
 
+A Pokemon file of another game (`.pk4` to `.pk7`, `.pb7`, any title's format PKHeX reads,
+`pokeldn.pokemon.FOREIGN`) goes to the offer's game as [the bank](#importing) moves one: PKHeX's
+`convert` drops its held item and Gen 3/4 HM moves, then takes it through HOME's conversion
+(`Converted`). A species or form the game lacks is refused with the reason.
+
 ### Find your trainer
 
 Find mine fills one row's ID and secret ID, with the name, gender and language, from the newest
@@ -298,6 +303,11 @@ The setting also lifts the refusals on an illegal file, a bank edit, a move betw
 A species or form the game does not have stays refused. The GTS keeps legal Pokemon only, since a
 listing reaches other players, and an illegal Pokemon can crash the game drawing it.
 
+Settings, Advanced, Import non-legal Pokemon into the bank (`Settings.bank_illegal`, off by default)
+sends `bank_illegal` with the helper's `import` request only. The import then keeps a record PKHeX
+flags, in its own format or after HOME's conversion, and the bank marks it Not legal. Moving it out of
+the bank or trading it still follows Allow non-legal Pokemon.
+
 ### The HOME tracker setting
 
 PKHeX flags a missing tracker (`TransferTrackerMissing`) on a Pokemon moved into another game and on
@@ -436,6 +446,14 @@ firmware's 50 ms frame, dims with the board and turns off after its ten idle min
 Images come from [PokeAPI](https://github.com/PokeAPI/sprites) on demand, cached in `sprites/`.
 Settings, Pokemon sprites disables downloads and clears the cache. A missing image shows a
 placeholder; a missing shiny falls back to normal.
+
+Item, ball and ribbon pickers show icons from the same repository (`sprites/items/`,
+`sprites/ribbons/generation-viii/`), cached in `sprites/items/` and `sprites/ribbons/`. The helper names
+each file from the English name (`IconName`: "Poké Ball" `poke-ball`; a Gen 3 item by its later name; Legends
+Arceus's own balls `la`-prefixed). Every row shows its icon once cached; a list opened with icons
+missing has them downloaded one at a time in list order, 0.05 s apart, on one thread per cache
+(`SpriteCache.prefetch`), and redraws after every 24. A network failure ends the run; the next list
+resumes. A name PokeAPI lacks (TMs, most Legends Z-A items) shows none.
 
 ## Raid events
 
