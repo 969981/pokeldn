@@ -1,16 +1,18 @@
-# pokeldn 0.60.2
+# pokeldn 0.62.0
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- Update now refuses to replace a folder that holds anything besides pokeldn. An earlier app whose
-  files sat loose in another folder, such as `pokeldn.exe` and `_internal` placed straight on the
-  Desktop, replaced that whole folder and deleted the files in it. Keep pokeldn in a folder of its
-  own; this version's update helper refuses such a folder even when an older app starts it.
+- A ROM transfer over FireRed/LeafGreen Mystery Gift now works on English, French, German, Italian
+  and Spanish FireRed and LeafGreen, not only English FireRed. Emerald swap 1.2.0 needs this version
+  to stream into those games.
+- Fixed two ROM transfer faults that could leave blocks wrong: a block of zeros over a block of 0xFF
+  was taken as already written, and a copy that ran from one block into the next could read the
+  block just rewritten. A transfer that hit either stopped at its final check with nothing booted.
 
-The radio firmware stays at 1.10.0; the controller firmware stays at 1.3.0.
+The radio firmware stays at 1.11.0; the controller firmware stays at 1.3.0.
 
 pokeldn is an unofficial fan project, not affiliated with Nintendo or The Pokemon Company. It is not
 meant for commercial or promotional use; see the License section of the README.
@@ -30,7 +32,8 @@ Each app includes PKHeX.Core and firmware for classic ESP32, ESP32-S3, ESP32-C3 
 and ESP-IDF are bundled or unnecessary for running the app. Supply your own `prod.keys`.
 The separate `pokeldn-radio*.bin` (wireless; `-ble` for Bluetooth wireless) and `pokeldn-pad*.bin` (controller) files are merged
 firmware images for manual flashing at address `0x0`; the app selects the right image for the
-connected chip. `SHA256SUMS` covers all fourteen downloads.
+connected chip; `pokeldn-radio-e32r40t.bin` and `pokeldn-radio-szpi.bin` are for those screen boards.
+`SHA256SUMS` covers all sixteen downloads.
 
 Code signing policy: free code signing provided by [SignPath.io](https://about.signpath.io), certificate by
 [SignPath Foundation](https://signpath.org); [what is signed, team roles and privacy](https://decryptu.github.io/pokeldn/code_signing.html).
