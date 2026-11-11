@@ -14,6 +14,9 @@ on:
       - main
     paths:
       - .github/workflows/auto-release.yml
+      # Rebuild the snapshot when its reusable firmware/release builder changes.
+      - .github/workflows/auto-build.yml
+      - .github/workflows/release.yml
   workflow_dispatch:
     inputs:
       target:
