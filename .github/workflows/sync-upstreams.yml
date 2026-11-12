@@ -89,7 +89,7 @@ jobs:
             subject="$(git log -1 --format=%s)"
 
             # Fail closed if there is unmirrored local work outside the CI
-            # files we deliberately preserve below. Commit subject prefixes
+            # workflows we preserve below. Commit subject prefixes
             # (e.g. fix(ci) vs chore(ci)) are not a reliable safety check.
             if [[ "$OVERWRITE_LOCAL" != 'true' ]]; then
               local last_sync_sha changed_file
@@ -102,7 +102,7 @@ jobs:
                 [[ -z "$changed_file" ]] && continue
                 if [[ "$target" == 'main' ]]; then
                   case "$changed_file" in
-                    .github/workflows/sync-upstreams.yml|.github/workflows/auto-build.yml|.github/workflows/auto-release.yml|.github/workflows/research-integrate.yml|.github/workflows/research-build.yml|.github/workflows/zh-hans-pack.yml)
+                    .github/workflows/*)
                       continue
                       ;;
                   esac
