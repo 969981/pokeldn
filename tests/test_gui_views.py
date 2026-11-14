@@ -1,4 +1,5 @@
 import os
+import dataclasses
 import sys
 from types import SimpleNamespace
 
@@ -1966,9 +1967,14 @@ def test_docs_search_finds_a_section_under_its_heading():
 
 @pytest.mark.parametrize("typed, picked", [("dunsparce ", ["206"]), ("zzz", []), ("", [])])
 def test_enter_on_typed_species_text_picks_the_option_it_names_or_nothing(typed, picked):
+    short = t.dropdown([("25", "Pikachu")], None, editable=True)
+    assert not short.editable     # a short list opens on a click
+    short.options = [ft.DropdownOption(key=str(n)) for n in range(t.SEARCH_FROM)]
+    t.fit_search(short)           # the GTS picker starts with Any Pokemon alone, then gets every species
+    assert short.editable and short.enable_filter
     seen = []
-    box = t.dropdown([("25", "Pikachu"), ("206", "Dunsparce")], None, on_select=lambda e: seen.append(e.control.value),
-                     enable_filter=True, editable=True)
+    species = [("25", "Pikachu"), ("206", "Dunsparce")] + [(str(n), f"Mon{n}") for n in range(t.SEARCH_FROM)]
+    box = t.dropdown(species, None, on_select=lambda e: seen.append(e.control.value), enable_filter=True, editable=True)
     box.update = lambda: None
     box.text = typed
     box.on_select(SimpleNamespace(control=box))
@@ -2138,3 +2144,107 @@ def test_settings_search_finds_a_hidden_advanced_card_under_its_section(tmp_path
         assert all(p in shown for p in present) and not any(a in shown for a in absent), (query, shown)
     view._search(SimpleNamespace(control=SimpleNamespace(value="")))
     assert "Switch keys" in texts() and "Transmit power" not in texts()
+
+
+# A window started hidden (gui/main.py, AppView.FLET_APP_HIDDEN) must end up visible on every path.
+class _HiddenWindow:
+    def __init__(self, center_error=None):
+        self.visible, self.center_error = False, center_error
+
+    async def center(self):
+        if self.center_error:
+            raise self.center_error
+
+
+@pytest.mark.parametrize("error", [None, RuntimeError("Session closed")])
+def test_a_hidden_window_is_shown_after_centring(error):
+    import asyncio
+    page = SimpleNamespace(window=_HiddenWindow(error), update=lambda: None)
+    asyncio.run(t.show_window(page))
+    assert page.window.visible
+
+
+def test_a_hidden_window_whose_start_fails_is_shown():
+    page = SimpleNamespace(window=_HiddenWindow(), update=lambda: None)
+
+    def start(_page):
+        raise ValueError("broken view")
+
+    with pytest.raises(ValueError):
+        t.shown_on_failure(start)(page)
+    assert page.window.visible
+
+
+def test_typing_in_a_tool_field_saves_and_redraws_once_typing_pauses(monkeypatch):
+    """Each key stores its value at once; the settings file and the session panel follow one pause later, and
+    a pause that lands after another tool is picked only saves."""
+    import time
+    from gui.views import games as games_view
+    monkeypatch.setattr(games_view, "SETTLE_S", 0.05)
+    tool = SimpleNamespace(fields=[])
+    field = SimpleNamespace(key="--nickname", kind="text", events=None)
+    events = []
+    view = SimpleNamespace(tool=tool, values={}, _settling=None, reward_picker=None, raid_partners=None,
+                           session=SimpleNamespace(refresh=lambda: events.append("refresh")),
+                           app=SimpleNamespace(settings=SimpleNamespace(save=lambda: events.append("save")),
+                                               ui=lambda fn: fn()))
+    view.settle = lambda fn, delay=None: GamesView.settle(view, fn, delay or games_view.SETTLE_S)
+    view.set_value = lambda f, v, rebuild=False, typed=False: GamesView.set_value(view, f, v, rebuild, typed)
+    for text in ("S", "SP", "SPA"):
+        view.set_value(field, text, typed=True)
+        assert view.values["--nickname"] == text and events == []
+    time.sleep(0.2)
+    assert events == ["save", "refresh"]
+    view.set_value(field, "SPAR", typed=True)
+    view.tool = SimpleNamespace(fields=[])
+    time.sleep(0.2)
+    assert events == ["save", "refresh", "save"]
+
+
+def test_an_own_update_sends_the_controls_properties_and_leaves_deeper_changes_for_the_next_update():
+    """update_own skips the walk under a control's children; what changed there still reaches the client."""
+    import msgpack
+    from flet.controls.base_control import BaseControl
+    from flet.controls.object_patch import ObjectPatch
+    from flet.messaging.protocol import configure_encode_object_for_msgpack
+
+    def pack(value):
+        return msgpack.packb(value, default=configure_encode_object_for_msgpack(BaseControl))
+
+    def patch(control):
+        message = ObjectPatch.from_diff(control, control, control_cls=BaseControl)[0].to_message()
+        pack(message)
+        return [op[2:] for op in message[1:]]
+
+    text = ft.Text("a")
+    view = ft.ListView([ft.Column([text])], padding=ft.Padding(1, 1, 1, 1))
+    root = ft.Column([view])
+    pack(root)
+    text.value, view.padding = "b", ft.Padding(9, 1, 9, 1)
+    sent = []
+    view.update = lambda: sent.append(patch(view))
+    t.update_own(view)
+    assert sent == [[["padding", ft.Padding(9, 1, 9, 1)]]]
+    assert not view.controls[0].is_isolated()
+    assert patch(root) == [["value", "b"]]
+
+
+def test_import_again_banks_a_record_imported_before_and_redraws_its_row_alone(monkeypatch, tmp_path):
+    from gui.views import bank as view
+    from pokeldn.app import bank
+    monkeypatch.setattr(ft.BaseControl, "update", lambda self: None)
+    monkeypatch.setattr(view.threading, "Thread", lambda target, daemon: SimpleNamespace(start=target))
+    gone = bank.ImportedPokemon("", "Mew", 151, False, "gone", "sv", "", "8BFD")
+    calls, refreshed = [], []
+    monkeypatch.setattr(bank, "import_again", lambda path, key, trainers: calls.append((path, key)) or
+                        dataclasses.replace(gone, state="banked"))
+    app = SimpleNamespace(ui=lambda fn: fn(), settings=SimpleNamespace(trainer=lambda key: {}, sprites=False), page=None,
+                          sprites=None)
+    dialog = view.ImportDialog(app, [bank.Imported("mew.pk9", "", [gone], str(tmp_path / "mew.pk9"))], [],
+                               lambda: refreshed.append(1))
+    texts = lambda c: [getattr(x, "value", None) or getattr(x, "content", None) for x in walk(c)]
+    again = next(x for x in walk(dialog.dialog) if getattr(x, "content", None) == "Import again")
+    assert "Imported before" in texts(dialog.dialog)
+    again.on_click(None)
+    assert calls == [(str(tmp_path / "mew.pk9"), "8BFD")] and refreshed == [1]
+    assert "Banked" in texts(dialog.dialog) and "Import again" not in texts(dialog.dialog)

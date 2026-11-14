@@ -50,7 +50,7 @@ class PokemonPicker:
         self.shiny = t.switch(bool(self.value.get("shiny")), self._shiny)
         self.nickname = t.field(value=self.value.get("nickname", ""), hint=tr('pokemon.nickname_optional_7cbcb9', 'Nickname (optional)'), expand=True,
                                 limit=10 if game in GEN3 else 12,
-                                on_change=lambda e: self._set("nickname", e.control.value))
+                                on_change=lambda e: (ft.context.disable_auto_update(), self._set("nickname", e.control.value)))
         self.build_button = t.button(tr('pokemon.build_bdd254', 'Build'), self._build, disabled=True)
         self.clear_button = t.secondary_button("", self._clear, "close", tooltip=tr('pokemon.clear', 'Clear'))
         self.export_button = t.secondary_button("", self._export, "download", tooltip=tr('pokemon.export', 'Export as a file'))
@@ -135,7 +135,7 @@ class PokemonPicker:
             controls.append(t.labeled_control(tr('pokemon.form_2e0e96', 'Form'), t.dropdown(
                 [(ANY, tr('pokemon.form_any', 'Any'))] + [(str(f["id"]), f["name"]) for f in forms],
                 str(chosen["form"]) if chosen.get("form") is not None else ANY,
-                on_select=self._form, enable_filter=len(forms) > 8, editable=len(forms) > 8, menu_height=320),
+                on_select=self._form, enable_filter=True, editable=True, menu_height=320),
                 expand=True))
         if found and found.get("sweets"):
             controls.append(t.labeled_control(tr('pokemon.sweet', 'Sweet'), t.dropdown(
@@ -218,6 +218,7 @@ class PokemonPicker:
                 self._message(error_message(error), t.RED)
             else:
                 self.species.options = [ft.DropdownOption(key=str(s["id"]), text=s["name"]) for s in species]
+                t.fit_search(self.species)
                 self.species.value = str(self.value["species"]) if self.value.get("species") else None
                 self.species.hint_text = tr('pokemon.search_a_species_1ea995', 'Search a species')
                 self.species.disabled = self.build_button.disabled = False
@@ -1205,6 +1206,7 @@ class NamePicker:
                 if self.optional:
                     options.insert(0, ft.DropdownOption(key=EMPTY, text=tr('pokemon.not_set_4895f7', 'Not set')))
                 self.dropdown.options = options
+                t.fit_search(self.dropdown)
                 self.dropdown.value = str(self.value) if self.value else (EMPTY if self.optional else None)
                 self.picked = icon_choices(self.app, self.dropdown, names, ribbon=self.kind == "ribbons")
                 self.dropdown.hint_text = self.hint or tr('pokemon.search_49c266', 'Search')

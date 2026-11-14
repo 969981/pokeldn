@@ -1,5 +1,6 @@
 from dataclasses import fields
 import base64
+import dataclasses
 import os
 
 import flet as ft
@@ -88,12 +89,17 @@ def backdrop(content: ft.Control) -> ft.Container:
                                                  alignment=ft.Alignment.TOP_LEFT))
 
 
-def glass(content: ft.Control, radius: float = 20, **kwargs) -> ft.Container:
-    """Liquid Glass: the layer of navigation and controls that floats above the content, never the content itself."""
+GLASS_ON_GRID = "#1A1A1D"   # glass over the bare checkerboard: the grid's mean under 68% #1F1F22
+
+
+def glass(content: ft.Control, radius: float = 20, floating: bool = False, **kwargs) -> ft.Container:
+    """Liquid Glass: the layer of navigation and controls above the content. Only a `floating` one, with content
+    scrolling under it, blurs: each backdrop blur reruns on every repaint (docs/gui.md, Performance)."""
     # One colour on all four sides: Flutter leaves the corners of a mixed-colour border square.
     return ft.Container(
-        content, blur=ft.Blur(30, 30), border_radius=radius, clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
-        bgcolor=ft.Colors.with_opacity(0.68, "#1F1F22"),
+        content, blur=ft.Blur(30, 30) if floating else None, border_radius=radius,
+        clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
+        bgcolor=ft.Colors.with_opacity(0.68, "#1F1F22") if floating else GLASS_ON_GRID,
         border=ft.Border.all(1, ft.Colors.with_opacity(0.1, "#FFFFFF")),
         **kwargs)
 
@@ -109,6 +115,7 @@ def panel(content: ft.Control, width: float | None = None, expand=None, padding=
 
 TRACK = ft.Colors.with_opacity(0.35, "#000000")   # behind a group of tabs, on any surface
 MENU_ROW = 48   # at least one dropdown row, padding shared
+SEARCH_FROM = 13   # a typeable box opens only from its arrow; a shorter list is a menu a click opens
 TOOLBAR_ITEM = 32   # the icon buttons are this size
 TOOLBAR_INSET = 4
 
@@ -150,6 +157,7 @@ class Panes:
         return "single"
 
     def _resized(self, e) -> None:
+        ft.context.disable_auto_update()     # it updates what it changes; see fade()
         layout = self._choose(e.width)
         if layout != self.layout:
             self._arrange(layout)
@@ -210,11 +218,11 @@ def readable(column: ft.Control, widest: float) -> ft.ShaderMask:
     faded = mask.on_size_change
 
     def fit(e) -> None:
-        faded(e)
+        faded(e)                             # disables the automatic update
         side = max(4, (e.width - widest) // 2)
         if view.padding.left != side:
             view.padding = ft.Padding(side, 8, side, 24)
-            view.update()
+            update_own(view)
     mask.on_size_change = fit
     return mask
 
@@ -228,7 +236,7 @@ def notch(*controls: ft.Control) -> ft.Row:
             items.append(ft.Container(width=1, height=18, bgcolor=ft.Colors.with_opacity(0.12, "#FFFFFF")))
         items.append(control)
     row = ft.Row(items, spacing=8, tight=True, vertical_alignment=ft.CrossAxisAlignment.CENTER)
-    return ft.Row([glass(ft.Container(row, padding=TOOLBAR_INSET), radius=TOOLBAR_ITEM / 2 + TOOLBAR_INSET)],
+    return ft.Row([glass(ft.Container(row, padding=TOOLBAR_INSET), radius=TOOLBAR_ITEM / 2 + TOOLBAR_INSET, floating=True)],
                   alignment=ft.MainAxisAlignment.CENTER)
 
 
@@ -271,9 +279,14 @@ class Flow:
     """Tiles or fields in rows of as many as the measured width gives each `min_width`; a fixed count
     per row squeezes a dropdown's text or a tile's summary out of a narrow column."""
 
+    measured: dict[float, float] = {}
+
     def __init__(self, controls: list[ft.Control], min_width: float = 160, spacing: float = 10,
                  stretch_last: bool = False):
-        self.min_width, self.spacing, self.width, self.stretch_last = min_width, spacing, 0.0, stretch_last
+        # The last width a Flow of this tile size measured: a new one laid out at 0 re-lays itself, a walk
+        # of its whole subtree, at its first size event.
+        self.min_width, self.spacing, self.stretch_last = min_width, spacing, stretch_last
+        self.width = Flow.measured.get(min_width, 0.0)
         self.box = ft.Column(spacing=spacing, tight=True)
         self.control = ft.Container(self.box, size_change_interval=50, on_size_change=self._resized)
         self.columns = 0
@@ -295,7 +308,8 @@ class Flow:
                              grid_rows(list(self.items), self.columns, self.spacing, self.stretch_last))
 
     def _resized(self, e) -> None:
-        self.width = e.width
+        ft.context.disable_auto_update()     # it updates what it changes; see fade()
+        self.width = Flow.measured[self.min_width] = e.width
         if not self.single and self._fit() != self.columns:
             self._lay()
             self.control.update()
@@ -404,7 +418,7 @@ def dropdown(options: list[tuple[str, str]], value: str | None, on_select=None, 
                     return
                 e.control.update()
             chosen(e)
-    return ft.Dropdown(value=value, options=[ft.DropdownOption(key=k, text=t) for k, t in options],
+    box = ft.Dropdown(value=value, options=[ft.DropdownOption(key=k, text=t) for k, t in options],
                        on_select=on_select, dense=True, filled=True, bgcolor=FIELD, border=_border(),
                        text_size=13, text_style=ft.TextStyle(font_family_fallback=FALLBACK_FONTS),
                        expand=True, height=CONTROL_HEIGHT, content_padding=CONTROL_PADDING,
@@ -412,6 +426,14 @@ def dropdown(options: list[tuple[str, str]], value: str | None, on_select=None, 
                        selected_trailing_icon=pixel_icon("chevron-up", color=BLUE),
                        menu_style=ft.MenuStyle(bgcolor=PANEL, shape=ft.RoundedRectangleBorder(radius=10)),
                        **kwargs)
+    if options and kwargs.get("editable"):
+        fit_search(box)
+    return box
+
+
+def fit_search(box: ft.Dropdown, searchable: bool = True) -> None:
+    """Call after setting a searchable box's options: a short list becomes a menu a click opens."""
+    box.editable = box.enable_filter = searchable and len(box.options) >= SEARCH_FROM
 
 
 def field_line(control: ft.Control, alignment: ft.Alignment = ft.Alignment.CENTER, **kwargs) -> ft.Container:
@@ -576,6 +598,22 @@ def choice_field(options: list[tuple[str, str]], value: str, on_change) -> ft.Co
     return ft.Container(row, height=CONTROL_HEIGHT, bgcolor=FIELD, border_radius=CONTROL_RADIUS, padding=2)
 
 
+def update_own(control: ft.Control) -> None:
+    """Sends control's own properties and its direct children's, without walking deeper: a control's update()
+    diffs its whole subtree, and Flet skips the children of an isolated control (object_patch.py,
+    `_compare_dataclasses`). A deeper change stays pending for the next ordinary update."""
+    children = [value for f in dataclasses.fields(control) if not f.name.startswith("_")
+                for value in (lambda v: v if isinstance(v, list) else [v])(getattr(control, f.name, None))
+                if isinstance(value, ft.BaseControl) and not value.is_isolated()]
+    for child in children:
+        child._isolated = True
+    try:
+        control.update()
+    finally:
+        for child in children:
+            del child._isolated
+
+
 def fade(scrollable: ft.ScrollableControl, size: float = 24) -> ft.ShaderMask:
     """The scrollable, its top and bottom edges fading out over size px while content lies beyond them."""
     edges = {"height": 0.0, "top": False, "bottom": not getattr(scrollable, "auto_scroll", False)}
@@ -599,7 +637,7 @@ def fade(scrollable: ft.ScrollableControl, size: float = 24) -> ft.ShaderMask:
         ft.context.disable_auto_update()
         edges["height"] = e.height
         if paint():
-            mask.update()
+            update_own(mask)
 
     previous = scrollable.on_scroll
 
@@ -609,11 +647,14 @@ def fade(scrollable: ft.ScrollableControl, size: float = 24) -> ft.ShaderMask:
         if (top, bottom) != (edges["top"], edges["bottom"]):
             edges["top"], edges["bottom"] = top, bottom
             if paint():
-                mask.update()
+                update_own(mask)
         if previous:
             previous(e)
 
     scrollable.on_scroll = scrolled
+    # Flet samples both every 10 ms; each sample is a message to Python and back.
+    scrollable.scroll_interval = max(scrollable.scroll_interval or 0, 100)
+    mask.size_change_interval = 100
     mask.on_size_change = resized
     paint()
     return mask
@@ -657,11 +698,30 @@ def image_src(data: bytes) -> bytes | str:
     return data
 
 
-async def center_window(page: ft.Page) -> None:
-    """Centre a desktop window; a window closed before the call answers raises "Session closed" in Flet's
-    completion callback, a traceback with nothing to act on (seen on Linux when the window failed to draw)."""
+async def show_window(page: ft.Page) -> None:
+    """Centre and show a window started hidden (AppView.FLET_APP_HIDDEN): shown first, it flashes while it is
+    resized and moved. A window closed before the call answers raises "Session closed", nothing to act on."""
     try:
         await page.window.center()
     except RuntimeError as error:
         if "Session closed" not in str(error):
             raise
+    finally:
+        page.window.visible = True
+        try:
+            page.update()
+        except RuntimeError:
+            pass
+
+
+def shown_on_failure(start):
+    """A hidden window whose start raises would stay invisible with the process running: show it with Flet's
+    error before re-raising (theme.show_window shows it on success)."""
+    def wrapped(page: ft.Page) -> None:
+        try:
+            start(page)
+        except Exception:
+            page.window.visible = True
+            page.update()
+            raise
+    return wrapped

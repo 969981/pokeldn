@@ -1,3 +1,4 @@
+import functools
 import os
 import shlex
 import threading
@@ -42,6 +43,7 @@ WAIT_HINT = 60   # seconds of waiting for the console before the panel asks whet
 RETRY_DELAY, RETRIES = 15, 3   # Settings, Retry failed trades: the wait before each retry, and how many in a row
 # The Tera Raid host's event fields (pokeldn/app/catalog.py) and the context fields an event narrows.
 RAID_EVENT, RAID_DEN, RAID_CATCH = "--raid-event", "--raid-event-group", "--raid-catch-normal"
+SETTLE_S = 0.25   # a pause in typing that saves the settings and redraws the session panel
 REWARD_DEN_KEYS = ("--raid-boss", "--raid-gigantamax")   # a Max Raid's den follows its boss
 RAID_CONTEXT = {"--raid-version": ("version", "violet"), "--raid-map": ("map_name", "paldea"),
                 "--raid-progress": ("progress", "4star"), "--raid-content": ("content", "standard")}
@@ -83,8 +85,15 @@ def translated_card(card: dict) -> dict:
                       for line in card["lines"]]}
 
 
+@functools.lru_cache(maxsize=64)
+def icon_src(path: str):
+    """A plugin game's icon, read once: the list redraws on every tool click and the client decodes each new src."""
+    return t.image_src(Path(path).read_bytes())
+
+
 class GamesView:
     def __init__(self, app):
+        self._settling: threading.Timer | None = None
         self.app = app
         self.catalog = plugins.games()   # the catalog with the enabled plugins' tools
         self.generation = plugins.generation
@@ -164,8 +173,15 @@ class GamesView:
     def extra(self) -> dict:
         return self.stored()["extra"]
 
-    def set_value(self, field: Field, value, rebuild: bool = False) -> None:
+    def set_value(self, field: Field, value, rebuild: bool = False, typed: bool = False) -> None:
         self.values[field.key] = value
+        if typed:
+            # A key press stores the value; the save and the session panel's redraw wait for a pause in typing.
+            ft.context.disable_auto_update()
+            tool = self.tool
+            self.settle(lambda: self.set_value(field, self.values.get(field.key, value)) if self.tool is tool
+                        else self.app.settings.save())
+            return
         self.app.settings.save()
         picker = getattr(self, "reward_picker", None)
         if picker is not None and picker.den_of is not None and field.key in REWARD_DEN_KEYS and not rebuild:
@@ -181,6 +197,14 @@ class GamesView:
         elif field.events:
             self.follow_locks()
         self.session.refresh()
+
+    def settle(self, fn, delay: float = SETTLE_S) -> None:
+        """Runs fn on the page once no other settle() call came for `delay` seconds."""
+        if self._settling is not None:
+            self._settling.cancel()
+        self._settling = threading.Timer(delay, lambda: self.app.ui(fn))
+        self._settling.daemon = True
+        self._settling.start()
 
     def switched(self, field: Field, on: bool) -> None:
         """A switch redraws the cards only when another field shows, hides or changes with it: a redraw reads
@@ -324,7 +348,7 @@ class GamesView:
         for game in self.catalog:
             open_ = game is self.game
             rows.append(ft.Container(ft.Row([
-                ft.Container(ft.Image(src=t.image_src(Path(game.icon).read_bytes()) if game.icon else f"games/{game.key}.png", width=36, height=36,
+                ft.Container(ft.Image(src=icon_src(game.icon) if game.icon else f"games/{game.key}.png", width=36, height=36,
                                       fit=ft.BoxFit.CONTAIN, filter_quality=ft.FilterQuality.NONE,
                                       semantics_label=game.name),
                              width=40, height=36, alignment=ft.Alignment.CENTER),
@@ -404,10 +428,11 @@ class GamesView:
         self.cards.update()
 
     def _fit(self, e) -> None:
+        ft.context.disable_auto_update()     # it updates what it changes; see t.fade()
         side = max(0, (e.width - t.READABLE_WIDTH) // 2)
         if self.body.padding.left != side:
             self.body.padding = ft.Padding(side, 62, side, 24)
-            self.body.update()
+            t.update_own(self.body)
 
     def _open_doc(self, e) -> None:
         self.app.navigate("docs", doc=self.tool.doc or self.game.doc or "plugins.md")
@@ -593,7 +618,7 @@ class GamesView:
             if field.limits or field.bounds:
                 e.control.error = refused(e.control.value) or None
                 e.control.update()
-            self.set_value(field, e.control.value)
+            self.set_value(field, e.control.value, typed=True)
 
         box = t.field(value=str(value), mono=field.kind == "number", error_max_lines=2,
                       digits=field.kind == "number",
@@ -649,14 +674,18 @@ class GamesView:
         value = command.value_of(bound, self.values) if bound else self.extra.get(flag.option)
         switch = flag.kind == "switch" or (bound is not None and bound.kind == "switch")
 
-        def store(v):
+        def store(v, typed=False):
             if bound:
-                self.set_value(bound, v if v not in (None, "") else bound.default)
+                self.set_value(bound, v if v not in (None, "") else bound.default, typed=typed)
                 return
             if v in (None, "", False):
                 self.extra.pop(flag.option, None)
             else:
                 self.extra[flag.option] = v
+            if typed:
+                ft.context.disable_auto_update()
+                self.settle(lambda: (self.app.settings.save(), self.session.refresh()))
+                return
             self.app.settings.save()
             self.session.refresh()
             if flag.kind == "choice":
@@ -673,7 +702,7 @@ class GamesView:
         else:
             default = "" if flag.default in (None, [], "") else str(flag.default)
             control = ft.Container(t.field(value=value or "", hint=default, mono=True,
-                                           on_change=lambda e: store(e.control.value)), width=260)
+                                           on_change=lambda e: store(e.control.value, typed=True)), width=260)
         detail = ""
         for field in self.tool.fields:
             if field.flag == flag.option and field.choice_help:
