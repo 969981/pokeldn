@@ -82,7 +82,12 @@ jobs:
           if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+(?:[-.][A-Za-z0-9.-]+)?", version):
               raise SystemExit("Invalid plugin version")
           readme = (source / "README.md").read_text(encoding="utf8")
+          # Older README versions named an upstream main commit; newer versions
+          # pin an upstream release tag and its commit, e.g. `v0.65.1` (`c669de91`).
+          # Accept either explicit pin format, never infer from the mirror HEAD.
           match = re.search(r"上游\s*`main`\s*的\s*`([0-9a-f]{8,40})`", readme)
+          if not match:
+              match = re.search(r"对应上游\s*`v[0-9][^`]*`\s*[（(]\s*`([0-9a-f]{8,40})`", readme)
           if not match:
               raise SystemExit("README must pin the exact upstream application's commit")
           sha = os.environ["SOURCE_SHA"]
