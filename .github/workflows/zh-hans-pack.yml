@@ -82,7 +82,7 @@ jobs:
           if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+(?:[-.][A-Za-z0-9.-]+)?", version):
               raise SystemExit("Invalid plugin version")
           readme = (source / "README.md").read_text(encoding="utf8")
-          match = re.search(r"上游\s*`main`\s*的\s*`([0-9a-f]{8,40})`", readme)
+          match = re.search(rf"版本\s+{re.escape(version)}\s+对应上游\s*`v[0-9.]+`\s*[（(]\s*`([0-9a-f]{{8,40}})`", readme)
           if not match:
               raise SystemExit("README must pin the exact upstream application's commit")
           sha = os.environ["SOURCE_SHA"]
