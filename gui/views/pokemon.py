@@ -1,3 +1,4 @@
+import copy
 import os
 import re
 import threading
@@ -11,12 +12,14 @@ from pokeldn.app.command import offers
 from pokeldn.app.settings import GEN3
 from pokeldn.lgpe.session import CODE_PICKER, code_picks
 from gui import drop, theme as t
-from gui.views.sprites import EDGE, MINI, SIZE as SPRITE_SIZE, Icon, Sprite, SpritePool
-from gui.views.widgets import PixelActivity, reloading
-from gui.localization import SERVICE, error_message, summary_text, translate
+from gui.views.sprites import EDGE, MINI, SIZE as SPRITE_SIZE, WORKERS, Icon, Sprite, SpritePool
+from gui.views.widgets import (WAITING, DropZone, PixelActivity, after_frame, draw_in_steps, notice, one_per_frame, reloading, skeleton,
+                               skeleton_chips, summary_line)
+from gui.localization import SERVICE, error_message, translate
 from pokeldn.app.i18n import t as tr
 
 VERSIONS = {"firered": "FR", "leafgreen": "LG", "emerald": "E", "ruby": "R", "sapphire": "S"}   # PKHeX's GameVersion names
+WIDE = 560   # a picker this wide fits Level, Shiny, Nickname and Build on one row beside the sprite
 ROW_GAP = SPRITE_SIZE + 2 * EDGE - 2 * t.CONTROL_HEIGHT   # the species and nickname boxes and the gap match the tile
 
 
@@ -62,6 +65,7 @@ class PokemonPicker:
         self.variants_token = 0
         self.result = ft.Container()
         self.ribbons = RibbonPanel(self)
+        self.options.extra.content = self.ribbons.control    # the last section of the options
         # A file someone else made carries their trainer; this switch makes the player its original trainer.
         self.retrain = t.switch(bool(self.value.get("retrain")), self._retrain)
         self.retrain_row = ft.Row([self.retrain, t.text(tr('pokemon.use_my_trainer', 'Make me its original trainer'), 13, t.SOFT)],
@@ -73,29 +77,45 @@ class PokemonPicker:
                            self.shiny, width=64, height=t.CONTROL_HEIGHT, alignment=ft.Alignment.CENTER))]
         # Species takes its own line: beside Level and Shiny a long name is cut in a narrow column.
         # Nickname and Build run the card's width: beside the sprite on a phone the hint broke in two.
-        form = pokemon_header(self.sprite.control, [ft.Row([species]), ft.Row(level_shiny, spacing=10)], spacing=10)
+        # Nickname and Build join Level and Shiny's row once the card is WIDE wide (_fit).
+        self.name_row = ft.Row([self.nickname, self.build_button], spacing=10, expand=True,
+                               vertical_alignment=ft.CrossAxisAlignment.CENTER)
+        self.level_row = ft.Row(level_shiny, spacing=10, vertical_alignment=ft.CrossAxisAlignment.END)
+        self.name_slot = ft.Container(self.name_row)
+        form = pokemon_header(self.sprite.control, [ft.Row([species]), self.level_row], spacing=10)
         self.body = ft.Container(ft.Column([
             form,
             self.variants,
-            ft.Row([self.nickname, self.build_button], spacing=10, vertical_alignment=ft.CrossAxisAlignment.CENTER),
-            self.options.control,
+            self.name_slot,
             self.result,
-            self.ribbons.control,
+            self.options.control,
             self.retrain_row,
             ft.Row([t.secondary_button(tr('pokemon.or_use_a_pokemon_file_26272a', 'Or use a Pokemon file'), self._use_file, "file"),
                     t.secondary_button(tr('pokemon.import_paste_1632a4', 'Import paste'), self._paste, "bulletlist"),
                     self.export_button,
                     self.duplicate_button,
-                    self.clear_button,
-                    *([t.text(tr('pokemon.or_drop_either_here_a8b5ba', 'or drop either here'), 12, t.FAINT)] if drop.AVAILABLE else [])],
+                    self.clear_button],
                    spacing=10, wrap=True, vertical_alignment=ft.CrossAxisAlignment.CENTER),
-        ], spacing=10), border_radius=12, clip_behavior=ft.ClipBehavior.NONE)
+            *([DropZone(tr('pokemon.drop_here', 'Drop a Pokemon file or a Showdown paste'))] if drop.AVAILABLE else []),
+        ], spacing=10), border_radius=12, clip_behavior=ft.ClipBehavior.NONE,
+            size_change_interval=50, on_size_change=self._fit)
         self.control = drop.target(self.body, self._dropped, glow=glow or self.body)
         self._show_result()
         threading.Thread(target=self._load_species, daemon=True).start()
 
     def _set(self, key, value) -> None:
         self.value[key] = value
+
+    def _fit(self, e) -> None:
+        """Nickname and Build beside Level and Shiny on a wide card, on their own line on a narrow one."""
+        ft.context.disable_auto_update()
+        wide = e.width >= WIDE
+        if wide == (self.name_slot.content is None):
+            return
+        self.name_slot.content = None if wide else self.name_row
+        self.name_slot.visible = not wide
+        self.level_row.controls = [*self.level_row.controls[:2], *([self.name_row] if wide else [])]
+        self.body.update()
 
     def _level(self, e) -> None:
         raw = e.control.value.strip()
@@ -250,9 +270,14 @@ class PokemonPicker:
 
         def work():
             try:
+                options = dict(self.value.get("options") or {})
+                ribbons = options.pop("ribbons", None)    # the panel's picks, put back on every build
                 info = SERVICE.make(self.game, self.value["species"], self.owner(), level, bool(self.value.get("shiny")),
-                                            self.value.get("nickname", ""), VERSIONS.get(self.version, ""),
-                                            self.value.get("options"))
+                                    self.value.get("nickname", ""), VERSIONS.get(self.version, ""), options)
+                if ribbons:
+                    worn = SERVICE.check(self.game, info["file"], {"ribbons": ribbons})
+                    if worn["legal"] or SERVICE.allow_illegal:
+                        info = {**info, **worn, "file": SERVICE.keep(self.game, worn)}
                 self.value.update(file=info["file"], summary=builder.summary(info), legal=info["legal"],
                                   encounter=info.get("canonical", info)["encounter"], moves=info.get("canonical", info)["moves"],
                                   place=info.get("encounter_place", ""), home_tracker=info.get("home_tracker", ""),
@@ -464,8 +489,8 @@ class PokemonPicker:
         lines = [ft.Row([
             t.pixel_icon("shield" if legal else "warning-diamond",
                     color=t.GREEN if legal else t.RED),
-            t.text("", 13, weight=ft.FontWeight.W_600, expand=True,
-                   spans=gendered_summary(self.value.get("summary", ""), self.value.get("gender"))),
+            summary_line(self.value.get("summary", ""), 13, weight=ft.FontWeight.W_600, gender=self.value.get("gender"),
+                         expand=True),
             t.badge(tr('pokemon.legal_4787ea', 'Legal') if legal else tr('pokemon.not_legal_c66729', 'Not legal'), t.GREEN if legal else t.RED,
                     "check" if legal else "warning-diamond"),
         ], spacing=8)]
@@ -479,7 +504,11 @@ class PokemonPicker:
             lines.append(t.text(self.value["report"], 12, t.RED, selectable=True))
         if self.value.get("note") and self.value.get("source"):
             lines.append(t.text(self.value["note"], 12, t.AMBER))
-        self.result.content = ft.Column(lines, spacing=4)
+        # A tinted panel in the verdict's colour sets the record apart from the controls around it.
+        tone = t.GREEN if legal else t.RED
+        self.result.content = ft.Container(ft.Column(lines, spacing=4), padding=ft.Padding(12, 10, 12, 10),
+                                           border_radius=10, bgcolor=ft.Colors.with_opacity(0.07, tone),
+                                           border=ft.Border.all(1, ft.Colors.with_opacity(0.28, tone)))
 
 
 class OfferQueue:
@@ -504,6 +533,7 @@ class OfferQueue:
         self._render()
 
     def _slot(self, entry: dict, at: int | None = None) -> dict:
+        entry = copy.deepcopy(entry)     # a duplicate shared its "options" dict: one form showed on both sprites
         slot = {"value": dict(entry), "title": t.text("", 13, weight=ft.FontWeight.W_600, expand=True)}
         slot["picker"] = PokemonPicker(self.app, self.game, entry, lambda v, s=slot: self._changed(s, v),
                                        version=self.version, on_team=lambda sets, s=slot: self._team(s, sets),
@@ -632,15 +662,6 @@ class OfferQueue:
 STATS = (("hp", tr('pokemon.hp_9449a7', 'HP')), ("atk", tr('pokemon.atk_f231c4', 'Atk')), ("def", tr('pokemon.def_fcc0fc', 'Def')), ("spa", tr('pokemon.spa_099d09', 'SpA')), ("spd", tr('pokemon.spd_08fc8c', 'SpD')), ("spe", tr('pokemon.spe_80f7bc', 'Spe')))
 
 
-def gendered_summary(summary: str, gender) -> list[ft.TextSpan]:
-    """The summary with ♂ in blue or ♀ in pink after the species; PKHeX's gender 2 is genderless."""
-    species, _, rest = summary_text(summary).partition(" · ")
-    spans = [ft.TextSpan(species)]
-    if gender in (0, 1):
-        spans.append(ft.TextSpan(" ♂" if gender == 0 else " ♀", ft.TextStyle(color=t.BLUE if gender == 0 else t.PINK)))
-    return spans + ([ft.TextSpan(" · " + rest)] if rest else [])
-
-
 EFFORT = {"evs": tr('pokemon.evs_3f8987', 'EVs'), "avs": tr('pokemon.avs_a495d3', 'AVs'), "gvs": tr('pokemon.effort_levels_9996e7', 'Effort levels')}
 GENDERS = (("0", tr('pokemon.male_03f8c1', 'Male')), ("1", tr('pokemon.female_e8cca8', 'Female')))
 ANY = "-"
@@ -674,47 +695,51 @@ def encounter_label(found: dict, versions: bool) -> str:
 
 
 class RibbonPanel:
-    """The ribbons a built Pokemon can wear, folded under its result: PKHeX's legal ones, every one under Allow
-    non-legal (docs/gui.md, Ribbons). A tap puts one on or takes it off and keeps the changed record as a new file."""
+    """The ribbons a built Pokemon can wear, the last section of its More options: PKHeX's legal ones, every one
+    under Allow non-legal (docs/gui.md, Ribbons). A tap puts one on or takes it off and keeps the changed record
+    as a new file."""
 
     def __init__(self, picker: 'PokemonPicker'):
         self.picker = picker
-        self.open = False
+        self.open = False      # read only while More options is open
         self.loaded_for = None
         self.token = 0
         self.busy = False   # a tap waits for the last one's record
-        self.chevron = t.pixel_icon("chevron-right", color=t.FAINT)
-        self.label = t.text("", 12, t.MUTED)
-        self.body = ft.Row([], spacing=6, run_spacing=6, wrap=True, visible=False)
-        header = ft.Container(ft.Row([self.chevron, t.text(tr('pokemon.ribbons', 'Ribbons'), 13, t.TEXT,
-                                                           weight=ft.FontWeight.W_600), self.label], spacing=8),
-                              padding=ft.Padding(2, 4, 2, 4), border_radius=8, on_click=self._toggle)
-        self.control = ft.Column([header, self.body], spacing=8, visible=False)
+        self.title = t.text(tr('pokemon.ribbons', 'Ribbons'), 11, t.MUTED)
+        self.body = ft.Row([], spacing=6, run_spacing=6, wrap=True)
+        self.control = ft.Column([self.title, self.body], spacing=6, visible=False)
 
     def refresh(self) -> None:
         """Follows the picker's record: hidden with none, reloaded when the file changed."""
         path = self.picker.value.get("file")
-        self.control.visible = bool(path)
-        if path != self.loaded_for:
+        self.control.visible = bool(path or self.picker.value.get("species"))
+        if not path:
             self.loaded_for = None
-            self.label.value = ""
-            if self.open and path:
+            self.title.value = tr('pokemon.ribbons', 'Ribbons')
+            self.body.controls = [t.text(tr('pokemon.ribbons_after_build',
+                                            'Build the Pokemon to choose its ribbons; later builds keep them.'), 12, t.MUTED)]
+        elif self.key() != self.loaded_for:
+            self.loaded_for = None
+            self.title.value = tr('pokemon.ribbons', 'Ribbons')
+            if self.open:
                 self._load()
 
-    def _toggle(self, e) -> None:
-        self.open = not self.open
-        self.chevron.src = f"icons/chevron-{'down' if self.open else 'right'}.svg"
-        self.body.visible = self.open
-        if self.open and self.loaded_for != self.picker.value.get("file"):
+    def key(self) -> tuple:
+        """The record and the Allow non-legal setting the list was read under: the setting widens the list."""
+        return self.picker.value.get("file"), SERVICE.allow_illegal
+
+    def show(self, open: bool) -> None:
+        """More options opened or closed."""
+        self.open = open
+        if open and self.picker.value.get("file") and self.loaded_for != self.key():
             self._load()
-        self.control.update()
 
     def _load(self) -> None:
         path = self.picker.value.get("file")
-        self.loaded_for = path
+        self.loaded_for = self.key()
         self.token += 1
         token = self.token
-        self.body.controls = reloading(self.body.controls, PixelActivity(tr('pokemon.reading_ribbons', 'Reading ribbons')))
+        self.body.controls = reloading(self.body.controls, skeleton_chips(label=tr('pokemon.reading_ribbons', 'Reading ribbons')))
         game, app = self.picker.game, self.picker.app
 
         def work():
@@ -727,9 +752,10 @@ class RibbonPanel:
 
     def _show(self, ribbons: list[dict], error: str) -> None:
         worn = sum(1 for r in ribbons if r["value"])
-        self.label.value = tr('pokemon.ribbons_worn', '{value0} worn', value0=worn) if worn else ""
+        self.title.value = tr('pokemon.ribbons', 'Ribbons') + (
+            " · " + tr('pokemon.ribbons_worn', '{value0} worn', value0=worn) if worn else "")
         if error:
-            self.body.controls = [t.text(error, 12, t.RED, selectable=True)]
+            self.body.controls = [notice(error, t.RED, selectable=True)]
         elif not ribbons:
             self.body.controls = [t.text(tr('pokemon.no_legal_ribbons', 'PKHeX allows no ribbon on this Pokemon.'),
                                          12, t.MUTED)]
@@ -765,6 +791,13 @@ class RibbonPanel:
                 info = SERVICE.check(picker.game, path, {"ribbons": {ribbon["id"]: value}})
                 if not info["legal"] and not SERVICE.allow_illegal:
                     raise builder.BuilderError(info.get("problems") or info["report"])
+                picks = picker.options.chosen.setdefault("ribbons", {})
+                if ribbon["fixed"] or value == 0:
+                    picks.pop(ribbon["id"], None)
+                else:
+                    picks[ribbon["id"]] = value
+                if value == 0 and not picks:
+                    picker.options.chosen.pop("ribbons", None)
                 picker.value.update(file=SERVICE.keep(picker.game, info), summary=builder.summary(info),
                                     legal=info["legal"], report="" if info["legal"] else info["report"])
                 picker.on_change(dict(picker.value))
@@ -777,6 +810,10 @@ class RibbonPanel:
 
 
 FETCH_LOCK = threading.Lock()
+LOADING_OPTIONS = tr('pokemon.loading_options_86dc28', 'Loading options')
+# Each part OfferOptions._form returns, as skeleton rows of fields: encounter, the choices, the moves, a gap,
+# IVs, effort and the footer.
+FORM_SHAPE = ((1,), (3, 3), (2, 2), (), (6,), (6,), ())
 
 
 class OfferOptions:
@@ -801,14 +838,17 @@ class OfferOptions:
         header = ft.Container(ft.Row([self.chevron, t.text(tr('pokemon.more_options_bc79cd', 'More options'), 13, t.TEXT, weight=ft.FontWeight.W_600),
                                       self.label], spacing=8),
                               padding=ft.Padding(2, 4, 2, 4), border_radius=8, on_click=self._toggle)
-        self.control = ft.Column([header, self.body], spacing=8)
+        self.extra = ft.Container(visible=False, padding=ft.Padding(0, 4, 0, 0))   # the picker's ribbons
+        # Open, the options end with room before the card's buttons: they are not part of the options.
+        self.tail = ft.Container(height=10, visible=False)
+        self.control = ft.Column([header, self.body, self.extra, self.tail], spacing=8)
         self._label()
 
     def _label(self) -> None:
         # The form and sweet show beside the species.
         count = sum(1 for k, v in self.chosen.items()
                     if k not in ("form", "sweet") and (v if isinstance(v, dict) else v is not None))
-        self.label.value = tr('pokemon.set_f4c8f3', '{value0} set', value0=count) if count else tr('pokemon.random_67bc48', 'Random')
+        self.label.value = tr('pokemon.set_f4c8f3', '{value0} set', value0=count) if count else tr('pokemon.default', 'Default')
 
     def _toggle(self, e) -> None:
         self._show(not self.open)
@@ -817,7 +857,8 @@ class OfferOptions:
     def _show(self, open: bool) -> None:
         self.open = open
         self.chevron.src = f"icons/chevron-{'down' if self.open else 'right'}.svg"
-        self.body.visible = self.open
+        self.body.visible = self.extra.visible = self.tail.visible = self.open
+        self.picker.ribbons.show(self.open)
         if self.open:
             self._load()
 
@@ -856,14 +897,17 @@ class OfferOptions:
     def _load(self) -> None:
         species = int(self.picker.value.get("species") or 0)
         if not species:
-            self.body.controls = [t.text(tr('pokemon.pick_a_species_first_48ebb5', 'Pick a species first.'), 12, t.MUTED)]
+            self.body.controls = [notice(tr('pokemon.pick_a_species_first_48ebb5', 'Pick a species first.'), t.MUTED)]
             return
         target = (species, int(self.chosen.get("form") or 0), SERVICE.allow_illegal)
         if self.loaded_for == target:
             return
-        self.loaded_for = target
-        self.body.controls = reloading(self.body.controls, ft.Row([PixelActivity(tr('pokemon.loading_options_86dc28', 'Loading options')),
-                                      t.text(tr('pokemon.reading_what_this_species_can_have_bdcc50', 'Reading what this species can have...'), 12, t.MUTED)], spacing=8))
+        shown, self.loaded_for = self.loaded_for, target
+        placeholder = skeleton(sum(FORM_SHAPE, ()), label=LOADING_OPTIONS)
+        # Another species' form is not this one's: it gives way to the skeleton. The same species reloading
+        # (Allow non-legal changed) keeps its form on screen.
+        same = shown is not None and shown[:2] == target[:2]
+        self.body.controls = reloading(self.body.controls, placeholder) if same else [placeholder]
         app = self.picker.app
 
         def work():
@@ -876,13 +920,23 @@ class OfferOptions:
                 if self.loaded_for != target:
                     return
                 self.found = found
-                self.body.controls = [t.text(error, 12, t.RED)] if error else self._form(found)
                 self._label()
+                if error:
+                    draw_in_steps(app, self.body, [notice(error, t.RED)], None)
+                    self.control.update()
+                    return
+                # From its skeleton the form is drawn two parts a frame; over a shown form (a reload) at once.
+                # Then the long lists fill one box a frame.
+                waiting = bool(self.body.controls) and getattr(self.body.controls[0], "data", None) == WAITING
+                form = self._form(found)
+                boxes = [c for c in self.lazy if hasattr(c, "every")]     # this form's, set by _form
+                fill = lambda: one_per_frame(app, [  # noqa: E731
+                    lambda box=box: t.fill(box) if self.loaded_for == target else None for box in boxes])
+                draw_in_steps(app, self.body, form, 2 if waiting else None, first=0, done=fill,
+                              filler=lambda rest: [skeleton(sum(FORM_SHAPE[-rest:], ()), label=LOADING_OPTIONS)])
                 self.control.update()
-                # The long lists follow one box per patch, after the form is on screen.
-                for box in [c for c in self.lazy if hasattr(c, "every")]:
-                    app.ui(lambda box=box: t.fill(box) if self.loaded_for == target else None)
-            app.ui(show)
+            # A frame after the click: the skeleton reaches the window before the form is built.
+            after_frame(app, show)
         threading.Thread(target=work, daemon=True).start()
 
     def _form(self, found: dict) -> list[ft.Control]:
@@ -913,7 +967,7 @@ class OfferOptions:
             first.append(t.labeled_control(tr('pokemon.ability_9c40ae', 'Ability'), self._choice("ability", found["abilities"]), expand=True))
         if found["gendered"]:
             first.append(t.labeled_control(tr('pokemon.gender_a04630', 'Gender'), self._gender(), expand=True))
-        second = [t.labeled_control(tr('pokemon.ball_ae5859', 'Ball'), self._choice("ball", found["balls"]), expand=True),
+        second = [t.labeled_control(tr('pokemon.ball_ae5859', 'Ball'), self._choice("ball", found["balls"], any_label=tr('pokemon.default', 'Default')), expand=True),
                   t.labeled_control(tr('pokemon.friendship', 'Friendship'), self._number("friendship", 255, hint="0-255"),
                                     trailing=self._max_pill("friendship"), expand=True)]
         if found.get("tera"):
@@ -934,7 +988,7 @@ class OfferOptions:
                 tr('pokemon.never_an_alpha_in_this_game_883ade', 'Never an Alpha in this game'), 12, t.MUTED),
                 ft.Alignment.CENTER_LEFT), expand=True))
         if found["held"]:
-            second.insert(0, t.labeled_control(tr('pokemon.held_item_6af4a4', 'Held item'), self._choice("held_item", found["held"], search=True),
+            second.insert(0, t.labeled_control(tr('pokemon.held_item_6af4a4', 'Held item'), self._choice("held_item", found["held"], search=True, any_label=tr('pokemon.default', 'Default')),
                                                expand=True))
         effort = found["effort"]
         self.total = effort.get("total")
@@ -948,7 +1002,7 @@ class OfferOptions:
             ft.Container(height=2),
             self._stats("ivs", tr('pokemon.ivs_39e3d6', 'IVs'), 31, "0-31"),
             self._stats("effort", EFFORT[effort["kind"]], effort["max"], limit, effort.get("total"), effort_tip),
-            ft.Row([t.text(tr('pokemon.empty_means_random_the_build_is_checked_by_pkhex_s_lega_14cf61', "Empty means random. The build is checked by PKHeX's legality analysis."), 12, t.FAINT,
+            ft.Row([t.text(tr('pokemon.empty_keeps_default', "Empty keeps the encounter's own value, rolled at random for nature, ability, gender and Tera Type. The build is checked by PKHeX's legality analysis."), 12, t.FAINT,
                            expand=True),
                     t.link_button(tr('pokemon.clear_83b12c', 'Clear'), self._clear)]),
         ]
@@ -1047,7 +1101,7 @@ class OfferOptions:
             self._label()
             self.label.update()
         current = self.chosen.get(key)
-        return t.choice_field([(ANY, tr('pokemon.random_67bc48', 'Random')), ("yes", tr('pokemon.yes_85a39a', 'Yes')),
+        return t.choice_field([(ANY, tr('pokemon.default', 'Default')), ("yes", tr('pokemon.yes_85a39a', 'Yes')),
                                ("no", tr('pokemon.no_1ea442', 'No'))],
                               ANY if current is None else "yes" if current else "no", picked)
 
@@ -1176,8 +1230,11 @@ def icon_choices(app, dropdown: ft.Dropdown, names: list[dict], ribbon: bool = F
     # An empty leading slot still indents the text: the slot is there only for a value with an icon.
     dropdown.leading_icon = chosen.control if str(dropdown.value) in icons else None
     if len(rows) < len(icons):
+        # Rows take icons already in memory; a worker reads the rest from disk, then the cache downloads
+        # what is still missing. Each redraws the rows (batch).
         cache = chosen.cache
-        cache.prefetch([icons[o.key] for o in t.all_options(dropdown) if o.key in icons and o.key not in rows], batch)
+        wanted = [icons[o.key] for o in t.all_options(dropdown) if o.key in icons and o.key not in rows]
+        WORKERS.submit(lambda: (cache.warm(wanted), batch(), cache.prefetch(wanted, batch)))
 
     def show(value) -> None:
         dropdown.leading_icon = chosen.control if str(value) in icons else None
