@@ -1,14 +1,15 @@
-# pokeldn 0.66.0
+# pokeldn 0.66.2
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- ESP32-S2 boards work as the radio, such as the Flipper Zero Wi-Fi Developer Board. Plug it in by USB; to install the firmware, hold BOOT, press and release RESET, release BOOT, then choose Install on the Board page. Thanks to cerealcommas.
-- FireRed and LeafGreen: when the program joins a trade and the console's Pokemon evolves, the game no longer stays stuck on the saving screen.
+- The app starts again: 0.66.1 stopped at launch with "'dict' object has no attribute 'sweep'".
+- The GTS, gift lists, event lists, raid partners, the link code picker and the save editor's party no longer flicker when you click a filter or a tile.
+- A Pokemon built without asking for shiny no longer comes out shiny now and then.
 
-The radio firmware stays at 1.11.0 and adds an ESP32-S2 image; the controller firmware stays at 1.3.0.
+The radio firmware stays at 1.11.0; the controller firmware stays at 1.3.0.
 
 pokeldn is an unofficial fan project, not affiliated with Nintendo or The Pokemon Company. It is not
 meant for commercial or promotional use; see the License section of the README.
