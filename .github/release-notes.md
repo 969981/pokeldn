@@ -1,12 +1,12 @@
-# pokeldn 0.66.4
+# pokeldn 0.66.7
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- A duplicated trade keeps its own form: choosing the Alolan form on a copy no longer turned the original's sprite Alolan too.
-- More options says Default, not Random, for the ball, held item, Gigantamax and Alpha: left empty, they keep the encounter's own value (most often a Poke Ball). Nature, ability, gender and Tera Type are still random.
+- More options' Clear sits on the More options line and shows only once something in it is set, instead of next to the card's own clear button.
+- Level has a Max button, like Friendship, IVs and EVs.
 
 The radio firmware stays at 1.11.0; the controller firmware stays at 1.3.0.
 
