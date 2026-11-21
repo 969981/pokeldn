@@ -1,15 +1,13 @@
-# pokeldn 0.66.9
+# pokeldn 0.66.11
 
 This desktop app trades with seven Pokemon game families on a Switch or Switch 2
 through an ESP32 radio connected by USB. Nothing is installed on the console.
 
 ## What is new
 
-- Windows: Update now keeps your files beside the app when it replaces it in place.
-- Sword/Shield Max Raid (Host): the board waits for each console's own server record before sending its own, which fixes a black screen on the joined console.
-- ESP32-S3, C3 and C6 boards answer on either USB socket, so a board with a separate USB-UART port works through that port too. Install the new firmware from the Board page.
+- Sword/Shield Dynamax Adventure: the type search on the adventure seed card shows its two choices instead of a grey box.
 
-The radio firmware is now 1.12.0; the controller firmware stays at 1.3.0.
+The radio firmware stays at 1.12.0; the controller firmware stays at 1.3.0.
 
 pokeldn is an unofficial fan project, not affiliated with Nintendo or The Pokemon Company. It is not
 meant for commercial or promotional use; see the License section of the README.
