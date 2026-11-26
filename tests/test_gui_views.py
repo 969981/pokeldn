@@ -1,6 +1,7 @@
 import os
 import dataclasses
 import sys
+import threading
 from types import SimpleNamespace
 
 import pytest
@@ -959,8 +960,9 @@ def test_the_boost_settings_leave_with_the_last_unticked_boost(monkeypatch):
     ("frlg", "event-doel-deoxys", 386),
     ("frlg", "event-rocks-metang", 375),
     ("frlg", "celebi", 251),
-    ("frlg", "mattle-ho-oh", 250),
+    ("frlg", "event-mattle-ho-oh", 250),
     ("frlg", "master-ball", 0),
+    ("rse", "box-zigzagoon", 263),
     ("swsh", "pikachu", 25),
     ("swsh", "egg", 25),
     ("swsh", "pikachu-uniform", 0),
@@ -1503,8 +1505,9 @@ def test_the_raid_card_lists_its_scripted_actions_after_its_rewards(monkeypatch)
     app = SimpleNamespace(settings=SimpleNamespace(sprites=False), page=None, ui=lambda fn: fn())
     monkeypatch.setattr(ft.BaseControl, "update", lambda self: None)
     naming = []
-    monkeypatch.setattr(raid_seed.threading, "Thread",
-                        lambda target, args, daemon: SimpleNamespace(start=lambda: naming.append((target, args))))
+    # The view's own reference: patching threading.Thread itself breaks the sprite thread pool.
+    monkeypatch.setattr(raid_seed, "threading", SimpleNamespace(Event=threading.Event, Thread=lambda target, args, daemon:
+                        SimpleNamespace(start=lambda: naming.append((target, args)))))
     monkeypatch.setattr(DISPLAY_SERVICE, "names", lambda game, kind: {
         "bag": [{"id": 1127, "name": "Exp. Candy XL"}], "moves": [{"id": 315, "name": "Overheat"}]}[kind])
     desc = [2500, 65, 55, 9999, 40, 0, 0, 20, 70, 30, 3, 1, 99, 315, 2, 2, 70, 0] + [0] * 19
@@ -1925,7 +1928,8 @@ def test_the_finder_s_bar_shows_how_far_a_search_is(monkeypatch):
                           ui=lambda f: f())
     monkeypatch.setattr(raid_search, "FAST", False)
     monkeypatch.setattr(ft.BaseControl, "update", lambda self: None)
-    monkeypatch.setattr(raid_seed.threading, "Thread", lambda target, daemon: SimpleNamespace(start=target))
+    monkeypatch.setattr(raid_seed, "threading", SimpleNamespace(
+        Event=threading.Event, Thread=lambda target, daemon: SimpleNamespace(start=target)))
     picker = raid_seed.RaidSeedPicker(app, "", lambda _v: None,
                                       lambda: {"version": "violet", "map_name": "paldea", "progress": "6star",
                                                "content": "standard"}, lambda _c: None)
@@ -1944,7 +1948,7 @@ def test_the_finder_s_bar_shows_how_far_a_search_is(monkeypatch):
     count.value = "1000"
     assert not bar.visible
     rank = next(c for c in raid_controls(shown[0].content)
-                if isinstance(c, ft.Dropdown) and c.options[0].text == "Lowest overall bulk")
+                if isinstance(c, ft.Dropdown) and c.options and c.options[0].text == "Lowest overall bulk")
     rank.value = "rewards"
     shown[0].actions[-1].on_click(None)
     status = next(c for c in raid_controls(shown[0].content) if isinstance(c, ft.Text)
@@ -2182,8 +2186,13 @@ def test_a_failed_trade_run_retries_on_the_offers_it_has_not_traded(tmp_path, mo
     assert panel.retry_at is None and len(runs) == 2
 
 
-@pytest.mark.parametrize("current, shown", [(True, "Installed. Ready to use."), (False, "")])
-def test_the_line_after_an_install_ends_when_the_board_answers(monkeypatch, current, shown):
+@pytest.mark.parametrize("kind, current, shown", [
+    ("radio_ble", True, "Installed. Ready to use."),
+    ("radio_ble", False, "Installed, but this firmware is too old for the app. Update it below."),
+    ("radio", True, "Installed, but the board runs a different firmware. Install it again."),
+    (None, False, "Installed, but the board did not answer."),
+])
+def test_the_line_after_an_install_ends_when_the_board_answers(monkeypatch, kind, current, shown):
     from gui.views import boards
     view = object.__new__(boards.BoardView)
     port = SimpleNamespace(device="COM3")
@@ -2192,14 +2201,14 @@ def test_the_line_after_an_install_ends_when_the_board_answers(monkeypatch, curr
                                board_status=lambda ports, key=None: SimpleNamespace(state="checking", detail=""))
     view.ports, view.selected, view.list, view.detail = [port], "COM3", ft.ListView(), ft.Column()
     view.progress_text = SimpleNamespace(value="Installed. Checking the board...")
-    view.confirming = True
+    view.confirming = ("COM3", "radio_ble")
     for card in ("header", "firmware_card", "about_card", "help_card", "line"):
         monkeypatch.setattr(view, card, lambda *a: "", raising=False)
     view.render()
     assert view.progress_text.value == "Installed. Checking the board..."
     monkeypatch.setattr(boards.board, "Identity", SimpleNamespace)
-    identities["COM3"] = SimpleNamespace(kind="radio_e32r40t", firmware_version="1", sta_mac="", gift_kept=False, chip="",
-                                         current=current)
+    identities["COM3"] = (SimpleNamespace(kind=kind, firmware_version="1", sta_mac="", gift_kept=False, chip="",
+                                          current=current) if kind else boards.NO_FIRMWARE)
     view.render()
     assert view.progress_text.value == shown and not view.confirming
 
