@@ -79,8 +79,7 @@ def test_a_friendship_past_255_or_empty_is_not_sent(typed, sent):
 
 
 class StubPicker:
-    def __init__(self, app, game, value, on_change, version="", on_team=None, on_more=None, glow=None, on_duplicate=None,
-                 receiver=False):
+    def __init__(self, app, game, value, on_change, version="", on_team=None, on_more=None, glow=None, on_duplicate=None):
         self.on_change, self.on_team, self.on_more, self.on_duplicate = on_change, on_team, on_more, on_duplicate
         self.control, self.applied, self.value, self.built = SimpleNamespace(), None, value, False
 
@@ -2426,3 +2425,4 @@ def test_a_new_species_replaces_the_shown_options_with_their_skeleton(monkeypatc
     picker.value["species"] = 26
     options.species_changed()
     assert options.body.controls[0].data == WAITING
+

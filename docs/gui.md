@@ -151,22 +151,18 @@ A Pokemon file of another game (`.pk4` to `.pk7`, `.pb7`, any title's format PKH
 
 ### Original trainer
 
-An offer card's Original trainer choice decides whose Pokemon it is.
+Settings, Give traded Pokemon to the receiver's trainer (`receiver_owns`, off by default) decides whose
+a Pokemon the app builds for a trade is. No trade screen asks.
 
-| choice | original trainer | written |
-|---|---|---|
-| Its own (a file only) | the file's | never |
-| You | this trainer | when the card takes the file |
-| The receiver (trade tools) | the save of the console it is traded to | during the trade, before the offer goes out |
+| offer | setting off | setting on | written |
+|---|---|---|---|
+| built in the app | the trainer in Settings | the save of the console it is traded to | when built; on, during the trade, before the offer goes out |
+| a Pokemon file, a banked Pokemon | its own | its own | never |
 
-PKHeX's `check` with the `trainer` field writes name, IDs and gender (`Retrain`). Shininess is the PID
-against those IDs. From Gen 7 the PID's high half moves to keep a square, star or plain shine; a PID
-the encounter fixes (Gen 3's nature, ability and gender, a Sword overworld or raid seed) stays, and
-the card says the shine changed. A Pokemon legal only with its own trainer, an event with a fixed
-one, is refused with PKHeX's reason: for The receiver the card checks the file under the probe
-trainer `for_receiver.PROBE` before taking the choice.
+When the console names no save, or PKHeX refuses the Pokemon under that trainer (an event with a fixed
+one), the launcher sends it as built and the app says so in a pop-up (`for_receiver.own_text`).
 
-The app passes each offer whose choice is The receiver as `--receiver-owns N`, its place in the
+With the setting on, the app passes each built offer as `--receiver-owns N`, its place in the
 queue from 1 (`command._args`); every trade launcher takes it (`tests/test_gui_catalog.py`). The
 console's own link data names its save before our offer goes out:
 
